@@ -323,6 +323,121 @@
                     </div>
                 </div>
 
+                <!-- Store Publishing Section (App Store & Google Play) -->
+                <div class="section" id="store-publishing-section">
+                    <h2 class="section-title" style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>Store Publishing</span>
+                        <span style="font-size: 11px; font-weight: 500; background: rgba(2, 164, 203, 0.1); color: var(--primary); padding: 2px 8px; border-radius: 12px;">Direct Upload</span>
+                    </h2>
+
+                    <div class="keystore-info" style="background: rgba(2, 164, 203, 0.05); border-color: rgba(2, 164, 203, 0.2); margin-bottom: 16px;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="16" x2="12" y2="12"/>
+                            <line x1="12" y1="8" x2="12.01" y2="8"/>
+                        </svg>
+                        <div class="keystore-info-text">
+                            <strong>Automated Store Delivery:</strong> Publish directly to <strong>Google Play Console</strong> or <strong>Apple App Store Connect / TestFlight</strong> as part of the cloud build process. (Optional)
+                        </div>
+                    </div>
+
+                    <!-- Google Play Publishing Block -->
+                    <div class="store-publish-card" style="border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; background: var(--bg-card, rgba(255,255,255,0.02));">
+                        <label class="checkbox-item" style="margin-bottom: 0; padding: 0; cursor: pointer;">
+                            <input type="checkbox" id="enable-google-play-publish">
+                            <div class="checkbox-content">
+                                <span class="checkbox-label" style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M3.609 1.814L13.792 12 3.61 22.186a1.996 1.996 0 01-.61-.926V2.74c0-.348.094-.67.252-.951l.357.025zM14.852 13.06l2.808 2.808-11.888 6.793 9.08-9.601zm0-2.12L5.772 1.34 17.66 8.132l-2.808 2.808zm1.06 1.06l3.548 2.028a1.5 1.5 0 000-2.608l-3.548-2.028 1.572 1.572-1.572 1.036z"/>
+                                    </svg>
+                                    Direct Upload to Google Play Console
+                                </span>
+                                <span class="checkbox-hint">Automatically upload release .aab to Google Play tracks</span>
+                            </div>
+                        </label>
+
+                        <div id="google-play-details" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+                            <div class="form-group">
+                                <label for="play-service-account-file">Google Service Account JSON Key</label>
+                                <div class="file-upload" id="play-key-upload">
+                                    <input type="file" id="play-service-account-file" accept=".json">
+                                    <div class="file-upload-label" id="play-key-upload-label">
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                                        </svg>
+                                        <span>Click to upload Service Account JSON</span>
+                                        <small class="hint">From Google Cloud Console / Play Console API Access</small>
+                                    </div>
+                                </div>
+                                <small class="hint">Service account must have release manager permissions in Google Play Console</small>
+                            </div>
+
+                            <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <div class="form-group">
+                                    <label for="play-track">Release Track</label>
+                                    <select id="play-track" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg, #fff); color: var(--text-primary);">
+                                        <option value="internal" selected>Internal Testing (Recommended)</option>
+                                        <option value="alpha">Closed Testing (Alpha)</option>
+                                        <option value="beta">Open Testing (Beta)</option>
+                                        <option value="production">Production</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="play-status">Release Status</label>
+                                    <select id="play-status" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg, #fff); color: var(--text-primary);">
+                                        <option value="draft" selected>Draft (Safest - requires manual publish)</option>
+                                        <option value="completed">Completed (Rollout immediately)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Apple App Store Connect Publishing Block -->
+                    <div class="store-publish-card" style="border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--bg-card, rgba(255,255,255,0.02));">
+                        <label class="checkbox-item" style="margin-bottom: 0; padding: 0; cursor: pointer;">
+                            <input type="checkbox" id="enable-app-store-publish">
+                            <div class="checkbox-content">
+                                <span class="checkbox-label" style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 0.92-2.85-.92.04-2.02.62-2.66 1.37-.56.65-.96 1.69-.83 2.7.99.08 2.03-.54 2.57-1.22z"/>
+                                    </svg>
+                                    Direct Upload to App Store Connect / TestFlight
+                                </span>
+                                <span class="checkbox-hint">Automatically deliver signed .ipa to App Store Connect</span>
+                            </div>
+                        </label>
+
+                        <div id="app-store-details" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+                            <div class="form-group">
+                                <label for="app-store-key-file">App Store Connect API Key (.p8)</label>
+                                <div class="file-upload" id="app-store-key-upload">
+                                    <input type="file" id="app-store-key-file" accept=".p8,.txt">
+                                    <div class="file-upload-label" id="app-store-key-upload-label">
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                                        </svg>
+                                        <span>Click to upload AuthKey_*.p8</span>
+                                        <small class="hint">App Store Connect → Users and Access → Integrations</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <div class="form-group">
+                                    <label for="app-store-key-id">Key ID (10 chars)</label>
+                                    <input type="text" id="app-store-key-id" placeholder="e.g. 2X9R427AD2" maxlength="20" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); font-family: monospace; font-size: 13px; background: var(--input-bg, #fff); color: var(--text-primary);">
+                                </div>
+                                <div class="form-group">
+                                    <label for="app-store-issuer-id">Issuer ID (UUID)</label>
+                                    <input type="text" id="app-store-issuer-id" placeholder="e.g. 57246542-96fe-1a63-e053-0824d011072a" style="width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); font-family: monospace; font-size: 12px; background: var(--input-bg, #fff); color: var(--text-primary);">
+                                </div>
+                            </div>
+                            <small class="hint" style="margin-top: 4px; display: block;">Note: Apple requires the .ipa to be signed with an Apple Distribution Certificate & App Store Provisioning Profile.</small>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Hidden WebView feature checkboxes (values stored here) -->
                 <div style="display: none;">
                     <input type="checkbox" id="allow-zoom" name="allow_zoom" checked>
@@ -766,6 +881,45 @@
                     }
                 }
 
+                // Load store publishing data if available
+                const pubData = project.publishingData || {};
+                const projSettings = project.settings || {};
+                const enablePlay = projSettings.enableGooglePlayPublish || pubData.enableGooglePlayPublish;
+                if (enablePlay) {
+                    const playCb = document.getElementById('enable-google-play-publish');
+                    if (playCb) playCb.checked = true;
+                    const playDetails = document.getElementById('google-play-details');
+                    if (playDetails) playDetails.style.display = 'block';
+                }
+                const playTrack = projSettings.playTrack || pubData.playTrack;
+                if (playTrack) {
+                    const trackEl = document.getElementById('play-track');
+                    if (trackEl) trackEl.value = playTrack;
+                }
+                const playStatus = projSettings.playStatus || pubData.playStatus;
+                if (playStatus) {
+                    const statusEl = document.getElementById('play-status');
+                    if (statusEl) statusEl.value = playStatus;
+                }
+
+                const enableAppStore = projSettings.enableAppStorePublish || pubData.enableAppStorePublish;
+                if (enableAppStore) {
+                    const ascCb = document.getElementById('enable-app-store-publish');
+                    if (ascCb) ascCb.checked = true;
+                    const ascDetails = document.getElementById('app-store-details');
+                    if (ascDetails) ascDetails.style.display = 'block';
+                }
+                const ascKeyId = projSettings.appStoreKeyId || pubData.appStoreKeyId;
+                if (ascKeyId) {
+                    const keyIdEl = document.getElementById('app-store-key-id');
+                    if (keyIdEl) keyIdEl.value = ascKeyId;
+                }
+                const ascIssuerId = projSettings.appStoreIssuerId || pubData.appStoreIssuerId;
+                if (ascIssuerId) {
+                    const issuerIdEl = document.getElementById('app-store-issuer-id');
+                    if (issuerIdEl) issuerIdEl.value = ascIssuerId;
+                }
+
                 // Trigger preview if URL is set
                 if (project.webUrl) {
                     const urlInput = document.getElementById('web-url');
@@ -914,7 +1068,13 @@
                         enableBiometrics: document.getElementById('enable-biometrics').checked,
                         enableAppLock: document.getElementById('enable-app-lock').checked,
                         appLockPin: document.getElementById('app-lock-pin').value,
-                        enableSecureStorage: document.getElementById('enable-secure-storage').checked
+                        enableSecureStorage: document.getElementById('enable-secure-storage').checked,
+                        enableGooglePlayPublish: document.getElementById('enable-google-play-publish')?.checked || false,
+                        playTrack: document.getElementById('play-track')?.value || 'internal',
+                        playStatus: document.getElementById('play-status')?.value || 'draft',
+                        enableAppStorePublish: document.getElementById('enable-app-store-publish')?.checked || false,
+                        appStoreKeyId: document.getElementById('app-store-key-id')?.value || '',
+                        appStoreIssuerId: document.getElementById('app-store-issuer-id')?.value || ''
                     }
                 };
 
@@ -945,6 +1105,25 @@
                         certificatePassword: appleCertPassword || '',
                         provisioningProfileUrl: cloudAppleProfileUrl || null,
                         teamId: teamId || ''
+                    };
+                }
+
+                // Add Store Publishing data if available
+                const enablePlayPublish = document.getElementById('enable-google-play-publish')?.checked || false;
+                const playTrack = document.getElementById('play-track')?.value || 'internal';
+                const playStatus = document.getElementById('play-status')?.value || 'draft';
+                const enableAppStorePublish = document.getElementById('enable-app-store-publish')?.checked || false;
+                const appStoreKeyId = document.getElementById('app-store-key-id')?.value || '';
+                const appStoreIssuerId = document.getElementById('app-store-issuer-id')?.value || '';
+
+                if (enablePlayPublish || enableAppStorePublish) {
+                    projectData.publishingData = {
+                        enableGooglePlayPublish: enablePlayPublish,
+                        playTrack: playTrack,
+                        playStatus: playStatus,
+                        enableAppStorePublish: enableAppStorePublish,
+                        appStoreKeyId: appStoreKeyId,
+                        appStoreIssuerId: appStoreIssuerId
                     };
                 }
 

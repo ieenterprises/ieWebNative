@@ -911,6 +911,42 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
                     pf.write(cert_pass)
             logger.info(f"Attached Apple signing credentials to iOS cloud build {build_id}.")
 
+    # Attach Google Play publishing credentials if configured
+    is_android_build = (target_platform in ('android', 'android_aab') or
+                        'android' in config.get('platforms', []) or
+                        'android_aab' in config.get('platforms', []))
+    if is_android_build and config.get('enable_google_play_publish'):
+        play_key_path = config.get('play_service_account_path')
+        if play_key_path and os.path.exists(play_key_path):
+            publishing_dir = os.path.join(project_dir, 'store_publishing')
+            os.makedirs(publishing_dir, exist_ok=True)
+            shutil.copy(play_key_path, os.path.join(publishing_dir, 'google_play_key.json'))
+            play_config = {
+                'track': config.get('play_track', 'internal'),
+                'status': config.get('play_status', 'draft'),
+                'package_name': config.get('package_name', '')
+            }
+            with open(os.path.join(publishing_dir, 'play_config.json'), 'w', encoding='utf-8') as pf:
+                json.dump(play_config, pf, indent=2)
+            logger.info(f"Attached Google Play publishing credentials to cloud build {build_id}.")
+
+    # Attach App Store Connect publishing credentials if configured
+    if target_platform == 'ios' and config.get('enable_app_store_publish'):
+        app_store_key_path = config.get('app_store_key_path')
+        app_store_key_id = config.get('app_store_key_id')
+        app_store_issuer_id = config.get('app_store_issuer_id')
+        if app_store_key_path and os.path.exists(app_store_key_path) and app_store_key_id and app_store_issuer_id:
+            publishing_dir = os.path.join(project_dir, 'store_publishing')
+            os.makedirs(publishing_dir, exist_ok=True)
+            shutil.copy(app_store_key_path, os.path.join(publishing_dir, 'app_store_key.p8'))
+            app_store_config = {
+                'key_id': app_store_key_id,
+                'issuer_id': app_store_issuer_id
+            }
+            with open(os.path.join(publishing_dir, 'app_store_config.json'), 'w', encoding='utf-8') as af:
+                json.dump(app_store_config, af, indent=2)
+            logger.info(f"Attached App Store Connect publishing credentials to cloud build {build_id}.")
+
     remote_url = f"https://x-access-token:{github_token}@github.com/{github_owner}/{github_repo}.git"
 
     build_progress[build_id] = {
@@ -1486,6 +1522,12 @@ def run_build(build_id, config):
                     final_status['keystore_path'] = keystore_info['path']
                     final_status['keystore_info_path'] = keystore_info.get('info_path')
 
+                if config.get('enable_google_play_publish'):
+                    final_status['google_play_published'] = True
+                    final_status['play_track'] = config.get('play_track', 'internal')
+                if config.get('enable_app_store_publish'):
+                    final_status['app_store_published'] = True
+
                 build_progress[build_id] = final_status
                 return
             else:
@@ -1530,6 +1572,12 @@ def run_build(build_id, config):
             final_status['keystore_generated'] = True
             final_status['keystore_path'] = keystore_info['path']
             final_status['keystore_info_path'] = keystore_info.get('info_path')
+
+        if config.get('enable_google_play_publish'):
+            final_status['google_play_published'] = True
+            final_status['play_track'] = config.get('play_track', 'internal')
+        if config.get('enable_app_store_publish'):
+            final_status['app_store_published'] = True
 
         build_progress[build_id] = final_status
         # ✅ Webhook on success
@@ -2453,6 +2501,16 @@ def start_build():
             'apple_provisioning_profile_path': data.get('apple_provisioning_profile_path'),
             'team_id': data.get('team_id'),
 
+            'enable_google_play_publish': data.get('enable_google_play_publish', False),
+            'play_service_account_path': data.get('play_service_account_path'),
+            'play_track': data.get('play_track', 'internal'),
+            'play_status': data.get('play_status', 'draft'),
+
+            'enable_app_store_publish': data.get('enable_app_store_publish', False),
+            'app_store_key_path': data.get('app_store_key_path'),
+            'app_store_key_id': data.get('app_store_key_id'),
+            'app_store_issuer_id': data.get('app_store_issuer_id'),
+
             'icon_path': data.get('icon_path'),
             'webhook_url': data.get('webhook_url')
         }
@@ -2486,7 +2544,13 @@ def start_build():
                     'enableBiometrics': data.get('enable_biometric_auth', data.get('enable_biometrics', False)),
                     'enableAppLock': data.get('enable_app_lock', False),
                     'appLockPin': data.get('app_lock_pin', ''),
-                    'enableSecureStorage': data.get('enable_secure_storage', True)
+                    'enableSecureStorage': data.get('enable_secure_storage', True),
+                    'enableGooglePlayPublish': data.get('enable_google_play_publish', False),
+                    'playTrack': data.get('play_track', 'internal'),
+                    'playStatus': data.get('play_status', 'draft'),
+                    'enableAppStorePublish': data.get('enable_app_store_publish', False),
+                    'appStoreKeyId': data.get('app_store_key_id', ''),
+                    'appStoreIssuerId': data.get('app_store_issuer_id', '')
                 })
 
                 conn = get_db_connection()
@@ -2777,6 +2841,81 @@ def upload_provisioning_profile():
         return jsonify({'error': str(e)}), 400
 
 
+# ==================== STORE PUBLISHING API ENDPOINTS ====================
+
+@app.route('/api/upload/play-key', methods=['POST'])
+def upload_play_key():
+    """Upload and validate Google Play Console Service Account JSON Key"""
+    if 'play_key' not in request.files:
+        return jsonify({'error': 'No Google Play service account JSON key provided'}), 400
+
+    file = request.files['play_key']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    try:
+        content = file.read()
+        key_data = json.loads(content.decode('utf-8'))
+
+        # Validate service account fields
+        client_email = key_data.get('client_email')
+        project_id = key_data.get('project_id')
+        private_key = key_data.get('private_key')
+
+        if not client_email or not private_key:
+            return jsonify({'error': 'Invalid Google Service Account JSON. Missing client_email or private_key.'}), 400
+
+        filename = f"play_key_{uuid.uuid4().hex}.json"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        with open(filepath, 'wb') as f:
+            f.write(content)
+
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'path': filepath,
+            'client_email': client_email,
+            'project_id': project_id
+        })
+    except json.JSONDecodeError:
+        return jsonify({'error': 'File is not valid JSON. Please upload a Google Cloud service account JSON key.'}), 400
+    except Exception as e:
+        logger.exception("Failed to process Google Play key")
+        return jsonify({'error': f'Failed to process Google Play key: {str(e)}'}), 500
+
+
+@app.route('/api/upload/app-store-key', methods=['POST'])
+def upload_app_store_key():
+    """Upload and validate App Store Connect API Key (.p8)"""
+    if 'app_store_key' not in request.files:
+        return jsonify({'error': 'No App Store Connect .p8 key file provided'}), 400
+
+    file = request.files['app_store_key']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    try:
+        content = file.read()
+        text_content = content.decode('utf-8', errors='ignore')
+
+        if 'BEGIN PRIVATE KEY' not in text_content and 'BEGIN EC PRIVATE KEY' not in text_content:
+            return jsonify({'error': 'Invalid App Store Connect API key. Must be a valid .p8 private key file.'}), 400
+
+        filename = f"asc_key_{uuid.uuid4().hex}.p8"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        with open(filepath, 'wb') as f:
+            f.write(content)
+
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'path': filepath
+        })
+    except Exception as e:
+        logger.exception("Failed to process App Store Connect key")
+        return jsonify({'error': f'Failed to process App Store Connect key: {str(e)}'}), 500
+
+
 @app.route('/api/apple/check-platform', methods=['GET'])
 def check_apple_platform():
     """Check if Apple signing is available (macOS or GitHub Cloud Builder)"""
@@ -2841,6 +2980,13 @@ def save_project():
             # Apple signing info (credentials only, files stored separately)
             'apple_certificate_password': data.get('apple_certificate_password', ''),
             'team_id': data.get('team_id', ''),
+            # Store Publishing info
+            'enable_google_play_publish': data.get('enable_google_play_publish', False),
+            'play_track': data.get('play_track', 'internal'),
+            'play_status': data.get('play_status', 'draft'),
+            'enable_app_store_publish': data.get('enable_app_store_publish', False),
+            'app_store_key_id': data.get('app_store_key_id', ''),
+            'app_store_issuer_id': data.get('app_store_issuer_id', '')
         }
 
         # Save project.json
@@ -2873,6 +3019,16 @@ def save_project():
         apple_profile_path = data.get('apple_provisioning_profile_path')
         if apple_profile_path and os.path.exists(apple_profile_path):
             shutil.copy(apple_profile_path, os.path.join(assets_dir, 'profile.mobileprovision'))
+
+        # Copy Google Play service account key if provided
+        play_key_path = data.get('play_service_account_path')
+        if play_key_path and os.path.exists(play_key_path):
+            shutil.copy(play_key_path, os.path.join(assets_dir, 'google_play_key.json'))
+
+        # Copy App Store Connect key if provided
+        app_store_key_path = data.get('app_store_key_path')
+        if app_store_key_path and os.path.exists(app_store_key_path):
+            shutil.copy(app_store_key_path, os.path.join(assets_dir, 'app_store_key.p8'))
 
         # Create the zip file
         zip_path = os.path.join(temp_dir, 'project.zip')
@@ -3015,6 +3171,22 @@ def open_project():
                         response_data['apple_profile_info']['expiration_date'] = profile_info['expiration_date'].isoformat()
             except Exception:
                 pass  # Profile info extraction is optional
+
+        # Copy Google Play service account key to uploads if exists
+        play_key_path = os.path.join(assets_dir, 'google_play_key.json')
+        if os.path.exists(play_key_path):
+            new_play_key_name = f"play_key_{uuid.uuid4().hex}.json"
+            new_play_key_path = os.path.join(app.config['UPLOAD_FOLDER'], new_play_key_name)
+            shutil.copy(play_key_path, new_play_key_path)
+            response_data['play_service_account_path'] = new_play_key_path
+
+        # Copy App Store Connect key to uploads if exists
+        app_store_key_path = os.path.join(assets_dir, 'app_store_key.p8')
+        if os.path.exists(app_store_key_path):
+            new_asc_name = f"asc_key_{uuid.uuid4().hex}.p8"
+            new_asc_path = os.path.join(app.config['UPLOAD_FOLDER'], new_asc_name)
+            shutil.copy(app_store_key_path, new_asc_path)
+            response_data['app_store_key_path'] = new_asc_path
 
         return jsonify({'success': True, 'project': response_data})
 
@@ -3230,7 +3402,7 @@ def update_project(project_id):
 
             update_data = {'updatedAt': firestore.SERVER_TIMESTAMP}
             allowed_fields = ['name', 'webUrl', 'description', 'appVersion', 'buildNumber',
-                              'packageName', 'iconUrl', 'settings', 'keystoreData', 'appleData',
+                              'packageName', 'iconUrl', 'settings', 'keystoreData', 'appleData', 'publishingData',
                               'iconStoragePath', 'keystoreStoragePath', 'appleCertStoragePath', 'appleProfileStoragePath']
             for field in allowed_fields:
                 if field in data:

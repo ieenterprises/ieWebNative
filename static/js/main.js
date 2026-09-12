@@ -33,6 +33,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentAppleProfileInfo = null;
     let isAppleSigningAvailable = false;
 
+    // Store Publishing paths
+    let currentPlayKeyPath = null;
+    let currentAppStoreKeyPath = null;
+
     // Center progress elements
     const centerProgress = document.getElementById('center-progress');
     const centerProgressFill = document.getElementById('center-progress-fill');
@@ -413,6 +417,23 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // Add Store Publishing configuration
+        const enableGooglePlay = document.getElementById('enable-google-play-publish')?.checked || false;
+        if (enableGooglePlay) {
+            formData.enable_google_play_publish = true;
+            formData.play_service_account_path = currentPlayKeyPath;
+            formData.play_track = document.getElementById('play-track')?.value || 'internal';
+            formData.play_status = document.getElementById('play-status')?.value || 'draft';
+        }
+
+        const enableAppStore = document.getElementById('enable-app-store-publish')?.checked || false;
+        if (enableAppStore) {
+            formData.enable_app_store_publish = true;
+            formData.app_store_key_path = currentAppStoreKeyPath;
+            formData.app_store_key_id = (document.getElementById('app-store-key-id')?.value || '').trim();
+            formData.app_store_issuer_id = (document.getElementById('app-store-issuer-id')?.value || '').trim();
+        }
+
         // Disable button and show progress
         buildButton.disabled = true;
         buildProgress.style.display = 'block';
@@ -564,6 +585,42 @@ document.addEventListener('DOMContentLoaded', function() {
                     `;
                     exportLink.title = 'Download complete source code with GitHub Actions';
                     downloadLinks.appendChild(exportLink);
+
+                    // Add Google Play Console link if published
+                    if (status.google_play_published || document.getElementById('enable-google-play-publish')?.checked) {
+                        const playConsoleBtn = document.createElement('a');
+                        playConsoleBtn.href = 'https://play.google.com/console';
+                        playConsoleBtn.target = '_blank';
+                        playConsoleBtn.rel = 'noopener noreferrer';
+                        playConsoleBtn.className = 'download-btn';
+                        playConsoleBtn.style.background = 'linear-gradient(135deg, #01875f, #005c41)';
+                        playConsoleBtn.style.color = '#ffffff';
+                        playConsoleBtn.innerHTML = `
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M3.609 1.814L13.792 12 3.61 22.186a1.996 1.996 0 01-.61-.926V2.74c0-.348.094-.67.252-.951l.357.025zM14.852 13.06l2.808 2.808-11.888 6.793 9.08-9.601zm0-2.12L5.772 1.34 17.66 8.132l-2.808 2.808zm1.06 1.06l3.548 2.028a1.5 1.5 0 000-2.608l-3.548-2.028 1.572 1.572-1.572 1.036z"/>
+                            </svg>
+                            Open Google Play Console
+                        `;
+                        downloadLinks.appendChild(playConsoleBtn);
+                    }
+
+                    // Add App Store Connect link if published
+                    if (status.app_store_published || document.getElementById('enable-app-store-publish')?.checked) {
+                        const ascBtn = document.createElement('a');
+                        ascBtn.href = 'https://appstoreconnect.apple.com/apps';
+                        ascBtn.target = '_blank';
+                        ascBtn.rel = 'noopener noreferrer';
+                        ascBtn.className = 'download-btn';
+                        ascBtn.style.background = 'linear-gradient(135deg, #1d1d1f, #000000)';
+                        ascBtn.style.color = '#ffffff';
+                        ascBtn.innerHTML = `
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 0.92-2.85-.92.04-2.02.62-2.66 1.37-.56.65-.96 1.69-.83 2.7.99.08 2.03-.54 2.57-1.22z"/>
+                            </svg>
+                            Open App Store Connect
+                        `;
+                        downloadLinks.appendChild(ascBtn);
+                    }
                 }
 
                 showToast('Build completed successfully!', 'success');
@@ -984,6 +1041,220 @@ document.addEventListener('DOMContentLoaded', function() {
         }, false);
     }
 
+    // ==================== STORE PUBLISHING HANDLERS ====================
+
+    const enableGooglePlayCb = document.getElementById('enable-google-play-publish');
+    const googlePlayDetails = document.getElementById('google-play-details');
+    const playServiceAccountFile = document.getElementById('play-service-account-file');
+    const playKeyUploadLabel = document.getElementById('play-key-upload-label');
+    const playKeyUpload = document.getElementById('play-key-upload');
+
+    const enableAppStoreCb = document.getElementById('enable-app-store-publish');
+    const appStoreDetails = document.getElementById('app-store-details');
+    const appStoreKeyFile = document.getElementById('app-store-key-file');
+    const appStoreKeyUploadLabel = document.getElementById('app-store-key-upload-label');
+    const appStoreKeyUpload = document.getElementById('app-store-key-upload');
+
+    if (enableGooglePlayCb) {
+        enableGooglePlayCb.addEventListener('change', function() {
+            if (googlePlayDetails) {
+                googlePlayDetails.style.display = this.checked ? 'block' : 'none';
+            }
+        });
+    }
+
+    if (enableAppStoreCb) {
+        enableAppStoreCb.addEventListener('change', function() {
+            if (appStoreDetails) {
+                appStoreDetails.style.display = this.checked ? 'block' : 'none';
+            }
+        });
+    }
+
+    if (playServiceAccountFile) {
+        playServiceAccountFile.addEventListener('change', async function() {
+            if (!this.files || this.files.length === 0) return;
+            const file = this.files[0];
+            const formData = new FormData();
+            formData.append('play_key', file);
+
+            try {
+                if (playKeyUploadLabel) {
+                    playKeyUploadLabel.innerHTML = `<span>Uploading Google Play Key...</span>`;
+                }
+                const res = await fetch('/api/upload/play-key', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+                currentPlayKeyPath = data.path;
+                if (playKeyUploadLabel) {
+                    playKeyUploadLabel.innerHTML = `
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <span>${file.name}</span>
+                        <small class="hint">${data.client_email ? data.client_email : 'Service Account Verified'}</small>
+                    `;
+                    playKeyUploadLabel.style.borderColor = 'var(--success)';
+                    playKeyUploadLabel.style.background = 'var(--success-bg)';
+                }
+                showToast('Google Play Service Account JSON verified!', 'success');
+            } catch (err) {
+                console.error('Play key upload error:', err);
+                currentPlayKeyPath = null;
+                if (playKeyUploadLabel) {
+                    playKeyUploadLabel.innerHTML = `
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                        </svg>
+                        <span>Upload Failed</span>
+                        <small class="hint">Click to try again</small>
+                    `;
+                    playKeyUploadLabel.style.borderColor = 'var(--error)';
+                    playKeyUploadLabel.style.background = 'var(--error-bg)';
+                }
+                showToast(err.message, 'error');
+            }
+        });
+    }
+
+    if (appStoreKeyFile) {
+        appStoreKeyFile.addEventListener('change', async function() {
+            if (!this.files || this.files.length === 0) return;
+            const file = this.files[0];
+            const formData = new FormData();
+            formData.append('app_store_key', file);
+
+            try {
+                if (appStoreKeyUploadLabel) {
+                    appStoreKeyUploadLabel.innerHTML = `<span>Uploading App Store API Key...</span>`;
+                }
+                const res = await fetch('/api/upload/app-store-key', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+                currentAppStoreKeyPath = data.path;
+
+                // Auto-fill Key ID from filename if named AuthKey_XXXXXXXXXX.p8
+                const match = file.name.match(/AuthKey_([A-Za-z0-9]{10})\.p8/i);
+                if (match && match[1]) {
+                    const keyIdInput = document.getElementById('app-store-key-id');
+                    if (keyIdInput && !keyIdInput.value) {
+                        keyIdInput.value = match[1];
+                    }
+                }
+
+                if (appStoreKeyUploadLabel) {
+                    appStoreKeyUploadLabel.innerHTML = `
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <span>${file.name}</span>
+                        <small class="hint">API Key Loaded</small>
+                    `;
+                    appStoreKeyUploadLabel.style.borderColor = 'var(--success)';
+                    appStoreKeyUploadLabel.style.background = 'var(--success-bg)';
+                }
+                showToast('App Store Connect API Key (.p8) verified!', 'success');
+            } catch (err) {
+                console.error('App Store key upload error:', err);
+                currentAppStoreKeyPath = null;
+                if (appStoreKeyUploadLabel) {
+                    appStoreKeyUploadLabel.innerHTML = `
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                        </svg>
+                        <span>Upload Failed</span>
+                        <small class="hint">Click to try again</small>
+                    `;
+                    appStoreKeyUploadLabel.style.borderColor = 'var(--error)';
+                    appStoreKeyUploadLabel.style.background = 'var(--error-bg)';
+                }
+                showToast(err.message, 'error');
+            }
+        });
+    }
+
+    // Drag and drop for Google Play Key
+    if (playKeyUpload) {
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            playKeyUpload.addEventListener(eventName, preventDefaults, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            playKeyUpload.addEventListener(eventName, () => {
+                if (playKeyUploadLabel) {
+                    playKeyUploadLabel.style.borderColor = 'var(--primary)';
+                    playKeyUploadLabel.style.background = 'var(--primary-glow)';
+                }
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            playKeyUpload.addEventListener(eventName, () => {
+                if (!playServiceAccountFile.files || playServiceAccountFile.files.length === 0) {
+                    if (playKeyUploadLabel) {
+                        playKeyUploadLabel.style.borderColor = '';
+                        playKeyUploadLabel.style.background = '';
+                    }
+                }
+            }, false);
+        });
+
+        playKeyUpload.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0 && playServiceAccountFile) {
+                playServiceAccountFile.files = files;
+                playServiceAccountFile.dispatchEvent(new Event('change'));
+            }
+        }, false);
+    }
+
+    // Drag and drop for App Store Key
+    if (appStoreKeyUpload) {
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            appStoreKeyUpload.addEventListener(eventName, preventDefaults, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            appStoreKeyUpload.addEventListener(eventName, () => {
+                if (appStoreKeyUploadLabel) {
+                    appStoreKeyUploadLabel.style.borderColor = 'var(--primary)';
+                    appStoreKeyUploadLabel.style.background = 'var(--primary-glow)';
+                }
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            appStoreKeyUpload.addEventListener(eventName, () => {
+                if (!appStoreKeyFile.files || appStoreKeyFile.files.length === 0) {
+                    if (appStoreKeyUploadLabel) {
+                        appStoreKeyUploadLabel.style.borderColor = '';
+                        appStoreKeyUploadLabel.style.background = '';
+                    }
+                }
+            }, false);
+        });
+
+        appStoreKeyUpload.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0 && appStoreKeyFile) {
+                appStoreKeyFile.files = files;
+                appStoreKeyFile.dispatchEvent(new Event('change'));
+            }
+        }, false);
+    }
+
     // ==================== Project Save/Open ====================
 
     // Save project button handler
@@ -1079,11 +1350,20 @@ document.addEventListener('DOMContentLoaded', function() {
             // Apple signing info
             apple_certificate_password: document.getElementById('apple-certificate-password').value,
             team_id: document.getElementById('team-id').value,
+            // Store Publishing info
+            enable_google_play_publish: document.getElementById('enable-google-play-publish')?.checked || false,
+            play_track: document.getElementById('play-track')?.value || 'internal',
+            play_status: document.getElementById('play-status')?.value || 'draft',
+            enable_app_store_publish: document.getElementById('enable-app-store-publish')?.checked || false,
+            app_store_key_id: (document.getElementById('app-store-key-id')?.value || '').trim(),
+            app_store_issuer_id: (document.getElementById('app-store-issuer-id')?.value || '').trim(),
             // Asset paths
             icon_path: currentIconPath,
             keystore_path: currentKeystorePath,
             apple_certificate_path: currentAppleCertificatePath,
-            apple_provisioning_profile_path: currentAppleProfilePath
+            apple_provisioning_profile_path: currentAppleProfilePath,
+            play_service_account_path: currentPlayKeyPath,
+            app_store_key_path: currentAppStoreKeyPath
         };
 
         try {
@@ -1340,6 +1620,67 @@ document.addEventListener('DOMContentLoaded', function() {
             // Handle Team ID
             if (project.team_id) {
                 document.getElementById('team-id').value = project.team_id;
+            }
+
+            // Handle Store Publishing configuration
+            if (project.enable_google_play_publish) {
+                const playCb = document.getElementById('enable-google-play-publish');
+                if (playCb) playCb.checked = true;
+                const playDetails = document.getElementById('google-play-details');
+                if (playDetails) playDetails.style.display = 'block';
+            }
+            if (project.play_track) {
+                const playTrackEl = document.getElementById('play-track');
+                if (playTrackEl) playTrackEl.value = project.play_track;
+            }
+            if (project.play_status) {
+                const playStatusEl = document.getElementById('play-status');
+                if (playStatusEl) playStatusEl.value = project.play_status;
+            }
+            if (project.play_service_account_path) {
+                currentPlayKeyPath = project.play_service_account_path;
+                if (playKeyUploadLabel) {
+                    playKeyUploadLabel.innerHTML = `
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <span>Google Play Key Loaded</span>
+                        <small class="hint">Click to change file</small>
+                    `;
+                    playKeyUploadLabel.style.borderColor = 'var(--success)';
+                    playKeyUploadLabel.style.background = 'var(--success-bg)';
+                }
+            }
+
+            if (project.enable_app_store_publish) {
+                const ascCb = document.getElementById('enable-app-store-publish');
+                if (ascCb) ascCb.checked = true;
+                const ascDetails = document.getElementById('app-store-details');
+                if (ascDetails) ascDetails.style.display = 'block';
+            }
+            if (project.app_store_key_id) {
+                const keyIdEl = document.getElementById('app-store-key-id');
+                if (keyIdEl) keyIdEl.value = project.app_store_key_id;
+            }
+            if (project.app_store_issuer_id) {
+                const issuerIdEl = document.getElementById('app-store-issuer-id');
+                if (issuerIdEl) issuerIdEl.value = project.app_store_issuer_id;
+            }
+            if (project.app_store_key_path) {
+                currentAppStoreKeyPath = project.app_store_key_path;
+                if (appStoreKeyUploadLabel) {
+                    appStoreKeyUploadLabel.innerHTML = `
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <span>App Store API Key Loaded</span>
+                        <small class="hint">Click to change file</small>
+                    `;
+                    appStoreKeyUploadLabel.style.borderColor = 'var(--success)';
+                    appStoreKeyUploadLabel.style.background = 'var(--success-bg)';
+                }
             }
 
             // Reset build UI

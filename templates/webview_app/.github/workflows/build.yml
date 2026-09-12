@@ -87,6 +87,35 @@ jobs:
           path: build/dist/app-release.aab
           retention-days: 14
 
+      - name: Prepare Google Play Publishing Config
+        if: hashFiles('store_publishing/google_play_key.json') != '' && hashFiles('build/dist/app-release.aab') != ''
+        id: play_prep
+        run: |
+          echo "Store publishing key detected. Reading Google Play settings..."
+          PLAY_TRACK="internal"
+          PLAY_STATUS="draft"
+          PLAY_PACKAGE=""
+          if [ -f "store_publishing/play_config.json" ]; then
+            PLAY_TRACK=$(python3 -c 'import json; c=json.load(open("store_publishing/play_config.json")); print(c.get("track") or "internal")' 2>/dev/null || echo "internal")
+            PLAY_STATUS=$(python3 -c 'import json; c=json.load(open("store_publishing/play_config.json")); print(c.get("status") or "draft")' 2>/dev/null || echo "draft")
+            PLAY_PACKAGE=$(python3 -c 'import json; c=json.load(open("store_publishing/play_config.json")); print(c.get("package_name") or "")' 2>/dev/null || echo "")
+          fi
+          echo "track=${PLAY_TRACK}" >> $GITHUB_ENV
+          echo "status=${PLAY_STATUS}" >> $GITHUB_ENV
+          echo "package=${PLAY_PACKAGE}" >> $GITHUB_ENV
+          echo "Google Play publish target -> Track: ${PLAY_TRACK}, Status: ${PLAY_STATUS}, Package: ${PLAY_PACKAGE}"
+
+      - name: Upload App Bundle to Google Play Console
+        if: hashFiles('store_publishing/google_play_key.json') != '' && hashFiles('build/dist/app-release.aab') != ''
+        uses: r0adkll/upload-google-play@v1
+        continue-on-error: true
+        with:
+          serviceAccountJson: store_publishing/google_play_key.json
+          packageName: ${{ env.package }}
+          releaseFiles: build/dist/app-release.aab
+          track: ${{ env.track }}
+          status: ${{ env.status }}
+
       - name: Create GitHub Release with Android Package
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/heads/build-') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
@@ -482,6 +511,31 @@ jobs:
           name: ios-xcode-project
           path: build/dist/xcode-project.zip
           retention-days: 14
+
+      - name: Publish to Apple App Store Connect / TestFlight
+        if: hashFiles('store_publishing/app_store_key.p8') != '' && hashFiles('store_publishing/app_store_config.json') != '' && hashFiles('build/dist/app-release.ipa') != ''
+        continue-on-error: true
+        run: |
+          echo "App Store Connect API key detected. Reading credentials..."
+          KEY_ID=$(python3 -c 'import json; c=json.load(open("store_publishing/app_store_config.json")); print(c.get("key_id") or "")' 2>/dev/null || echo "")
+          ISSUER_ID=$(python3 -c 'import json; c=json.load(open("store_publishing/app_store_config.json")); print(c.get("issuer_id") or "")' 2>/dev/null || echo "")
+
+          if [ -z "$KEY_ID" ] || [ -z "$ISSUER_ID" ]; then
+            echo "::warning ::Missing App Store Connect Key ID or Issuer ID. Skipping upload."
+            exit 0
+          fi
+
+          echo "Configuring App Store Connect API Key for Key ID: $KEY_ID"
+          mkdir -p ~/.appstoreconnect/private_keys ~/.private_keys
+          cp store_publishing/app_store_key.p8 ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8
+          cp store_publishing/app_store_key.p8 ~/.private_keys/AuthKey_${KEY_ID}.p8
+          chmod 600 ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8
+          chmod 600 ~/.private_keys/AuthKey_${KEY_ID}.p8
+
+          echo "Uploading app-release.ipa to App Store Connect / TestFlight..."
+          xcrun altool --upload-app -f build/dist/app-release.ipa -t ios --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID" --show-progress || {
+            echo "::warning ::xcrun altool upload returned a non-zero exit code. Please review logs or App Store Connect."
+          }
 
       - name: Create GitHub Release with iOS App
         uses: softprops/action-gh-release@v2
