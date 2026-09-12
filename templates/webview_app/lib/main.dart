@@ -7,6 +7,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:share_plus/share_plus.dart' as share_plus;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:local_auth/local_auth.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:crypto/crypto.dart';
 
 WebViewEnvironment? webViewEnvironment;
 
@@ -90,7 +93,7 @@ class WebViewScreen extends StatefulWidget {
   State<WebViewScreen> createState() => _WebViewScreenState();
 }
 
-class _WebViewScreenState extends State<WebViewScreen> {
+class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserver {
   InAppWebViewController? webViewController;
   PullToRefreshController? pullToRefreshController;
   double progress = 0;
@@ -114,10 +117,32 @@ class _WebViewScreenState extends State<WebViewScreen> {
   static const bool ENABLE_MEDIA_AUTOPLAY = false;
   static const bool ENABLE_CAMERA = true;
   static const bool ENABLE_MICROPHONE = true;
+  static const bool ENABLE_SSL_PINNING = false;
+  static const String SSL_PINS = '';
+  static const bool ENABLE_BIOMETRIC_AUTH = false;
+  static const bool ENABLE_APP_LOCK = false;
+  static const String APP_LOCK_PIN = '';
+  static const bool ENABLE_SECURE_STORAGE = false;
+
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  );
+
+  bool _isLocked = ENABLE_BIOMETRIC_AUTH || ENABLE_APP_LOCK;
+  bool _isAuthenticating = false;
+  String _enteredPin = '';
+  String _pinErrorMessage = '';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (_isLocked && ENABLE_BIOMETRIC_AUTH) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _authenticateWithBiometrics();
+      });
+    }
     var rawUrl = url.trim();
     if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
       rawUrl = 'https://$rawUrl';
@@ -141,6 +166,93 @@ class _WebViewScreenState extends State<WebViewScreen> {
             },
           )
         : null;
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if ((ENABLE_BIOMETRIC_AUTH || ENABLE_APP_LOCK) && !_isAuthenticating) {
+        setState(() {
+          _isLocked = true;
+          _enteredPin = '';
+          _pinErrorMessage = '';
+        });
+        if (ENABLE_BIOMETRIC_AUTH) {
+          _authenticateWithBiometrics();
+        }
+      }
+    }
+  }
+
+  Future<void> _authenticateWithBiometrics() async {
+    if (_isAuthenticating) return;
+    _isAuthenticating = true;
+    try {
+      final auth = LocalAuthentication();
+      final canCheck = await auth.canCheckBiometrics;
+      final isSupported = await auth.isDeviceSupported();
+      if (canCheck || isSupported) {
+        final didAuth = await auth.authenticate(
+          localizedReason: 'Authenticate to access {{APP_NAME}}',
+          options: const AuthenticationOptions(
+            biometricOnly: false,
+            stickyAuth: true,
+          ),
+        );
+        if (didAuth && mounted) {
+          setState(() {
+            _isLocked = false;
+            _enteredPin = '';
+            _pinErrorMessage = '';
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Biometric auth error: $e');
+    } finally {
+      _isAuthenticating = false;
+    }
+  }
+
+  void _onDigitPressed(String digit) {
+    final targetPin = APP_LOCK_PIN.trim();
+    final maxLen = targetPin.isNotEmpty ? targetPin.length : 6;
+    if (_enteredPin.length >= maxLen) return;
+
+    setState(() {
+      _enteredPin += digit;
+      _pinErrorMessage = '';
+    });
+
+    if (targetPin.isNotEmpty && _enteredPin.length == targetPin.length) {
+      if (_enteredPin == targetPin) {
+        setState(() {
+          _isLocked = false;
+          _enteredPin = '';
+          _pinErrorMessage = '';
+        });
+      } else {
+        setState(() {
+          _pinErrorMessage = 'Incorrect PIN. Please try again.';
+          _enteredPin = '';
+        });
+      }
+    }
+  }
+
+  void _onDeletePressed() {
+    if (_enteredPin.isNotEmpty) {
+      setState(() {
+        _enteredPin = _enteredPin.substring(0, _enteredPin.length - 1);
+        _pinErrorMessage = '';
+      });
+    }
   }
 
   Future<void> _checkConnectivity() async {
@@ -179,9 +291,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !canGoBack,
+      canPop: !_isLocked && !canGoBack,
       onPopInvokedWithResult: (didPop, result) async {
-        if (!didPop && canGoBack) {
+        if (!didPop && canGoBack && !_isLocked) {
           webViewController?.goBack();
         }
       },
@@ -281,11 +393,34 @@ class _WebViewScreenState extends State<WebViewScreen> {
                       resources: request.resources,
                       action: PermissionResponseAction.DENY,
                     );
+                  onReceivedServerTrustAuthRequest: (controller, challenge) async {
+                    if (ENABLE_SSL_PINNING && SSL_PINS.isNotEmpty) {
+                      try {
+                        final certBytes = challenge.protectionSpace.sslCertificate?.x509Certificate?.encoded;
+                        if (certBytes != null && certBytes.isNotEmpty) {
+                          final certHash = sha256.convert(certBytes).toString().toLowerCase();
+                          final rawPins = SSL_PINS
+                              .split(',')
+                              .map((p) => p.replaceAll(':', '').replaceAll(' ', '').trim().toLowerCase())
+                              .where((p) => p.isNotEmpty)
+                              .toList();
+                          if (rawPins.contains(certHash)) {
+                            return ServerTrustAuthResponse(action: ServerTrustAuthResponseAction.PROCEED);
+                          }
+                        }
+                        debugPrint('SSL Pinning failed: Certificate fingerprint mismatch');
+                        return ServerTrustAuthResponse(action: ServerTrustAuthResponseAction.CANCEL);
+                      } catch (e) {
+                        debugPrint('SSL Pinning verification error: $e');
+                        return ServerTrustAuthResponse(action: ServerTrustAuthResponseAction.CANCEL);
+                      }
+                    }
+                    return ServerTrustAuthResponse(action: ServerTrustAuthResponseAction.PROCEED);
                   },
                   onWebViewCreated: (controller) {
                     webViewController = controller;
 
-                    /// ===== Clipboard JS Bridge (ADDED) =====
+                    /// ===== Clipboard JS Bridge =====
                     controller.addJavaScriptHandler(
                       handlerName: 'clipboard',
                       callback: (args) async {
@@ -305,7 +440,41 @@ class _WebViewScreenState extends State<WebViewScreen> {
                         return null;
                       },
                     );
-                    /// ======================================
+
+                    /// ===== Secure Storage JS Bridge =====
+                    if (ENABLE_SECURE_STORAGE) {
+                      controller.addJavaScriptHandler(
+                        handlerName: 'secureStorage',
+                        callback: (args) async {
+                          try {
+                            if (args.isEmpty) return null;
+                            final action = args[0] as String;
+                            if (action == 'setItem' && args.length >= 3) {
+                              await _secureStorage.write(
+                                key: args[1] as String,
+                                value: args[2] as String,
+                              );
+                              return true;
+                            } else if (action == 'getItem' && args.length >= 2) {
+                              return await _secureStorage.read(
+                                key: args[1] as String,
+                              );
+                            } else if (action == 'removeItem' && args.length >= 2) {
+                              await _secureStorage.delete(
+                                key: args[1] as String,
+                              );
+                              return true;
+                            } else if (action == 'clear') {
+                              await _secureStorage.deleteAll();
+                              return true;
+                            }
+                          } catch (e) {
+                            debugPrint('SecureStorage JS Bridge error: $e');
+                          }
+                          return null;
+                        },
+                      );
+                    }
                   },
                   onLoadStart: (controller, url) {
                     setState(() {
@@ -317,6 +486,28 @@ class _WebViewScreenState extends State<WebViewScreen> {
                     setState(() {
                       isLoading = false;
                     });
+                    if (ENABLE_SECURE_STORAGE) {
+                      await controller.evaluateJavascript(
+                        source: '''
+                          if (!window.NativeSecureStorage) {
+                            window.NativeSecureStorage = {
+                              setItem: function(key, val) {
+                                return window.flutter_inappwebview.callHandler('secureStorage', 'setItem', key, String(val));
+                              },
+                              getItem: function(key) {
+                                return window.flutter_inappwebview.callHandler('secureStorage', 'getItem', key);
+                              },
+                              removeItem: function(key) {
+                                return window.flutter_inappwebview.callHandler('secureStorage', 'removeItem', key);
+                              },
+                              clear: function() {
+                                return window.flutter_inappwebview.callHandler('secureStorage', 'clear');
+                              }
+                            };
+                          }
+                        ''',
+                      );
+                    }
                     await _updateNavigationState();
                   },
                   onProgressChanged: (controller, progress) {
@@ -360,7 +551,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
                         }
                       },
                 ),
-              if (isLoading && !isOffline)
+              if (isLoading && !isOffline && !_isLocked)
                 Positioned(
                   top: 0,
                   left: 0,
@@ -373,10 +564,12 @@ class _WebViewScreenState extends State<WebViewScreen> {
                     ),
                   ),
                 ),
+              if (_isLocked)
+                _buildLockScreen(),
             ],
           ),
         ),
-        bottomNavigationBar: !SHOW_NAVIGATION_BAR || isOffline
+        bottomNavigationBar: !SHOW_NAVIGATION_BAR || isOffline || _isLocked
             ? null
             : Container(
                 decoration: BoxDecoration(
@@ -518,6 +711,191 @@ class _WebViewScreenState extends State<WebViewScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildLockScreen() {
+    final theme = Theme.of(context);
+    final targetPin = APP_LOCK_PIN.trim();
+    final pinLength = targetPin.isNotEmpty ? targetPin.length : 4;
+
+    return Container(
+      color: theme.scaffoldBackgroundColor,
+      width: double.infinity,
+      height: double.infinity,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.lock_rounded,
+                  size: 38,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Security Lock',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                ENABLE_APP_LOCK
+                    ? 'Enter your passcode to unlock'
+                    : 'Biometric authentication required',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.textTheme.bodyMedium?.color?.withOpacity(0.65),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              if (ENABLE_APP_LOCK) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(pinLength, (index) {
+                    final isFilled = index < _enteredPin.length;
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isFilled
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.primary.withOpacity(0.18),
+                        border: Border.all(
+                          color: theme.colorScheme.primary,
+                          width: 1.5,
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 16),
+                if (_pinErrorMessage.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      _pinErrorMessage,
+                      style: const TextStyle(
+                        color: Colors.redAccent,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: 280,
+                  child: Column(
+                    children: [
+                      for (int row = 0; row < 3; row++)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              for (int col = 1; col <= 3; col++)
+                                _buildKeypadButton('${row * 3 + col}'),
+                            ],
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            ENABLE_BIOMETRIC_AUTH
+                                ? _buildIconButton(
+                                    Icons.fingerprint_rounded,
+                                    _authenticateWithBiometrics,
+                                  )
+                                : const SizedBox(width: 68, height: 68),
+                            _buildKeypadButton('0'),
+                            _buildIconButton(
+                              Icons.backspace_outlined,
+                              _onDeletePressed,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (ENABLE_BIOMETRIC_AUTH) ...[
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _authenticateWithBiometrics,
+                  icon: const Icon(Icons.fingerprint_rounded),
+                  label: const Text('Unlock with Biometrics'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKeypadButton(String digit) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      width: 68,
+      height: 68,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          shape: const CircleBorder(),
+          padding: EdgeInsets.zero,
+          side: BorderSide(
+            color: theme.dividerColor.withOpacity(0.4),
+            width: 1,
+          ),
+          backgroundColor: theme.colorScheme.surface,
+        ),
+        onPressed: () => _onDigitPressed(digit),
+        child: Text(
+          digit,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIconButton(IconData icon, VoidCallback onPressed) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      width: 68,
+      height: 68,
+      child: IconButton(
+        iconSize: 28,
+        color: theme.colorScheme.primary,
+        icon: Icon(icon),
+        onPressed: onPressed,
       ),
     );
   }

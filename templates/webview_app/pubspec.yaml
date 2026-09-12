@@ -1,4 +1,4 @@
-﻿name: webview_app
+name: webview_app
 description: "A Flutter WebView application"
 publish_to: 'none'
 version: 1.0.0+1
@@ -17,6 +17,9 @@ dependencies:
   connectivity_plus: ^6.1.0
   permission_handler: ^11.3.1
   share_plus: ^10.1.2
+  local_auth: ^2.3.0
+  flutter_secure_storage: ^9.2.2
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:

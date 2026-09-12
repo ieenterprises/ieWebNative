@@ -336,6 +336,12 @@
                     <input type="checkbox" id="enable-media-autoplay" name="enable_media_autoplay">
                     <input type="checkbox" id="enable-camera" name="enable_camera" checked>
                     <input type="checkbox" id="enable-microphone" name="enable_microphone" checked>
+                    <input type="checkbox" id="enable-ssl-pinning" name="enable_ssl_pinning">
+                    <input type="hidden" id="ssl-pins" name="ssl_pins" value="">
+                    <input type="checkbox" id="enable-biometrics" name="enable_biometrics">
+                    <input type="checkbox" id="enable-app-lock" name="enable_app_lock">
+                    <input type="hidden" id="app-lock-pin" name="app_lock_pin" value="">
+                    <input type="checkbox" id="enable-secure-storage" name="enable_secure_storage" checked>
                 </div>
             </form>
 
@@ -507,6 +513,62 @@
                             <span class="checkbox-hint">Allow microphone access for audio and voice recording</span>
                         </div>
                     </label>
+
+                    <!-- Security & Authentication Section -->
+                    <div style="grid-column: 1 / -1; margin-top: 14px; margin-bottom: 6px; border-top: 1px solid var(--border); padding-top: 14px;">
+                        <h4 style="color: var(--text-primary); font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 6px 0;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0110 0v4"/>
+                            </svg>
+                            Security & Authentication
+                        </h4>
+                        <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Enterprise-grade security features for your compiled native app.</p>
+                    </div>
+
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="setting-enable-ssl-pinning">
+                        <div class="checkbox-content">
+                            <span class="checkbox-label">SSL Certificate Pinning</span>
+                            <span class="checkbox-hint">Pin SHA-256 fingerprints to defend against MITM attacks</span>
+                        </div>
+                    </label>
+
+                    <div id="ssl-pinning-group" style="grid-column: 1 / -1; display: none; padding: 12px; background: rgba(2, 164, 203, 0.05); border: 1px solid rgba(2, 164, 203, 0.2); border-radius: 8px;">
+                        <label for="setting-ssl-pins" style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px; color: var(--text-primary);">SHA-256 Certificate Fingerprint(s)</label>
+                        <input type="text" id="setting-ssl-pins" placeholder="e.g. 2b:89:9b:... or A1B2C3... (comma-separated)" style="width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; font-family: monospace; background: var(--input-bg, #ffffff); color: var(--text-primary);">
+                        <span style="font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block;">Connections will only be established if the server certificate matches one of these fingerprints.</span>
+                    </div>
+
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="setting-enable-biometrics">
+                        <div class="checkbox-content">
+                            <span class="checkbox-label">Biometric Authentication</span>
+                            <span class="checkbox-hint">Require Face ID / Touch ID / Fingerprint on launch & resume</span>
+                        </div>
+                    </label>
+
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="setting-enable-app-lock">
+                        <div class="checkbox-content">
+                            <span class="checkbox-label">App Passcode / PIN Lock</span>
+                            <span class="checkbox-hint">Require numeric passcode screen to unlock the application</span>
+                        </div>
+                    </label>
+
+                    <div id="app-lock-group" style="grid-column: 1 / -1; display: none; padding: 12px; background: rgba(2, 164, 203, 0.05); border: 1px solid rgba(2, 164, 203, 0.2); border-radius: 8px;">
+                        <label for="setting-app-lock-pin" style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px; color: var(--text-primary);">4-6 Digit Security PIN</label>
+                        <input type="password" id="setting-app-lock-pin" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="Enter 4-6 digits" style="width: 160px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); font-size: 15px; letter-spacing: 4px; background: var(--input-bg, #ffffff); color: var(--text-primary);">
+                        <span style="font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block;">Users must enter this PIN (or use biometrics if enabled) to unlock the app.</span>
+                    </div>
+
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="setting-enable-secure-storage" checked>
+                        <div class="checkbox-content">
+                            <span class="checkbox-label">Hardware Secure Storage</span>
+                            <span class="checkbox-hint">Enable hardware-backed keystore/keychain for sensitive data</span>
+                        </div>
+                    </label>
                 </div>
             </div>
             <div class="dialog-footer">
@@ -590,9 +652,14 @@
                 document.getElementById('show-navigation').checked = settings.showNavigation !== false;
                 document.getElementById('enable-file-access').checked = settings.enableFileAccess !== false;
                 document.getElementById('enable-cache').checked = settings.enableCache !== false;
-                document.getElementById('enable-media-autoplay').checked = settings.enableMediaAutoplay === true;
                 document.getElementById('enable-camera').checked = settings.enableCamera !== false;
                 document.getElementById('enable-microphone').checked = settings.enableMicrophone !== false;
+                document.getElementById('enable-ssl-pinning').checked = settings.enableSslPinning === true;
+                document.getElementById('ssl-pins').value = settings.sslPins || '';
+                document.getElementById('enable-biometrics').checked = settings.enableBiometrics === true;
+                document.getElementById('enable-app-lock').checked = settings.enableAppLock === true;
+                document.getElementById('app-lock-pin').value = settings.appLockPin || '';
+                document.getElementById('enable-secure-storage').checked = settings.enableSecureStorage !== false;
 
                 // Sync settings checkboxes
                 syncSettingsFromHidden();
@@ -724,7 +791,11 @@
                 'enable-cache': 'setting-enable-cache',
                 'enable-media-autoplay': 'setting-enable-media-autoplay',
                 'enable-camera': 'setting-enable-camera',
-                'enable-microphone': 'setting-enable-microphone'
+                'enable-microphone': 'setting-enable-microphone',
+                'enable-ssl-pinning': 'setting-enable-ssl-pinning',
+                'enable-biometrics': 'setting-enable-biometrics',
+                'enable-app-lock': 'setting-enable-app-lock',
+                'enable-secure-storage': 'setting-enable-secure-storage'
             };
 
             for (const [hiddenId, settingId] of Object.entries(mappings)) {
@@ -733,6 +804,30 @@
                 if (hidden && setting) {
                     setting.checked = hidden.checked;
                 }
+            }
+
+            const sslPinsHidden = document.getElementById('ssl-pins');
+            const sslPinsSetting = document.getElementById('setting-ssl-pins');
+            if (sslPinsHidden && sslPinsSetting) {
+                sslPinsSetting.value = sslPinsHidden.value;
+            }
+
+            const appLockPinHidden = document.getElementById('app-lock-pin');
+            const appLockPinSetting = document.getElementById('setting-app-lock-pin');
+            if (appLockPinHidden && appLockPinSetting) {
+                appLockPinSetting.value = appLockPinHidden.value;
+            }
+
+            const sslGroup = document.getElementById('ssl-pinning-group');
+            const sslCheck = document.getElementById('setting-enable-ssl-pinning');
+            if (sslGroup && sslCheck) {
+                sslGroup.style.display = sslCheck.checked ? 'block' : 'none';
+            }
+
+            const appLockGroup = document.getElementById('app-lock-group');
+            const appLockCheck = document.getElementById('setting-enable-app-lock');
+            if (appLockGroup && appLockCheck) {
+                appLockGroup.style.display = appLockCheck.checked ? 'block' : 'none';
             }
         }
 
@@ -813,7 +908,13 @@
                         enableCache: document.getElementById('enable-cache').checked,
                         enableMediaAutoplay: document.getElementById('enable-media-autoplay').checked,
                         enableCamera: document.getElementById('enable-camera').checked,
-                        enableMicrophone: document.getElementById('enable-microphone').checked
+                        enableMicrophone: document.getElementById('enable-microphone').checked,
+                        enableSslPinning: document.getElementById('enable-ssl-pinning').checked,
+                        sslPins: document.getElementById('ssl-pins').value,
+                        enableBiometrics: document.getElementById('enable-biometrics').checked,
+                        enableAppLock: document.getElementById('enable-app-lock').checked,
+                        appLockPin: document.getElementById('app-lock-pin').value,
+                        enableSecureStorage: document.getElementById('enable-secure-storage').checked
                     }
                 };
 

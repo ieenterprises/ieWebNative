@@ -1326,6 +1326,38 @@ def run_build(build_id, config):
             f'static const bool ENABLE_MICROPHONE = {bool_to_dart(config.get("enable_microphone", True))};',
             content
         )
+        content = re.sub(
+            r'static const bool ENABLE_SSL_PINNING = \w+;',
+            f'static const bool ENABLE_SSL_PINNING = {bool_to_dart(config.get("enable_ssl_pinning", False))};',
+            content
+        )
+        ssl_pins_str = str(config.get("ssl_pins", "")).replace("'", "\\'")
+        content = re.sub(
+            r'static const String SSL_PINS = [^;]+;',
+            f"static const String SSL_PINS = '{ssl_pins_str}';",
+            content
+        )
+        content = re.sub(
+            r'static const bool ENABLE_BIOMETRIC_AUTH = \w+;',
+            f'static const bool ENABLE_BIOMETRIC_AUTH = {bool_to_dart(config.get("enable_biometric_auth", config.get("enable_biometrics", False)))};',
+            content
+        )
+        content = re.sub(
+            r'static const bool ENABLE_APP_LOCK = \w+;',
+            f'static const bool ENABLE_APP_LOCK = {bool_to_dart(config.get("enable_app_lock", False))};',
+            content
+        )
+        app_lock_pin_str = str(config.get("app_lock_pin", "")).replace("'", "\\'")
+        content = re.sub(
+            r'static const String APP_LOCK_PIN = [^;]+;',
+            f"static const String APP_LOCK_PIN = '{app_lock_pin_str}';",
+            content
+        )
+        content = re.sub(
+            r'static const bool ENABLE_SECURE_STORAGE = \w+;',
+            f'static const bool ENABLE_SECURE_STORAGE = {bool_to_dart(config.get("enable_secure_storage", True))};',
+            content
+        )
 
         with open(main_dart_path, 'w') as f:
             f.write(content)
@@ -1623,6 +1655,9 @@ def update_android_config(project_dir, config):
             content = re.sub(r'\s*<uses-permission android:name="android\.permission\.RECORD_AUDIO"\s*/>', '', content)
             content = re.sub(r'\s*<uses-permission android:name="android\.permission\.MODIFY_AUDIO_SETTINGS"\s*/>', '', content)
             content = re.sub(r'\s*<uses-feature android:name="android\.hardware\.microphone"\s*android:required="false"\s*/>', '', content)
+        if not config.get('enable_biometric_auth', config.get('enable_biometrics', False)):
+            content = re.sub(r'\s*<uses-permission android:name="android\.permission\.USE_BIOMETRIC"\s*/>', '', content)
+            content = re.sub(r'\s*<uses-permission android:name="android\.permission\.USE_FINGERPRINT"\s*/>', '', content)
 
         with open(manifest_path, 'w') as f:
             f.write(content)
@@ -1633,6 +1668,8 @@ def update_ios_config(project_dir, config):
     if os.path.exists(info_plist_path):
         with open(info_plist_path, 'r') as f:
             content = f.read()
+
+        content = content.replace('{{APP_NAME}}', config['app_name'])
 
         # Update bundle display name
         content = re.sub(
@@ -1650,6 +1687,8 @@ def update_ios_config(project_dir, config):
             content = re.sub(r'\s*<key>NSCameraUsageDescription</key>\s*<string>[^<]*</string>', '', content)
         if not config.get('enable_microphone', True):
             content = re.sub(r'\s*<key>NSMicrophoneUsageDescription</key>\s*<string>[^<]*</string>', '', content)
+        if not config.get('enable_biometric_auth', config.get('enable_biometrics', False)):
+            content = re.sub(r'\s*<key>NSFaceIDUsageDescription</key>\s*<string>[^<]*</string>', '', content)
 
         with open(info_plist_path, 'w') as f:
             f.write(content)
@@ -2387,6 +2426,12 @@ def start_build():
             'enable_media_autoplay': data.get('enable_media_autoplay', False),
             'enable_camera': data.get('enable_camera', data.get('enable_camera_access', True)),
             'enable_microphone': data.get('enable_microphone', True),
+            'enable_ssl_pinning': data.get('enable_ssl_pinning', False),
+            'ssl_pins': data.get('ssl_pins', ''),
+            'enable_biometric_auth': data.get('enable_biometric_auth', data.get('enable_biometrics', False)),
+            'enable_app_lock': data.get('enable_app_lock', False),
+            'app_lock_pin': data.get('app_lock_pin', ''),
+            'enable_secure_storage': data.get('enable_secure_storage', True),
 
             'enable_camera_access': data.get('enable_camera_access', True),
             'enable_gallery_access': data.get('enable_gallery_access', True),
@@ -2435,7 +2480,13 @@ def start_build():
                     'enableCache': data.get('enable_cache', True),
                     'enableMediaAutoplay': data.get('enable_media_autoplay', False),
                     'enableCamera': data.get('enable_camera', True),
-                    'enableMicrophone': data.get('enable_microphone', True)
+                    'enableMicrophone': data.get('enable_microphone', True),
+                    'enableSslPinning': data.get('enable_ssl_pinning', False),
+                    'sslPins': data.get('ssl_pins', ''),
+                    'enableBiometrics': data.get('enable_biometric_auth', data.get('enable_biometrics', False)),
+                    'enableAppLock': data.get('enable_app_lock', False),
+                    'appLockPin': data.get('app_lock_pin', ''),
+                    'enableSecureStorage': data.get('enable_secure_storage', True)
                 })
 
                 conn = get_db_connection()
@@ -2777,6 +2828,12 @@ def save_project():
             'enable_media_autoplay': data.get('enable_media_autoplay', False),
             'enable_camera': data.get('enable_camera', True),
             'enable_microphone': data.get('enable_microphone', True),
+            'enable_ssl_pinning': data.get('enable_ssl_pinning', False),
+            'ssl_pins': data.get('ssl_pins', ''),
+            'enable_biometrics': data.get('enable_biometrics', False),
+            'enable_app_lock': data.get('enable_app_lock', False),
+            'app_lock_pin': data.get('app_lock_pin', ''),
+            'enable_secure_storage': data.get('enable_secure_storage', True),
             # Keystore info (credentials only, file stored separately)
             'keystore_password': data.get('keystore_password', ''),
             'key_alias': data.get('key_alias', ''),
@@ -3050,7 +3107,13 @@ def create_project():
             'enableCache': True,
             'enableMediaAutoplay': False,
             'enableCamera': True,
-            'enableMicrophone': True
+            'enableMicrophone': True,
+            'enableSslPinning': False,
+            'sslPins': '',
+            'enableBiometrics': False,
+            'enableAppLock': False,
+            'appLockPin': '',
+            'enableSecureStorage': True
         })
         settings_json = json.dumps(settings_data)
         keystore_json = json.dumps(data.get('keystoreData', {}))

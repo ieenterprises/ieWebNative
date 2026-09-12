@@ -49,5 +49,7 @@
 	<string>This app requires camera access to capture photos, scan codes, and stream video.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app requires microphone access to record audio and voice messages.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Authenticate with Face ID or Touch ID to securely unlock {{APP_NAME}}.</string>
 </dict>
 </plist>

@@ -63,8 +63,29 @@ document.addEventListener('DOMContentLoaded', function() {
         'enable-cache': 'setting-enable-cache',
         'enable-media-autoplay': 'setting-enable-media-autoplay',
         'enable-camera': 'setting-enable-camera',
-        'enable-microphone': 'setting-enable-microphone'
+        'enable-microphone': 'setting-enable-microphone',
+        'enable-ssl-pinning': 'setting-enable-ssl-pinning',
+        'enable-biometrics': 'setting-enable-biometrics',
+        'enable-app-lock': 'setting-enable-app-lock',
+        'enable-secure-storage': 'setting-enable-secure-storage'
     };
+
+    // Dynamic visibility for security configuration groups
+    const settingSslPinning = document.getElementById('setting-enable-ssl-pinning');
+    const sslPinningGroup = document.getElementById('ssl-pinning-group');
+    if (settingSslPinning && sslPinningGroup) {
+        settingSslPinning.addEventListener('change', function() {
+            sslPinningGroup.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+
+    const settingAppLock = document.getElementById('setting-enable-app-lock');
+    const appLockGroup = document.getElementById('app-lock-group');
+    if (settingAppLock && appLockGroup) {
+        settingAppLock.addEventListener('change', function() {
+            appLockGroup.style.display = this.checked ? 'block' : 'none';
+        });
+    }
 
     // Settings dialog handlers
     settingsBtn.addEventListener('click', openSettingsDialog);
@@ -86,6 +107,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 dialogCheckbox.checked = formCheckbox.checked;
             }
         }
+        // Sync text inputs
+        const sslPinsHidden = document.getElementById('ssl-pins');
+        const sslPinsSetting = document.getElementById('setting-ssl-pins');
+        if (sslPinsHidden && sslPinsSetting) {
+            sslPinsSetting.value = sslPinsHidden.value;
+        }
+        const appLockPinHidden = document.getElementById('app-lock-pin');
+        const appLockPinSetting = document.getElementById('setting-app-lock-pin');
+        if (appLockPinHidden && appLockPinSetting) {
+            appLockPinSetting.value = appLockPinHidden.value;
+        }
+        if (sslPinningGroup && settingSslPinning) {
+            sslPinningGroup.style.display = settingSslPinning.checked ? 'block' : 'none';
+        }
+        if (appLockGroup && settingAppLock) {
+            appLockGroup.style.display = settingAppLock.checked ? 'block' : 'none';
+        }
+
         settingsOverlay.style.display = 'flex';
         document.body.style.overflow = 'hidden';
     }
@@ -104,6 +143,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 formCheckbox.checked = dialogCheckbox.checked;
             }
         }
+        // Sync text inputs
+        const sslPinsHidden = document.getElementById('ssl-pins');
+        const sslPinsSetting = document.getElementById('setting-ssl-pins');
+        if (sslPinsHidden && sslPinsSetting) {
+            sslPinsHidden.value = sslPinsSetting.value;
+        }
+        const appLockPinHidden = document.getElementById('app-lock-pin');
+        const appLockPinSetting = document.getElementById('setting-app-lock-pin');
+        if (appLockPinHidden && appLockPinSetting) {
+            appLockPinHidden.value = appLockPinSetting.value;
+        }
+
         closeSettingsDialog();
         showToast('Settings saved', 'success');
     }
@@ -286,7 +337,13 @@ document.addEventListener('DOMContentLoaded', function() {
             enable_cache: document.getElementById('enable-cache').checked,
             enable_media_autoplay: document.getElementById('enable-media-autoplay').checked,
             enable_camera: document.getElementById('enable-camera').checked,
-            enable_microphone: document.getElementById('enable-microphone').checked
+            enable_microphone: document.getElementById('enable-microphone').checked,
+            enable_ssl_pinning: document.getElementById('enable-ssl-pinning').checked,
+            ssl_pins: document.getElementById('ssl-pins').value,
+            enable_biometric_auth: document.getElementById('enable-biometrics').checked,
+            enable_app_lock: document.getElementById('enable-app-lock').checked,
+            app_lock_pin: document.getElementById('app-lock-pin').value,
+            enable_secure_storage: document.getElementById('enable-secure-storage').checked
         };
 
         // Check if Android platform and handle keystore
@@ -1009,6 +1066,12 @@ document.addEventListener('DOMContentLoaded', function() {
             enable_media_autoplay: document.getElementById('enable-media-autoplay').checked,
             enable_camera: document.getElementById('enable-camera').checked,
             enable_microphone: document.getElementById('enable-microphone').checked,
+            enable_ssl_pinning: document.getElementById('enable-ssl-pinning').checked,
+            ssl_pins: document.getElementById('ssl-pins').value,
+            enable_biometrics: document.getElementById('enable-biometrics').checked,
+            enable_app_lock: document.getElementById('enable-app-lock').checked,
+            app_lock_pin: document.getElementById('app-lock-pin').value,
+            enable_secure_storage: document.getElementById('enable-secure-storage').checked,
             // Keystore info
             keystore_password: document.getElementById('keystore-password').value,
             key_alias: document.getElementById('key-alias').value,
@@ -1142,6 +1205,12 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('enable-media-autoplay').checked = project.enable_media_autoplay === true;
             document.getElementById('enable-camera').checked = project.enable_camera !== false;
             document.getElementById('enable-microphone').checked = project.enable_microphone !== false;
+            document.getElementById('enable-ssl-pinning').checked = project.enable_ssl_pinning === true;
+            document.getElementById('ssl-pins').value = project.ssl_pins || '';
+            document.getElementById('enable-biometrics').checked = project.enable_biometrics === true;
+            document.getElementById('enable-app-lock').checked = project.enable_app_lock === true;
+            document.getElementById('app-lock-pin').value = project.app_lock_pin || '';
+            document.getElementById('enable-secure-storage').checked = project.enable_secure_storage !== false;
 
             // Sync settings dialog checkboxes
             document.getElementById('setting-allow-zoom').checked = project.allow_zoom !== false;
@@ -1155,6 +1224,17 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('setting-enable-media-autoplay').checked = project.enable_media_autoplay === true;
             document.getElementById('setting-enable-camera').checked = project.enable_camera !== false;
             document.getElementById('setting-enable-microphone').checked = project.enable_microphone !== false;
+            document.getElementById('setting-enable-ssl-pinning').checked = project.enable_ssl_pinning === true;
+            document.getElementById('setting-ssl-pins').value = project.ssl_pins || '';
+            document.getElementById('setting-enable-biometrics').checked = project.enable_biometrics === true;
+            document.getElementById('setting-enable-app-lock').checked = project.enable_app_lock === true;
+            document.getElementById('setting-app-lock-pin').value = project.app_lock_pin || '';
+            document.getElementById('setting-enable-secure-storage').checked = project.enable_secure_storage !== false;
+
+            const openedSslGrp = document.getElementById('ssl-pinning-group');
+            if (openedSslGrp) openedSslGrp.style.display = project.enable_ssl_pinning ? 'block' : 'none';
+            const openedLockGrp = document.getElementById('app-lock-group');
+            if (openedLockGrp) openedLockGrp.style.display = project.enable_app_lock ? 'block' : 'none';
 
             // Keystore info
             if (project.keystore_password) {
