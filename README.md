@@ -41,7 +41,7 @@ https://github.com/user-attachments/assets/7bbd267e-6391-4d23-b0f1-55d98281cf0a
 
 ## Screenshots
 
-![SWAB Interface](./assets/screenshots/screenshot-1.png)
+![ieWebNative Interface](./assets/screenshots/screenshot-1.png)
 
 ## Features
 
@@ -59,7 +59,7 @@ https://github.com/user-attachments/assets/7bbd267e-6391-4d23-b0f1-55d98281cf0a
 
 - [ ] Add iOS code signing support
 - [ ] Implement user authentication for build management
-- [ ] Deploy a hosted version of SWAB
+- [ ] Deploy a hosted version of ieWebNative
 - [ ] Add support for push notifications (Firebase/APNs)
 
 ### App Customization
@@ -146,7 +146,7 @@ https://github.com/user-attachments/assets/7bbd267e-6391-4d23-b0f1-55d98281cf0a
 
 ## Prerequisites
 
-Before using SWAB, ensure you have the following installed:
+Before using ieWebNative, ensure you have the following installed:
 
 - **Python 3.8+**
 - **Flutter SDK** (with platform-specific toolchains configured)
@@ -163,8 +163,8 @@ Before using SWAB, ensure you have the following installed:
 1.Clone the repository:
 
 ```bash
-git clone https://github.com/user/swab.git
-cd swab
+git clone https://github.com/user/ieWebNative.git
+cd ieWebNative
 ```
 
 2.Create and activate a virtual environment:
@@ -234,7 +234,7 @@ The web interface will be available at `http://localhost:5000`.
 ## Project Structure
 
 ```txt
-swab/
+ieWebNative/
 ├── app.py                 # Flask application and build logic
 ├── requirements.txt       # Python dependencies
 ├── templates/
@@ -323,8 +323,8 @@ Contributions are welcome! You can contribute to this project by forking it and 
 After forking:
 
 ```bash
-git clone https://github.com/<your-username>/swab.git
-cd swab
+git clone https://github.com/<your-username>/ieWebNative.git
+cd ieWebNative
 git checkout -b <your-branch-name>
 # after adding your changes
 git add .
