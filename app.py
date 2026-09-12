@@ -1442,6 +1442,11 @@ def run_build(build_id, config):
         )
 
         # Error / Offline Page Configuration
+        content = re.sub(
+            r'static const bool ENABLE_ERROR_PAGE = \w+;',
+            f'static const bool ENABLE_ERROR_PAGE = {bool_to_dart(config.get("enable_error_page", True))};',
+            content
+        )
         error_title_str = str(config.get("error_title", "No Internet Connection")).replace("'", "\\'")
         content = re.sub(
             r'static const String ERROR_TITLE = [^;]+;',
@@ -2443,6 +2448,25 @@ def builder_page():
     return render_template('index.html', user=user, firebase_config=get_firebase_config())
 
 
+@app.route('/docs/store-publishing')
+def docs_store_publishing():
+    """Store publishing step-by-step documentation guide for novices"""
+    user = None
+    if 'user_id' in session:
+        user = {
+            'id': session['user_id'],
+            'name': session.get('user_name'),
+            'email': session.get('user_email')
+        }
+    return render_template('docs_store_publishing.html', user=user)
+
+
+@app.route('/docs')
+def docs_index():
+    """Redirect /docs to the store publishing guide"""
+    return redirect(url_for('docs_store_publishing'))
+
+
 @app.route('/uploads/<filename>')
 def serve_upload(filename):
     """Serve uploaded files (icons, etc.) securely"""
@@ -2616,6 +2640,7 @@ def start_build():
             'splash_image_path': data.get('splash_image_path'),
 
             'error_title': data.get('error_title', 'No Internet Connection'),
+            'enable_error_page': data.get('enable_error_page', True),
             'error_message': data.get('error_message', 'Please check your connection and try again'),
             'error_button_text': data.get('error_button_text', 'Retry'),
             'error_bg_color': data.get('error_bg_color', '#FFFFFF'),
@@ -2667,6 +2692,7 @@ def start_build():
                     'splashTextColor': data.get('splash_text_color', '#1E293B'),
                     'splashDuration': data.get('splash_duration', 2),
                     'splashImagePath': data.get('splash_image_path', ''),
+                    'enableErrorPage': data.get('enable_error_page', True),
                     'errorTitle': data.get('error_title', 'No Internet Connection'),
                     'errorMessage': data.get('error_message', 'Please check your connection and try again'),
                     'errorButtonText': data.get('error_button_text', 'Retry'),
@@ -3149,6 +3175,7 @@ def save_project():
             'splash_text_color': data.get('splash_text_color', '#1E293B'),
             'splash_duration': data.get('splash_duration', 2),
             # Error / offline page settings
+            'enable_error_page': data.get('enable_error_page', True),
             'error_title': data.get('error_title', 'No Internet Connection'),
             'error_message': data.get('error_message', 'Please check your connection and try again'),
             'error_button_text': data.get('error_button_text', 'Retry'),

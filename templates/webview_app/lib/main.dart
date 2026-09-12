@@ -134,6 +134,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   static const bool HAS_CUSTOM_SPLASH_IMAGE = false;
 
   // Error / Offline Page Configuration
+  static const bool ENABLE_ERROR_PAGE = true;
   static const String ERROR_TITLE = 'No Internet Connection';
   static const String ERROR_MESSAGE = 'Please check your connection and try again';
   static const String ERROR_BUTTON_TEXT = 'Retry';
@@ -596,7 +597,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                     ),
                   ),
                 ),
-              if (isOffline && !isWebView2Missing)
+              if (isOffline && !isWebView2Missing && ENABLE_ERROR_PAGE)
                 Positioned.fill(child: _buildOfflineWidget()),
               if (_showSplash)
                 Positioned.fill(child: _buildSplashScreen()),
@@ -605,7 +606,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
             ],
           ),
         ),
-        bottomNavigationBar: !SHOW_NAVIGATION_BAR || isOffline || _isLocked || _showSplash
+        bottomNavigationBar: !SHOW_NAVIGATION_BAR || (isOffline && ENABLE_ERROR_PAGE) || _isLocked || _showSplash
             ? null
             : Container(
                 decoration: BoxDecoration(

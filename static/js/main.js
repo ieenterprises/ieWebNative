@@ -68,6 +68,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const errorImageUploadLabel = document.getElementById('error-image-upload-label');
     const enableSplashScreen = document.getElementById('enable-splash-screen');
     const splashScreenDetails = document.getElementById('splash-screen-details');
+    const enableErrorPage = document.getElementById('enable-error-page');
+    const errorPageDetails = document.getElementById('error-page-details');
 
     // Mapping between hidden form checkboxes and settings dialog checkboxes
     const settingsMapping = {
@@ -253,6 +255,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (enableSplashScreen && splashScreenDetails) {
         enableSplashScreen.addEventListener('change', function() {
             splashScreenDetails.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+
+    // Handle error page toggle
+    if (enableErrorPage && errorPageDetails) {
+        enableErrorPage.addEventListener('change', function() {
+            errorPageDetails.style.display = this.checked ? 'block' : 'none';
         });
     }
 
@@ -519,6 +528,7 @@ document.addEventListener('DOMContentLoaded', function() {
         formData.splash_text_color = document.getElementById('splash-text-color')?.value || '#1E293B';
         formData.splash_duration = parseInt(document.getElementById('splash-duration')?.value || '2', 10);
 
+        formData.enable_error_page = document.getElementById('enable-error-page')?.checked ?? true;
         formData.error_title = document.getElementById('error-title')?.value || 'No Internet Connection';
         formData.error_message = document.getElementById('error-message')?.value || 'Please check your connection and try again';
         formData.error_button_text = document.getElementById('error-button-text')?.value || 'Retry';
@@ -1551,6 +1561,7 @@ document.addEventListener('DOMContentLoaded', function() {
             splash_bg_color: document.getElementById('splash-bg-color')?.value || '#FFFFFF',
             splash_text_color: document.getElementById('splash-text-color')?.value || '#1E293B',
             splash_duration: parseInt(document.getElementById('splash-duration')?.value || '2', 10),
+            enable_error_page: document.getElementById('enable-error-page')?.checked ?? true,
             error_title: document.getElementById('error-title')?.value || 'No Internet Connection',
             error_message: document.getElementById('error-message')?.value || 'Please check your connection and try again',
             error_button_text: document.getElementById('error-button-text')?.value || 'Retry',
@@ -1935,6 +1946,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // Handle Error Page settings
+            if (project.enable_error_page !== undefined) {
+                const errorCb = document.getElementById('enable-error-page');
+                if (errorCb) {
+                    errorCb.checked = project.enable_error_page;
+                    if (errorPageDetails) errorPageDetails.style.display = errorCb.checked ? 'block' : 'none';
+                }
+            }
             if (project.error_title) {
                 const el = document.getElementById('error-title');
                 if (el) el.value = project.error_title;

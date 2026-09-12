@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Store Publishing Setup Guide - ieWebNative</title>
+    <link rel="icon" type="image/png" href="/static/images/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg-body: #0b0f19;
+            --bg-card: #131b2e;
+            --bg-card-alt: #1a243d;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --text-faint: #64748b;
+            --primary: #02a4cb;
+            --primary-hover: #03c0ec;
+            --primary-glow: rgba(2, 164, 203, 0.25);
+            --border: #233252;
+            --border-highlight: #334b77;
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.2);
+            --warning: #f59e0b;
+            --warning-glow: rgba(245, 158, 11, 0.2);
+            --danger: #ef4444;
+            --accent-apple: #a855f7;
+            --accent-google: #3b82f6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            line-height: 1.65;
+            min-height: 100vh;
+        }
+
+        /* Top Navbar */
+        .navbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(11, 15, 25, 0.88);
+            backdrop-filter: blur(14px);
+            border-bottom: 1px solid var(--border);
+            padding: 14px 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text-main);
+        }
+
+        .nav-brand img {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+        }
+
+        .nav-brand-title {
+            font-weight: 700;
+            font-size: 18px;
+            letter-spacing: -0.3px;
+        }
+
+        .nav-brand-badge {
+            background: rgba(2, 164, 203, 0.15);
+            color: var(--primary);
+            border: 1px solid rgba(2, 164, 203, 0.3);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 999px;
+            margin-left: 4px;
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .nav-btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+        }
+
+        .nav-btn-secondary:hover {
+            background: var(--bg-card-alt);
+            border-color: var(--border-highlight);
+        }
+
+        .nav-btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, #0284c7 100%);
+            color: #ffffff;
+            border: none;
+            box-shadow: 0 4px 14px var(--primary-glow);
+        }
+
+        .nav-btn-primary:hover {
+            opacity: 0.95;
+            transform: translateY(-1px);
+        }
+
+        /* Layout Container */
+        .layout-container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 40px 24px 80px;
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 40px;
+            align-items: start;
+        }
+
+        /* Sidebar Navigation */
+        .sidebar {
+            position: sticky;
+            top: 90px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+
+        .sidebar-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-faint);
+            font-weight: 700;
+            margin-bottom: 12px;
+            padding-left: 8px;
+        }
+
+        .sidebar-nav {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .sidebar-link {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.15s ease;
+        }
+
+        .sidebar-link:hover {
+            background: rgba(2, 164, 203, 0.1);
+            color: var(--primary-hover);
+        }
+
+        .sidebar-link.active {
+            background: rgba(2, 164, 203, 0.15);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .sidebar-section-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 14px 0 10px;
+        }
+
+        /* Content Area */
+        .content {
+            min-width: 0;
+        }
+
+        .hero-banner {
+            background: linear-gradient(135deg, rgba(2, 164, 203, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%);
+            border: 1px solid rgba(2, 164, 203, 0.3);
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 40px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-banner::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -20%;
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(2, 164, 203, 0.2) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .hero-title {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 12px;
+            color: #ffffff;
+        }
+
+        .hero-subtitle {
+            font-size: 15px;
+            color: var(--text-muted);
+            max-width: 740px;
+            line-height: 1.6;
+        }
+
+        /* Platform Selection Cards */
+        .platform-cards-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .platform-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .platform-card:hover {
+            border-color: var(--border-highlight);
+            transform: translateY(-2px);
+        }
+
+        .platform-card.google {
+            border-top: 3px solid var(--accent-google);
+        }
+
+        .platform-card.apple {
+            border-top: 3px solid var(--accent-apple);
+        }
+
+        .platform-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .platform-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+        }
+
+        .platform-icon.google {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+        }
+
+        .platform-icon.apple {
+            background: rgba(168, 85, 247, 0.15);
+            color: #c084fc;
+        }
+
+        .platform-title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .platform-desc {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            flex: 1;
+        }
+
+        .platform-btn {
+            align-self: flex-start;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--primary);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .platform-btn:hover {
+            color: var(--primary-hover);
+        }
+
+        /* Section Styling */
+        .doc-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 36px;
+            scroll-margin-top: 100px;
+        }
+
+        .section-header-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section-heading {
+            font-size: 22px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-badge {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 999px;
+        }
+
+        .section-badge.google {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .section-badge.apple {
+            background: rgba(168, 85, 247, 0.15);
+            color: #c084fc;
+            border: 1px solid rgba(168, 85, 247, 0.3);
+        }
+
+        /* Steps */
+        .step-item {
+            margin-bottom: 28px;
+            padding-bottom: 28px;
+            border-bottom: 1px dashed var(--border);
+        }
+
+        .step-item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .step-title-wrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .step-badge {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            background: rgba(2, 164, 203, 0.15);
+            color: var(--primary);
+            border: 1px solid rgba(2, 164, 203, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .step-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .step-text {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            padding-left: 40px;
+        }
+
+        .step-text p {
+            margin-bottom: 8px;
+        }
+
+        .step-text ol, .step-text ul {
+            padding-left: 20px;
+            margin-bottom: 12px;
+        }
+
+        .step-text li {
+            margin-bottom: 6px;
+        }
+
+        /* Callouts / Alerts */
+        .callout {
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin: 12px 0 16px 40px;
+            font-size: 13px;
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .callout.important {
+            background: rgba(2, 164, 203, 0.08);
+            border: 1px solid rgba(2, 164, 203, 0.3);
+            color: #bae6fd;
+        }
+
+        .callout.warning {
+            background: rgba(245, 158, 11, 0.08);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #fde68a;
+        }
+
+        .callout.tip {
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #a7f3d0;
+        }
+
+        .callout-icon {
+            font-size: 16px;
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        .callout-content {
+            line-height: 1.5;
+        }
+
+        .callout-content strong {
+            color: #ffffff;
+        }
+
+        /* Code & Key Highlights */
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border);
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #38bdf8;
+        }
+
+        .key-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: #f8fafc;
+            margin: 4px 0;
+        }
+
+        /* External Link */
+        a.external-link {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        a.external-link:hover {
+            text-decoration: underline;
+            color: var(--primary-hover);
+        }
+
+        /* FAQ Accordion */
+        .faq-item {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 12px;
+            background: var(--bg-card-alt);
+            overflow: hidden;
+        }
+
+        .faq-question {
+            padding: 16px 20px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--text-main);
+            user-select: none;
+        }
+
+        .faq-question:hover {
+            color: var(--primary);
+        }
+
+        .faq-answer {
+            padding: 0 20px 16px;
+            font-size: 13.5px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        /* Responsive */
+        @media (max-width: 960px) {
+            .layout-container {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                display: none;
+            }
+            .platform-cards-grid {
+                grid-template-columns: 1fr;
+            }
+            .step-text, .callout {
+                padding-left: 0;
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navigation Header -->
+    <header class="navbar">
+        <a href="/builder" class="nav-brand">
+            <img src="/static/images/logo.png" alt="ieWebNative Logo">
+            <span class="nav-brand-title">ieWebNative</span>
+            <span class="nav-brand-badge">Documentation</span>
+        </a>
+        <div class="nav-actions">
+            <a href="/dashboard" class="nav-btn nav-btn-secondary">
+                <i class="fa-solid fa-table-cells-large"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="/builder" class="nav-btn nav-btn-primary">
+                <i class="fa-solid fa-arrow-left"></i>
+                <span>Back to Builder</span>
+            </a>
+        </div>
+    </header>
+
+    <div class="layout-container">
+        <!-- Sticky Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-title">Getting Started</div>
+            <ul class="sidebar-nav">
+                <li><a href="#overview" class="sidebar-link active"><i class="fa-solid fa-circle-info"></i> How it Works</a></li>
+            </ul>
+
+            <div class="sidebar-section-divider"></div>
+            <div class="sidebar-title">Google Play (Android)</div>
+            <ul class="sidebar-nav">
+                <li><a href="#google-play-guide" class="sidebar-link"><i class="fa-brands fa-google-play"></i> Setup Overview</a></li>
+                <li><a href="#google-step-1" class="sidebar-link"><i class="fa-solid fa-1"></i> Register Account</a></li>
+                <li><a href="#google-step-2" class="sidebar-link"><i class="fa-solid fa-2"></i> Enable Publisher API</a></li>
+                <li><a href="#google-step-3" class="sidebar-link"><i class="fa-solid fa-3"></i> Generate JSON Key</a></li>
+                <li><a href="#google-step-4" class="sidebar-link"><i class="fa-solid fa-4"></i> Grant Permissions</a></li>
+                <li><a href="#google-step-5" class="sidebar-link"><i class="fa-solid fa-5"></i> Publish from Builder</a></li>
+            </ul>
+
+            <div class="sidebar-section-divider"></div>
+            <div class="sidebar-title">App Store Connect (iOS)</div>
+            <ul class="sidebar-nav">
+                <li><a href="#app-store-guide" class="sidebar-link"><i class="fa-brands fa-apple"></i> Setup Overview</a></li>
+                <li><a href="#apple-step-1" class="sidebar-link"><i class="fa-solid fa-1"></i> Developer Account</a></li>
+                <li><a href="#apple-step-2" class="sidebar-link"><i class="fa-solid fa-2"></i> Create App Record</a></li>
+                <li><a href="#apple-step-3" class="sidebar-link"><i class="fa-solid fa-3"></i> Generate .p8 API Key</a></li>
+                <li><a href="#apple-step-4" class="sidebar-link"><i class="fa-solid fa-4"></i> Copy Key & Issuer ID</a></li>
+                <li><a href="#apple-step-5" class="sidebar-link"><i class="fa-solid fa-5"></i> Publish from Builder</a></li>
+            </ul>
+
+            <div class="sidebar-section-divider"></div>
+            <div class="sidebar-title">Support</div>
+            <ul class="sidebar-nav">
+                <li><a href="#troubleshooting" class="sidebar-link"><i class="fa-solid fa-triangle-exclamation"></i> Troubleshooting</a></li>
+            </ul>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="content">
+
+            <!-- Hero Banner -->
+            <div class="hero-banner">
+                <h1 class="hero-title">Store Publishing Setup Guide</h1>
+                <p class="hero-subtitle">
+                    A beginner-friendly, step-by-step walkthrough to configure <strong>Direct Upload</strong> to Google Play Console and Apple App Store Connect directly from your ieWebNative Builder.
+                </p>
+            </div>
+
+            <!-- Platform Quick Jump Cards -->
+            <div class="platform-cards-grid">
+                <div class="platform-card google">
+                    <div class="platform-header">
+                        <div class="platform-icon google">
+                            <i class="fa-brands fa-google-play"></i>
+                        </div>
+                        <div>
+                            <div class="platform-title">Google Play Console</div>
+                            <small style="color: var(--text-faint);">Android Release (.aab)</small>
+                        </div>
+                    </div>
+                    <p class="platform-desc">
+                        Publish your native Android App Bundle directly to Internal Testing, Closed/Open Beta, or Production tracks using a <strong>Google Service Account JSON Key</strong>.
+                    </p>
+                    <a href="#google-play-guide" class="platform-btn">
+                        <span>Setup Android Publishing</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </a>
+                </div>
+
+                <div class="platform-card apple">
+                    <div class="platform-header">
+                        <div class="platform-icon apple">
+                            <i class="fa-brands fa-apple"></i>
+                        </div>
+                        <div>
+                            <div class="platform-title">App Store Connect</div>
+                            <small style="color: var(--text-faint);">iOS / TestFlight (.ipa)</small>
+                        </div>
+                    </div>
+                    <p class="platform-desc">
+                        Deliver your signed iOS <code>.ipa</code> straight to TestFlight beta testers and App Store review using an <strong>App Store Connect API Key (.p8)</strong>.
+                    </p>
+                    <a href="#app-store-guide" class="platform-btn">
+                        <span>Setup iOS Publishing</span>
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Overview Section -->
+            <section class="doc-section" id="overview">
+                <div class="section-header-wrap">
+                    <h2 class="section-heading">
+                        <i class="fa-solid fa-circle-info" style="color: var(--primary);"></i>
+                        <span>How Direct Store Publishing Works</span>
+                    </h2>
+                </div>
+                <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+                    Normally, after building your app, you would have to download large binary files (<code>.aab</code> or <code>.ipa</code>) and manually upload them into the developer consoles.
+                </p>
+                <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">
+                    With <strong>Direct Upload</strong>, the ieWebNative Cloud Builder compiles, signs, packages, and securely communicates with Google's and Apple's developer APIs to deliver your release straight to your store account in one single build step.
+                </p>
+
+                <div class="callout tip">
+                    <div class="callout-icon"><i class="fa-solid fa-lightbulb"></i></div>
+                    <div class="callout-content">
+                        <strong>Security Guarantee:</strong> Your API keys (JSON / .p8) are used strictly in-memory during build execution for authenticating with Google / Apple official APIs and are protected with end-to-end encryption.
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= GOOGLE PLAY CONSOLE GUIDE ================= -->
+            <section class="doc-section" id="google-play-guide">
+                <div class="section-header-wrap">
+                    <h2 class="section-heading">
+                        <i class="fa-brands fa-google-play" style="color: #60a5fa;"></i>
+                        <span>Google Play Console Setup (Android)</span>
+                    </h2>
+                    <span class="section-badge google">Requires Service Account JSON Key</span>
+                </div>
+
+                <!-- Step 1 -->
+                <div class="step-item" id="google-step-1">
+                    <div class="step-title-wrap">
+                        <div class="step-badge">1</div>
+                        <h3 class="step-title">Register & Create an App in Google Play Console</h3>
+                    </div>
+                    <div class="step-text">
+                        <ol>
+                            <li>Visit the <a href="https://play.google.com/console/signup" target="_blank" class="external-link">Google Play Console <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i></a> and sign in with your Google Account.</li>
+                            <li>Complete the developer account registration ($25 USD one-time fee).</li>
+                            <li>In your dashboard, click <strong>Create app</strong>.</li>
+                            <li>Provide your <strong>App name</strong>, select <strong>App</strong>, and choose Free or Paid.</li>
+                            <li><strong style="color: #ffffff;">Important:</strong> Note down your <strong>Package Name</strong> (e.g. <code>com.company.myapp</code>). The package name in the ieWebNative Builder under <em>App Details</em> must match this exactly.</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="step-item" id="google-step-2">
+                    <div class="step-title-wrap">
+                        <div class="step-badge">2</div>
+                        <h3 class="step-title">Enable Google Play Android Developer API</h3>
+                    </div>
+                    <div class="step-text">
+                        <ol>
+                            <li>Open the <a href="https://console.cloud.google.com/" target="_blank" class="external-link">Google Cloud Console <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i></a>.</li>
+                            <li>Select your existing project or create a new project named <code>Play Console Publisher</code>.</li>
+                            <li>In the top search bar, type <strong>Google Play Android Developer API</strong>.</li>
+                            <li>Click the API from the search results and click the blue <strong>Enable</strong> button.</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="step-item" id="google-step-3">
+                    <div class="step-title-wrap">
+                        <div class="step-badge">3</div>
+                        <h3 class="step-title">Create Service Account & Generate JSON Key</h3>
+                    </div>
+                    <div class="step-text">
+                        <ol>
+                            <li>In Google Cloud Console, open the left navigation menu and navigate to <strong>IAM & Admin &rarr; Service Accounts</strong>.</li>
+                            <li>Click <strong>+ CREATE SERVICE ACCOUNT</strong> at the top.</li>
+                            <li>Enter a Service account name (e.g. <code>play-publisher</code>) and click <strong>Create and Continue</strong>.</li>
+                            <li>In the <strong>Role</strong> dropdown, you can select <em>Service Account User</em> (or skip role assignment as permissions will be granted directly inside Play Console). Click <strong>Done</strong>.</li>
+                            <li>In the Service Accounts list, click on the email of the service account you just created.</li>
+                            <li>Navigate to the <strong>Keys</strong> tab at the top.</li>
+                            <li>Click <strong>ADD KEY &rarr; Create new key</strong>.</li>
+                            <li>Ensure <strong>JSON</strong> is selected, then click <strong>Create</strong>.</li>
+                            <li>Your browser will immediately download a file named like <code>project-name-12345.json</code>.</li>
+                        </ol>
+                    </div>
+                    <div class="callout important">
+                        <div class="callout-icon"><i class="fa-solid fa-key"></i></div>
+                        <div class="callout-content">
+                            <strong>This is your Google Service Account JSON Key!</strong> Save this file on your computer. You will upload this exact file in the ieWebNative Builder under <em>Store Publishing &rarr; Google Service Account JSON Key</em>.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4 -->
+                <div class="step-item" id="google-step-4">
+                    <div class="step-title-wrap">
+                        <div class="step-badge">4</div>
+                        <h3 class="step-title">Grant Service Account Permissions in Play Console</h3>
+                    </div>
+                    <div class="step-text">
+                        <ol>
+                            <li>Return to your <a href="https://play.google.com/console" target="_blank" class="external-link">Google Play Console <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i></a>.</li>
+                            <li>In the left sidebar, click <strong>Users and permissions</strong>.</li>
+                            <li>Click <strong>Invite new users</strong>.</li>
+                            <li>Paste the email address of your Service Account (e.g. <code>play-publisher@your-project.iam.gserviceaccount.com</code>).</li>
+                            <li>Under <strong>App permissions</strong>, click <strong>Add app</strong> and select your app.</li>
+                            <li>Check the following permissions:
+                                <ul>
+                                    <li><i class="fa-solid fa-check" style="color: var(--success); font-size: 12px;"></i> <strong>Manage testing tracks (Internal, Closed, Open)</strong></li>
+                                    <li><i class="fa-solid fa-check" style="color: var(--success); font-size: 12px;"></i> <strong>Release apps to testing tracks</strong></li>
+                                    <li><i class="fa-solid fa-check" style="color: var(--success); font-size: 12px;"></i> <strong>Manage production releases</strong> (if deploying directly to production)</li>
+                                </ul>
+                            </li>
+                            <li>Click <strong>Apply</strong>, then click <strong>Invite user</strong> at the bottom.</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Step 5 -->
+                <div class="step-item" id="google-step-5">
+                    <div class="step-title-wrap">
+                        <div class="step-badge">5</div>
+                        <h3 class="step-title">Upload & Publish in ieWebNative Builder</h3>
+                    </div>
+                    <div class="step-text">
+                        <ol>
+                            <li>Open the <a href="/builder" class="external-link">ieWebNative Builder <i class="fa-solid fa-hammer" style="font-size: 10px;"></i></a>.</li>
+                            <li>Set your target platform to <strong>Android</strong> or <strong>Android (AAB)</strong>.</li>
+                            <li>Under <strong>Store Publishing</strong>:
+                                <ul>
+                                    <li>Check <span class="key-badge">Direct Upload to Google Play Console</span></li>
+                                    <li>Click to upload your downloaded <code>.json</code> Service Account key.</li>
+                                    <li>Select your <strong>Release Track</strong> (We recommend <em>Internal Testing</em> for quick testing without review delays).</li>
+                                    <li>Select your <strong>Release Status</strong> (We recommend <em>Draft</em> so you can review rollout in Play Console).</li>
+                                </ul>
+                            </li>
+                            <li>Click <strong>Build App</strong> in the top toolbar. Your release bundle will compile and upload automatically!</li>
+                        </ol>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= APPLE APP STORE CONNECT GUIDE ================= -->
+            <section class="doc-section" id="app-store-guide">
+                <div class="section-header-wrap">
+                    <h2 class="section-heading">
+                        <i class="fa-brands fa-apple" style="color: #c084fc;"></i>
+                        <span>Apple App Store Connect Setup (iOS)</span>
+                    </h2>
+                    <span class="section-badge apple">Requires .p8 API Key, Key ID & Issuer ID</span>
+                </div>
+
+                <!-- Apple Step 1 -->
+                <div class="step-item" id="apple-step-1">
+                    <div class="step-title-wrap">
+                        <div class="step-badge">1</div>
+                        <h3 class="step-title">Enroll in the Apple Developer Program</h3>
+                    </div>
+                    <div class="step-text">
+                        <ol>
+                            <li>Visit <a href="https://developer.apple.com/programs/" target="_blank" class="external-link">Apple Developer Program <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i></a>.</li>
+                            <li>Enroll as an Individual or Organization ($99 USD / year).</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Apple Step 2 -->
+                <div class="step-item" id="apple-step-2">
+                    <div class="step-title-wrap">
+                        <div class="step-badge">2</div>
+                        <h3 class="step-title">Create App Record in App Store Connect</h3>
+                    </div>
+                    <div class="step-text">
+                        <ol>
+                            <li>Go to <a href="https://appstoreconnect.apple.com/apps" target="_blank" class="external-link">App Store Connect &rarr; Apps <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i></a>.</li>
+                            <li>Click the <strong>+</strong> button and choose <strong>New App</strong>.</li>
+                            <li>Select <strong>iOS</strong>, enter your <strong>App Name</strong>, primary language, and choose your <strong>Bundle ID</strong>.</li>
+                            <li>Enter an SKU (internal tracking ID, e.g. <code>app-001</code>), and click <strong>Create</strong>.</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Apple Step 3 -->
+                <div class="step-item" id="apple-step-3">
+                    <div class="step-title-wrap">
+                        <div class="step-badge">3</div>
+                        <h3 class="step-title">Generate App Store Connect API Key (.p8)</h3>
+                    </div>
+                    <div class="step-text">
+                        <ol>
+                            <li>In App Store Connect, click <strong>Users and Access</strong> in the top menu.</li>
+                            <li>Click the <strong>Integrations</strong> tab (or <strong>Keys</strong>).</li>
+                            <li>Under <em>App Store Connect API</em>, click <strong>Generate API Key</strong> (or the <strong>+</strong> icon).</li>
+                            <li>Enter a Key Name (e.g. <code>ieWebNative Publisher</code>).</li>
+                            <li>Set the <strong>Access Role</strong>: Choose <strong>App Manager</strong> or <strong>Developer</strong>.</li>
+                            <li>Click <strong>Generate</strong>.</li>
+                            <li>Your new key will appear in the table. Click <strong>Download API Key</strong>.</li>
+                        </ol>
+                    </div>
+                    <div class="callout warning">
+                        <div class="callout-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div class="callout-content">
+                            <strong>Download Immediately:</strong> Apple only lets you download this <code>.p8</code> file <strong>once</strong>! Store it securely in a safe location.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Apple Step 4 -->
+                <div class="step-item" id="apple-step-4">
+                    <div class="step-title-wrap">
+                        <div class="step-badge">4</div>
+                        <h3 class="step-title">Locate Key ID and Issuer ID</h3>
+                    </div>
+                    <div class="step-text">
+                        <p>You need two additional identifiers displayed on that same page:</p>
+                        <ul>
+                            <li><strong style="color: #ffffff;">Key ID:</strong> A 10-character alphanumeric string (e.g. <span class="key-badge">2X9R427AD2</span>) shown right next to your key in the list.</li>
+                            <li><strong style="color: #ffffff;">Issuer ID:</strong> A UUID (e.g. <span class="key-badge">57246542-96fe-1a63-e053-0824d011072a</span>) displayed at the very top of the Keys page.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apple Step 5 -->
+                <div class="step-item" id="apple-step-5">
+                    <div class="step-title-wrap">
+                        <div class="step-badge">5</div>
+                        <h3 class="step-title">Upload & Publish in ieWebNative Builder</h3>
+                    </div>
+                    <div class="step-text">
+                        <ol>
+                            <li>Select <strong>iOS</strong> as target platform in ieWebNative Builder.</li>
+                            <li>In the <strong>Apple Signing</strong> section, upload your:
+                                <ul>
+                                    <li>Distribution Certificate (<code>.p12</code>) and password</li>
+                                    <li>App Store Provisioning Profile (<code>.mobileprovision</code>)</li>
+                                </ul>
+                            </li>
+                            <li>In the <strong>Store Publishing</strong> section:
+                                <ul>
+                                    <li>Check <span class="key-badge">Direct Upload to App Store Connect / TestFlight</span></li>
+                                    <li>Upload your downloaded <code>AuthKey_XXXXXX.p8</code> file.</li>
+                                    <li>Paste your 10-character <strong>Key ID</strong>.</li>
+                                    <li>Paste your <strong>Issuer ID</strong> UUID.</li>
+                                </ul>
+                            </li>
+                            <li>Click <strong>Build App</strong>. The Cloud Builder signs your <code>.ipa</code> and delivers it directly to App Store Connect / TestFlight!</li>
+                        </ol>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= TROUBLESHOOTING ================= -->
+            <section class="doc-section" id="troubleshooting">
+                <div class="section-header-wrap">
+                    <h2 class="section-heading">
+                        <i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i>
+                        <span>Troubleshooting & FAQs</span>
+                    </h2>
+                </div>
+
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <span>Error 403: The caller does not have permission (Google Play)</span>
+                    </div>
+                    <div class="faq-answer">
+                        This occurs when the Service Account was invited to Play Console, but the invite has not been accepted or permissions were not applied. Make sure you went to <em>Google Play Console &rarr; Users and permissions</em>, added your service account email, and granted <em>"Release apps to testing tracks"</em> for your specific app. Also allow up to 15 minutes for newly created Google Cloud permissions to propagate.
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <span>Apple 401 Unauthorized or Invalid Key ID / Issuer ID</span>
+                    </div>
+                    <div class="faq-answer">
+                        Double-check that the 10-character Key ID and Issuer ID UUID match the exact key downloaded. Also make sure the key role in App Store Connect is set to at least <em>App Manager</em> or <em>Developer</em> so it has permissions to create builds.
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <span>Package Name / Bundle ID mismatch</span>
+                    </div>
+                    <div class="faq-answer">
+                        Both Google Play and Apple App Store require the Package Name (Bundle ID) configured in ieWebNative under <em>App Details</em> to match the exact Bundle ID created in the store console (e.g. <code>com.mycompany.app</code>).
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <span>How soon do builds appear in TestFlight / Google Play?</span>
+                    </div>
+                    <div class="faq-answer">
+                        On Google Play Internal Testing, the build appears instantly (typically 1-3 minutes). On Apple TestFlight, Apple runs automated processing (symbol extraction and virus scan), which takes approximately 5 to 15 minutes before the build becomes ready to install for testers.
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+</body>
+</html>
