@@ -79,12 +79,14 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 64px;
-    min-height: 64px;
-    padding: 0 32px;
-    background: var(--bg-secondary);
+    height: 72px;
+    min-height: 72px;
+    padding: 0 48px;
+    background: rgba(255, 255, 255, 0.95);
     border-bottom: 1px solid var(--border-primary);
     flex-shrink: 0;
+    box-sizing: border-box;
+    width: 100%;
     backdrop-filter: blur(10px);
 }
 
@@ -255,21 +257,21 @@ body {
 .toolbar-right {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding-right: 8px;
+    gap: 14px;
+    flex-shrink: 0;
 }
 
 .toolbar-nav-btn {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    padding: 8px 14px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-primary);
+    gap: 8px;
+    padding: 9px 16px;
+    background: #ffffff;
+    border: 1px solid var(--border-secondary);
     border-radius: var(--radius-md);
     color: var(--text-primary);
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 14px;
+    font-weight: 600;
     text-decoration: none;
     cursor: pointer;
     transition: all var(--transition-fast);
@@ -287,36 +289,11 @@ body {
     background: rgba(239, 68, 68, 0.08);
 }
 
-.toolbar-right .build-button {
-    margin-top: 0;
-    margin-left: 2px;
-    margin-right: 2px;
-    padding: 10px 22px;
-    font-size: 14px;
-    font-weight: 600;
-    border-radius: 12px;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
-    border: 1px solid rgba(2, 164, 203, 0.5);
-    box-shadow: 0 4px 14px rgba(2, 164, 203, 0.35);
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all var(--transition-fast);
-    box-sizing: border-box;
-}
-
-.toolbar-right .build-button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(2, 164, 203, 0.45);
-}
-
 /* ==================== MAIN CONTAINER ==================== */
 .container {
     display: flex;
     flex: 1;
-    width: 100vw;
+    width: 100%;
     min-height: 0;
     overflow: hidden;
 }
@@ -591,47 +568,61 @@ body {
 }
 
 /* ==================== BUILD BUTTON ==================== */
-.build-button {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 14px 24px;
-    background: var(--primary);
-    color: white;
-    border: none;
-    border-radius: var(--radius-md);
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    box-shadow: var(--shadow-md);
-    flex-shrink: 0;
-    margin-top: 16px;
+.build-button,
+.toolbar-right .build-button,
+#build-button {
+    width: auto !important;
+    min-width: unset !important;
+    max-width: fit-content !important;
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    padding: 9px 20px !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    color: #ffffff !important;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%) !important;
+    border: none !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: 0 4px 12px rgba(2, 164, 203, 0.3) !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    transition: all var(--transition-fast) !important;
 }
 
-.build-button:hover {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-lg), var(--shadow-glow);
+.build-button:hover,
+.toolbar-right .build-button:hover,
+#build-button:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 6px 16px rgba(2, 164, 203, 0.45) !important;
+    color: #ffffff !important;
+    background: linear-gradient(135deg, var(--primary-hover) 0%, var(--primary-dark) 100%) !important;
 }
 
-.build-button:active {
-    transform: translateY(0);
-    box-shadow: var(--shadow-sm);
+.build-button:active,
+.toolbar-right .build-button:active,
+#build-button:active {
+    transform: translateY(0) !important;
+    box-shadow: var(--shadow-sm) !important;
 }
 
-.build-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
+.build-button:disabled,
+.toolbar-right .build-button:disabled,
+#build-button:disabled {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+    box-shadow: none !important;
 }
 
 .build-button svg {
-    width: 18px;
-    height: 18px;
+    width: 16px !important;
+    height: 16px !important;
+    flex-shrink: 0 !important;
 }
 
 /* ==================== BUILD PROGRESS ==================== */
