@@ -64,6 +64,15 @@
             </div>
         </div>
         <div class="toolbar-right">
+            <a href="/dashboard" class="toolbar-nav-btn" title="Back to Dashboard">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"/>
+                    <rect x="14" y="3" width="7" height="7"/>
+                    <rect x="14" y="14" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/>
+                </svg>
+                <span>Dashboard</span>
+            </a>
             <button type="button" class="toolbar-icon-btn" id="settings-btn" title="WebView Settings">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="3"/>
@@ -76,6 +85,14 @@
                 </svg>
                 <span>Build App</span>
             </button>
+            <a href="/api/auth/logout" class="toolbar-nav-btn toolbar-logout-btn" title="Sign Out">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                <span>Sign Out</span>
+            </a>
         </div>
     </div>
 
@@ -523,6 +540,9 @@
                 const data = await res.json();
                 if (data.authenticated && data.user) {
                     currentUser = data.user;
+                } else {
+                    window.location.href = '/auth';
+                    return;
                 }
             } catch (e) {
                 console.warn('Auth check error:', e);

@@ -81,7 +81,7 @@ body {
     justify-content: space-between;
     height: 64px;
     min-height: 64px;
-    padding: 0 24px;
+    padding: 0 32px;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-primary);
     flex-shrink: 0;
@@ -255,14 +255,61 @@ body {
 .toolbar-right {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
+    padding-right: 8px;
+}
+
+.toolbar-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.toolbar-nav-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.toolbar-nav-btn.toolbar-logout-btn:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
 }
 
 .toolbar-right .build-button {
     margin-top: 0;
-    padding: 10px 20px;
+    margin-left: 2px;
+    margin-right: 2px;
+    padding: 10px 22px;
     font-size: 14px;
-    border-radius: var(--radius-md);
+    font-weight: 600;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+    border: 1px solid rgba(2, 164, 203, 0.5);
+    box-shadow: 0 4px 14px rgba(2, 164, 203, 0.35);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--transition-fast);
+    box-sizing: border-box;
+}
+
+.toolbar-right .build-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(2, 164, 203, 0.45);
 }
 
 /* ==================== MAIN CONTAINER ==================== */
@@ -1015,6 +1062,15 @@ body {
 
     .toolbar-right {
         order: 2;
+    }
+
+    .toolbar-nav-btn {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
+    .toolbar-nav-btn span {
+        display: none;
     }
 
     .toolbar-center {

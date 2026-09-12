@@ -742,7 +742,12 @@
             <li><a href="#platforms" class="nav-link">Platforms</a></li>
             <li><a href="#features" class="nav-link">Features</a></li>
             <li><a href="#how-it-works" class="nav-link">How It Works</a></li>
-            <li><a href="/builder" class="nav-link">App Builder</a></li>
+            {% if user %}
+                <li><a href="/dashboard" class="nav-link">Dashboard</a></li>
+                <li><a href="/builder" class="nav-link">App Builder</a></li>
+            {% else %}
+                <li><a href="/auth" class="nav-link">Sign In</a></li>
+            {% endif %}
         </ul>
 
         <div class="nav-actions">
@@ -752,6 +757,9 @@
                 </a>
                 <a href="/builder" class="btn-nav-primary">
                     <i class="fa-solid fa-hammer"></i> Open Builder
+                </a>
+                <a href="/api/auth/logout" class="btn-nav-outline" style="border-color: #ef4444; color: #ef4444;" title="Sign Out">
+                    <i class="fa-solid fa-right-from-bracket"></i> Sign Out
                 </a>
             {% else %}
                 <a href="/auth" class="btn-nav-outline">
@@ -780,18 +788,18 @@
 
         <div class="hero-cta-group">
             {% if user %}
-                <a href="/builder" class="btn-hero-primary">
-                    <i class="fa-solid fa-rocket"></i> Launch App Builder
+                <a href="/dashboard" class="btn-hero-primary">
+                    <i class="fa-solid fa-folder-open"></i> Go to Dashboard
                 </a>
-                <a href="/dashboard" class="btn-hero-secondary">
-                    <i class="fa-solid fa-folder-open"></i> View My Projects
+                <a href="/builder" class="btn-hero-secondary">
+                    <i class="fa-solid fa-rocket"></i> Launch App Builder
                 </a>
             {% else %}
                 <a href="/auth?mode=signup" class="btn-hero-primary">
                     <i class="fa-solid fa-user-plus"></i> Create Free Account
                 </a>
-                <a href="/builder" class="btn-hero-secondary">
-                    <i class="fa-solid fa-rocket"></i> Try Builder Directly
+                <a href="/auth" class="btn-hero-secondary">
+                    <i class="fa-solid fa-right-to-bracket"></i> Sign In to Account
                 </a>
             {% endif %}
         </div>
@@ -997,15 +1005,18 @@
             </p>
             <div class="cta-buttons">
                 {% if user %}
-                    <a href="/builder" class="btn-hero-primary" style="background: #ffffff; color: #0f172a;">
-                        <i class="fa-solid fa-rocket" style="color: var(--primary);"></i> Launch App Builder
+                    <a href="/dashboard" class="btn-hero-primary" style="background: #ffffff; color: #0f172a;">
+                        <i class="fa-solid fa-folder-open" style="color: var(--primary);"></i> Go to Dashboard
+                    </a>
+                    <a href="/builder" class="btn-hero-secondary" style="background: rgba(255, 255, 255, 0.12); color: #ffffff; border-color: rgba(255, 255, 255, 0.25);">
+                        <i class="fa-solid fa-rocket"></i> Launch App Builder
                     </a>
                 {% else %}
                     <a href="/auth?mode=signup" class="btn-hero-primary" style="background: #ffffff; color: #0f172a;">
                         <i class="fa-solid fa-user-plus" style="color: var(--primary);"></i> Create Free Account
                     </a>
-                    <a href="/builder" class="btn-hero-secondary" style="background: rgba(255, 255, 255, 0.12); color: #ffffff; border-color: rgba(255, 255, 255, 0.25);">
-                        <i class="fa-solid fa-hammer"></i> Open App Builder
+                    <a href="/auth" class="btn-hero-secondary" style="background: rgba(255, 255, 255, 0.12); color: #ffffff; border-color: rgba(255, 255, 255, 0.25);">
+                        <i class="fa-solid fa-right-to-bracket"></i> Sign In to Account
                     </a>
                 {% endif %}
             </div>

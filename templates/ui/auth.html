@@ -282,7 +282,7 @@
 
         document.getElementById('continue-to-dashboard').addEventListener('click', (e) => {
             e.preventDefault();
-            window.location.href = '/builder';
+            window.location.href = '/dashboard';
         });
 
         function showForm(formName) {
@@ -430,7 +430,7 @@
 
                 showToast('Login successful! Redirecting...', 'success');
                 setTimeout(() => {
-                    window.location.href = result.redirect || '/builder';
+                    window.location.href = result.redirect || '/dashboard';
                 }, 800);
             } catch (error) {
                 showToast(error.message, 'error');
@@ -476,7 +476,7 @@
 
                 showToast('Account created successfully! Redirecting...', 'success');
                 setTimeout(() => {
-                    window.location.href = result.redirect || '/builder';
+                    window.location.href = result.redirect || '/dashboard';
                 }, 800);
             } catch (error) {
                 showToast(error.message, 'error');
@@ -504,7 +504,7 @@
             .then(res => res.json())
             .then(data => {
                 if (data.authenticated) {
-                    window.location.href = '/builder';
+                    window.location.href = '/dashboard';
                 }
             })
             .catch(() => {});

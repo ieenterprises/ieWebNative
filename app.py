@@ -494,6 +494,8 @@ def is_macos():
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates', 'ui'))
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'iewebnative-secret-key-2026-prod-auth-system')
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'uploads')
 app.config['BUILD_FOLDER'] = os.path.join(BASE_DIR, 'builds')
 app.config['FLUTTER_TEMPLATE'] = os.path.join(BASE_DIR, 'templates', 'webview_app')
@@ -2141,8 +2143,8 @@ def api_signup():
         return jsonify({
             'success': True,
             'message': 'Account created successfully!',
-            'user': {'id': user_id, 'name': name, 'email': email},
-            'redirect': '/builder'
+            'user': {'id': user_id, 'uid': user_id, 'name': name, 'email': email},
+            'redirect': '/dashboard'
         })
     except Exception as e:
         logger.exception("Error during signup")
@@ -2175,8 +2177,8 @@ def api_login():
         return jsonify({
             'success': True,
             'message': 'Signed in successfully!',
-            'user': {'id': user['id'], 'name': user['name'], 'email': user['email']},
-            'redirect': '/builder'
+            'user': {'id': user['id'], 'uid': user['id'], 'name': user['name'], 'email': user['email']},
+            'redirect': '/dashboard'
         })
     except Exception as e:
         logger.exception("Error during login")
@@ -2200,6 +2202,7 @@ def api_me():
             'authenticated': True,
             'user': {
                 'id': session['user_id'],
+                'uid': session['user_id'],
                 'name': session.get('user_name', 'User'),
                 'email': session.get('user_email', '')
             }
@@ -2216,6 +2219,7 @@ def index():
     if 'user_id' in session:
         user = {
             'id': session['user_id'],
+            'uid': session['user_id'],
             'name': session.get('user_name'),
             'email': session.get('user_email')
         }
@@ -2226,7 +2230,7 @@ def index():
 def auth_page():
     """Authentication page (login/signup)"""
     if 'user_id' in session:
-        return redirect(url_for('builder_page'))
+        return redirect(url_for('dashboard_page'))
     return render_template('auth.html', firebase_config=get_firebase_config())
 
 
@@ -2237,6 +2241,7 @@ def dashboard_page():
         return redirect(url_for('auth_page'))
     return render_template('dashboard.html', user={
         'id': session['user_id'],
+        'uid': session['user_id'],
         'name': session.get('user_name'),
         'email': session.get('user_email')
     }, firebase_config=get_firebase_config())
@@ -2244,21 +2249,26 @@ def dashboard_page():
 
 @app.route('/builder')
 def builder_page():
-    """Builder page - the main app builder interface"""
-    user = None
-    if 'user_id' in session:
-        user = {
-            'id': session['user_id'],
-            'name': session.get('user_name'),
-            'email': session.get('user_email')
-        }
+    """Builder page - requires authentication"""
+    if 'user_id' not in session:
+        return redirect(url_for('auth_page'))
+    user = {
+        'id': session['user_id'],
+        'uid': session['user_id'],
+        'name': session.get('user_name'),
+        'email': session.get('user_email')
+    }
     return render_template('index.html', user=user, firebase_config=get_firebase_config())
 
 
 @app.route('/uploads/<filename>')
 def serve_upload(filename):
-    """Serve uploaded files (icons, etc.)"""
-    return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    """Serve uploaded files (icons, etc.) securely"""
+    safe_name = secure_filename(filename)
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], safe_name)
+    if not os.path.isfile(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    return send_from_directory(app.config['UPLOAD_FOLDER'], safe_name)
 
 @app.route('/api/build', methods=['POST'])
 def start_build():
@@ -2401,6 +2411,60 @@ def start_build():
             'icon_path': data.get('icon_path'),
             'webhook_url': data.get('webhook_url')
         }
+
+        # Auto-record project in user's dashboard if user is authenticated
+        if 'user_id' in session:
+            try:
+                auth_user_id = session['user_id']
+                app_name = data.get('app_name', 'Untitled App')
+                web_url = data.get('web_url', '')
+                app_desc = data.get('app_description', '')
+                app_ver = data.get('app_version', '1.0.0')
+                build_num = int(data.get('build_number', 1) or 1)
+                pkg_name = data.get('package_name', '')
+                icon_path = data.get('icon_path', '')
+                now_str = datetime.utcnow().isoformat()
+                settings_json = json.dumps({
+                    'allowZoom': data.get('allow_zoom', True),
+                    'enableJavascript': data.get('enable_javascript', True),
+                    'enableDomStorage': data.get('enable_dom_storage', True),
+                    'enableGeolocation': data.get('enable_geolocation', True),
+                    'enablePullRefresh': data.get('enable_pull_refresh', True),
+                    'showNavigation': data.get('show_navigation', True),
+                    'enableFileAccess': data.get('enable_file_access', True),
+                    'enableCache': data.get('enable_cache', True),
+                    'enableMediaAutoplay': data.get('enable_media_autoplay', False),
+                    'enableCamera': data.get('enable_camera', True),
+                    'enableMicrophone': data.get('enable_microphone', True)
+                })
+
+                conn = get_db_connection()
+                existing_proj = conn.execute(
+                    'SELECT id FROM projects WHERE user_id = ? AND (name = ? OR web_url = ?)',
+                    (auth_user_id, app_name, web_url)
+                ).fetchone()
+
+                if existing_proj:
+                    conn.execute('''
+                        UPDATE projects SET
+                            name = ?, web_url = ?, description = ?,
+                            app_version = ?, build_number = ?, package_name = ?,
+                            settings_json = ?, updated_at = ?
+                        WHERE id = ?
+                    ''', (app_name, web_url, app_desc, app_ver, build_num, pkg_name, settings_json, now_str, existing_proj['id']))
+                else:
+                    new_pid = str(uuid.uuid4())
+                    conn.execute('''
+                        INSERT INTO projects (
+                            id, user_id, name, web_url, description,
+                            app_version, build_number, package_name,
+                            icon_url, settings_json, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (new_pid, auth_user_id, app_name, web_url, app_desc, app_ver, build_num, pkg_name, icon_path, settings_json, now_str, now_str))
+                conn.commit()
+                conn.close()
+            except Exception as auto_save_err:
+                logger.warning(f"Project auto-save note: {auto_save_err}")
 
         # Run build
         thread = threading.Thread(target=run_build, args=(build_id, config))
