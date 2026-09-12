@@ -124,6 +124,23 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   static const String APP_LOCK_PIN = '';
   static const bool ENABLE_SECURE_STORAGE = false;
 
+  // Splash Screen Configuration
+  static const bool ENABLE_SPLASH_SCREEN = true;
+  static const String SPLASH_TITLE = '{{APP_NAME}}';
+  static const String SPLASH_SUBTITLE = '';
+  static const String SPLASH_BG_COLOR = '#FFFFFF';
+  static const String SPLASH_TEXT_COLOR = '#1E293B';
+  static const int SPLASH_DURATION_SECONDS = 2;
+  static const bool HAS_CUSTOM_SPLASH_IMAGE = false;
+
+  // Error / Offline Page Configuration
+  static const String ERROR_TITLE = 'No Internet Connection';
+  static const String ERROR_MESSAGE = 'Please check your connection and try again';
+  static const String ERROR_BUTTON_TEXT = 'Retry';
+  static const String ERROR_BG_COLOR = '#FFFFFF';
+  static const String ERROR_TEXT_COLOR = '#334155';
+  static const bool HAS_CUSTOM_ERROR_IMAGE = false;
+
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
@@ -133,11 +150,21 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   bool _isAuthenticating = false;
   String _enteredPin = '';
   String _pinErrorMessage = '';
+  bool _showSplash = ENABLE_SPLASH_SCREEN;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (ENABLE_SPLASH_SCREEN) {
+      Future.delayed(const Duration(seconds: SPLASH_DURATION_SECONDS), () {
+        if (mounted && _showSplash) {
+          setState(() {
+            _showSplash = false;
+          });
+        }
+      });
+    }
     if (_isLocked && ENABLE_BIOMETRIC_AUTH) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _authenticateWithBiometrics();
@@ -303,8 +330,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
             children: [
               if (isWebView2Missing)
                 _buildWebView2MissingWidget()
-              else if (isOffline)
-                _buildOfflineWidget()
               else
                 InAppWebView(
                   webViewEnvironment: webViewEnvironment,
@@ -485,6 +510,8 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                     pullToRefreshController?.endRefreshing();
                     setState(() {
                       isLoading = false;
+                      isOffline = false;
+                      if (_showSplash) _showSplash = false;
                     });
                     if (ENABLE_SECURE_STORAGE) {
                       await controller.evaluateJavascript(
@@ -521,6 +548,11 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                   },
                   onReceivedError: (controller, request, error) {
                     pullToRefreshController?.endRefreshing();
+                    if (request.isForMainFrame ?? true) {
+                      setState(() {
+                        isOffline = true;
+                      });
+                    }
                   },
                   shouldOverrideUrlLoading:
                       (controller, navigationAction) async {
@@ -551,7 +583,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                         }
                       },
                 ),
-              if (isLoading && !isOffline && !_isLocked)
+              if (isLoading && !isOffline && !_isLocked && !_showSplash)
                 Positioned(
                   top: 0,
                   left: 0,
@@ -564,12 +596,16 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                     ),
                   ),
                 ),
+              if (isOffline && !isWebView2Missing)
+                Positioned.fill(child: _buildOfflineWidget()),
+              if (_showSplash)
+                Positioned.fill(child: _buildSplashScreen()),
               if (_isLocked)
                 _buildLockScreen(),
             ],
           ),
         ),
-        bottomNavigationBar: !SHOW_NAVIGATION_BAR || isOffline || _isLocked
+        bottomNavigationBar: !SHOW_NAVIGATION_BAR || isOffline || _isLocked || _showSplash
             ? null
             : Container(
                 decoration: BoxDecoration(
@@ -642,38 +678,184 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     );
   }
 
+  Color _parseHexColor(String hexString, Color defaultColor) {
+    try {
+      String cleanHex = hexString.replaceAll('#', '').trim();
+      if (cleanHex.length == 6) {
+        return Color(int.parse('FF$cleanHex', radix: 16));
+      } else if (cleanHex.length == 8) {
+        return Color(int.parse(cleanHex, radix: 16));
+      }
+      return defaultColor;
+    } catch (e) {
+      return defaultColor;
+    }
+  }
+
+  Widget _buildSplashScreen() {
+    final bgColor = _parseHexColor(SPLASH_BG_COLOR, Colors.white);
+    final textColor = _parseHexColor(SPLASH_TEXT_COLOR, const Color(0xFF1E293B));
+
+    return Container(
+      color: bgColor,
+      width: double.infinity,
+      height: double.infinity,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (HAS_CUSTOM_SPLASH_IMAGE)
+                Image.asset(
+                  'assets/splash.png',
+                  width: 140,
+                  height: 140,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => _buildFallbackSplashIcon(textColor),
+                )
+              else
+                _buildFallbackSplashIcon(textColor),
+              const SizedBox(height: 24),
+              if (SPLASH_TITLE.isNotEmpty)
+                Text(
+                  SPLASH_TITLE,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              if (SPLASH_SUBTITLE.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  SPLASH_SUBTITLE,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: textColor.withOpacity(0.8),
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 36),
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(textColor.withOpacity(0.7)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFallbackSplashIcon(Color color) {
+    return Container(
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        Icons.rocket_launch_rounded,
+        size: 52,
+        color: color,
+      ),
+    );
+  }
+
   Widget _buildOfflineWidget() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.wifi_off, size: 80, color: Colors.grey[400]),
-          const SizedBox(height: 20),
-          Text(
-            'No Internet Connection',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[600],
-            ),
+    final bgColor = _parseHexColor(ERROR_BG_COLOR, Colors.white);
+    final textColor = _parseHexColor(ERROR_TEXT_COLOR, const Color(0xFF334155));
+
+    return Container(
+      color: bgColor,
+      width: double.infinity,
+      height: double.infinity,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (HAS_CUSTOM_ERROR_IMAGE)
+                Image.asset(
+                  'assets/error.png',
+                  width: 140,
+                  height: 140,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => _buildFallbackErrorIcon(textColor),
+                )
+              else
+                _buildFallbackErrorIcon(textColor),
+              const SizedBox(height: 24),
+              Text(
+                ERROR_TITLE.isNotEmpty ? ERROR_TITLE : 'No Internet Connection',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: textColor,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                ERROR_MESSAGE.isNotEmpty ? ERROR_MESSAGE : 'Please check your connection and try again',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 15,
+                  color: textColor.withOpacity(0.75),
+                ),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: textColor,
+                  foregroundColor: bgColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () async {
+                  await _checkConnectivity();
+                  webViewController?.reload();
+                },
+                icon: const Icon(Icons.refresh),
+                label: Text(
+                  ERROR_BUTTON_TEXT.isNotEmpty ? ERROR_BUTTON_TEXT : 'Retry',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            'Please check your connection and try again',
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-          ),
-          const SizedBox(height: 30),
-          ElevatedButton.icon(
-            onPressed: () async {
-              await _checkConnectivity();
-              if (!isOffline) {
-                webViewController?.reload();
-              }
-            },
-            icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
-          ),
-        ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFallbackErrorIcon(Color color) {
+    return Container(
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withOpacity(0.1),
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(
+        Icons.wifi_off_rounded,
+        size: 54,
+        color: Colors.redAccent,
       ),
     );
   }

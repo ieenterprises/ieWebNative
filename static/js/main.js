@@ -37,6 +37,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentPlayKeyPath = null;
     let currentAppStoreKeyPath = null;
 
+    // Splash & Error screen branding paths
+    let currentSplashImagePath = null;
+    let currentErrorImagePath = null;
+
     // Center progress elements
     const centerProgress = document.getElementById('center-progress');
     const centerProgressFill = document.getElementById('center-progress-fill');
@@ -54,6 +58,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const iconFile = document.getElementById('icon-file');
     const iconPreview = document.getElementById('icon-preview');
     const iconUploadLabel = document.getElementById('icon-upload-label');
+
+    // Splash & Error screen elements
+    const splashImageFile = document.getElementById('splash-image-file');
+    const splashImagePreview = document.getElementById('splash-image-preview');
+    const splashImageUploadLabel = document.getElementById('splash-image-upload-label');
+    const errorImageFile = document.getElementById('error-image-file');
+    const errorImagePreview = document.getElementById('error-image-preview');
+    const errorImageUploadLabel = document.getElementById('error-image-upload-label');
+    const enableSplashScreen = document.getElementById('enable-splash-screen');
+    const splashScreenDetails = document.getElementById('splash-screen-details');
 
     // Mapping between hidden form checkboxes and settings dialog checkboxes
     const settingsMapping = {
@@ -235,6 +249,83 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Handle splash screen toggle
+    if (enableSplashScreen && splashScreenDetails) {
+        enableSplashScreen.addEventListener('change', function() {
+            splashScreenDetails.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+
+    // Handle splash image file selection
+    if (splashImageFile && splashImagePreview) {
+        splashImageFile.addEventListener('change', function() {
+            if (this.files && this.files.length > 0) {
+                const file = this.files[0];
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    splashImagePreview.innerHTML = `<img src="${e.target.result}" alt="Splash Image" style="width: 100%; height: 100%; object-fit: contain;">`;
+                    splashImagePreview.classList.add('has-icon');
+                };
+                reader.readAsDataURL(file);
+                if (splashImageUploadLabel) {
+                    splashImageUploadLabel.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <span>Change Splash Image</span>
+                    `;
+                }
+            }
+        });
+    }
+
+    // Handle error image file selection
+    if (errorImageFile && errorImagePreview) {
+        errorImageFile.addEventListener('change', function() {
+            if (this.files && this.files.length > 0) {
+                const file = this.files[0];
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    errorImagePreview.innerHTML = `<img src="${e.target.result}" alt="Error Image" style="width: 100%; height: 100%; object-fit: contain;">`;
+                    errorImagePreview.classList.add('has-icon');
+                };
+                reader.readAsDataURL(file);
+                if (errorImageUploadLabel) {
+                    errorImageUploadLabel.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <span>Change Error Image</span>
+                    `;
+                }
+            }
+        });
+    }
+
+    // Color picker synchronizers
+    function bindColorSync(colorPickerId, hexInputId) {
+        const picker = document.getElementById(colorPickerId);
+        const hex = document.getElementById(hexInputId);
+        if (picker && hex) {
+            picker.addEventListener('input', function() {
+                hex.value = this.value.toUpperCase();
+            });
+            hex.addEventListener('input', function() {
+                let val = this.value.trim();
+                if (!val.startsWith('#')) val = '#' + val;
+                if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                    picker.value = val;
+                }
+            });
+        }
+    }
+    bindColorSync('splash-bg-color', 'splash-bg-color-hex');
+    bindColorSync('splash-text-color', 'splash-text-color-hex');
+    bindColorSync('error-bg-color', 'error-bg-color-hex');
+    bindColorSync('error-text-color', 'error-text-color-hex');
+
     // Handle keystore file selection
     keystoreFile.addEventListener('change', function() {
         if (this.files && this.files.length > 0) {
@@ -373,6 +464,66 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('Icon upload error:', error);
             }
         }
+
+        // Upload custom splash image if provided
+        if (splashImageFile && splashImageFile.files && splashImageFile.files.length > 0) {
+            try {
+                const splashFormData = new FormData();
+                splashFormData.append('splash_image', splashImageFile.files[0]);
+
+                const splashResponse = await fetch('/api/upload/splash-image', {
+                    method: 'POST',
+                    body: splashFormData
+                });
+
+                if (splashResponse.ok) {
+                    const splashResult = await splashResponse.json();
+                    formData.splash_image_path = splashResult.path;
+                    currentSplashImagePath = splashResult.path;
+                }
+            } catch (error) {
+                console.error('Splash image upload error:', error);
+            }
+        } else if (currentSplashImagePath) {
+            formData.splash_image_path = currentSplashImagePath;
+        }
+
+        // Upload custom error image if provided
+        if (errorImageFile && errorImageFile.files && errorImageFile.files.length > 0) {
+            try {
+                const errorFormData = new FormData();
+                errorFormData.append('error_image', errorImageFile.files[0]);
+
+                const errorResponse = await fetch('/api/upload/error-image', {
+                    method: 'POST',
+                    body: errorFormData
+                });
+
+                if (errorResponse.ok) {
+                    const errorResult = await errorResponse.json();
+                    formData.error_image_path = errorResult.path;
+                    currentErrorImagePath = errorResult.path;
+                }
+            } catch (error) {
+                console.error('Error image upload error:', error);
+            }
+        } else if (currentErrorImagePath) {
+            formData.error_image_path = currentErrorImagePath;
+        }
+
+        // Add Splash Screen & Error Page configuration
+        formData.enable_splash_screen = document.getElementById('enable-splash-screen')?.checked ?? true;
+        formData.splash_title = document.getElementById('splash-title')?.value || '';
+        formData.splash_subtitle = document.getElementById('splash-subtitle')?.value || '';
+        formData.splash_bg_color = document.getElementById('splash-bg-color')?.value || '#FFFFFF';
+        formData.splash_text_color = document.getElementById('splash-text-color')?.value || '#1E293B';
+        formData.splash_duration = parseInt(document.getElementById('splash-duration')?.value || '2', 10);
+
+        formData.error_title = document.getElementById('error-title')?.value || 'No Internet Connection';
+        formData.error_message = document.getElementById('error-message')?.value || 'Please check your connection and try again';
+        formData.error_button_text = document.getElementById('error-button-text')?.value || 'Retry';
+        formData.error_bg_color = document.getElementById('error-bg-color')?.value || '#FFFFFF';
+        formData.error_text_color = document.getElementById('error-text-color')?.value || '#334155';
 
         if (isAndroid && keystoreFile.files && keystoreFile.files.length > 0) {
             // Upload keystore first
@@ -1317,6 +1468,42 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // Upload splash image if present and not already uploaded
+        if (splashImageFile && splashImageFile.files && splashImageFile.files.length > 0 && !currentSplashImagePath) {
+            try {
+                const splashFormData = new FormData();
+                splashFormData.append('splash_image', splashImageFile.files[0]);
+                const splashResp = await fetch('/api/upload/splash-image', {
+                    method: 'POST',
+                    body: splashFormData
+                });
+                if (splashResp.ok) {
+                    const splashResult = await splashResp.json();
+                    currentSplashImagePath = splashResult.path;
+                }
+            } catch (error) {
+                console.error('Splash upload error:', error);
+            }
+        }
+
+        // Upload error image if present and not already uploaded
+        if (errorImageFile && errorImageFile.files && errorImageFile.files.length > 0 && !currentErrorImagePath) {
+            try {
+                const errorFormData = new FormData();
+                errorFormData.append('error_image', errorImageFile.files[0]);
+                const errorResp = await fetch('/api/upload/error-image', {
+                    method: 'POST',
+                    body: errorFormData
+                });
+                if (errorResp.ok) {
+                    const errorResult = await errorResp.json();
+                    currentErrorImagePath = errorResult.path;
+                }
+            } catch (error) {
+                console.error('Error upload error:', error);
+            }
+        }
+
         // Collect project data
         const projectData = {
             app_name: appName,
@@ -1357,13 +1544,27 @@ document.addEventListener('DOMContentLoaded', function() {
             enable_app_store_publish: document.getElementById('enable-app-store-publish')?.checked || false,
             app_store_key_id: (document.getElementById('app-store-key-id')?.value || '').trim(),
             app_store_issuer_id: (document.getElementById('app-store-issuer-id')?.value || '').trim(),
+            // Splash & Error settings
+            enable_splash_screen: document.getElementById('enable-splash-screen')?.checked ?? true,
+            splash_title: document.getElementById('splash-title')?.value || '',
+            splash_subtitle: document.getElementById('splash-subtitle')?.value || '',
+            splash_bg_color: document.getElementById('splash-bg-color')?.value || '#FFFFFF',
+            splash_text_color: document.getElementById('splash-text-color')?.value || '#1E293B',
+            splash_duration: parseInt(document.getElementById('splash-duration')?.value || '2', 10),
+            error_title: document.getElementById('error-title')?.value || 'No Internet Connection',
+            error_message: document.getElementById('error-message')?.value || 'Please check your connection and try again',
+            error_button_text: document.getElementById('error-button-text')?.value || 'Retry',
+            error_bg_color: document.getElementById('error-bg-color')?.value || '#FFFFFF',
+            error_text_color: document.getElementById('error-text-color')?.value || '#334155',
             // Asset paths
             icon_path: currentIconPath,
             keystore_path: currentKeystorePath,
             apple_certificate_path: currentAppleCertificatePath,
             apple_provisioning_profile_path: currentAppleProfilePath,
             play_service_account_path: currentPlayKeyPath,
-            app_store_key_path: currentAppStoreKeyPath
+            app_store_key_path: currentAppStoreKeyPath,
+            splash_image_path: currentSplashImagePath,
+            error_image_path: currentErrorImagePath
         };
 
         try {
@@ -1683,6 +1884,99 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
+            // Handle Splash Screen settings
+            if (project.enable_splash_screen !== undefined) {
+                const splashCb = document.getElementById('enable-splash-screen');
+                if (splashCb) {
+                    splashCb.checked = project.enable_splash_screen;
+                    if (splashScreenDetails) splashScreenDetails.style.display = splashCb.checked ? 'block' : 'none';
+                }
+            }
+            if (project.splash_title) {
+                const el = document.getElementById('splash-title');
+                if (el) el.value = project.splash_title;
+            }
+            if (project.splash_subtitle) {
+                const el = document.getElementById('splash-subtitle');
+                if (el) el.value = project.splash_subtitle;
+            }
+            if (project.splash_bg_color) {
+                const el = document.getElementById('splash-bg-color');
+                const elHex = document.getElementById('splash-bg-color-hex');
+                if (el) el.value = project.splash_bg_color;
+                if (elHex) elHex.value = project.splash_bg_color;
+            }
+            if (project.splash_text_color) {
+                const el = document.getElementById('splash-text-color');
+                const elHex = document.getElementById('splash-text-color-hex');
+                if (el) el.value = project.splash_text_color;
+                if (elHex) elHex.value = project.splash_text_color;
+            }
+            if (project.splash_duration) {
+                const el = document.getElementById('splash-duration');
+                if (el) el.value = project.splash_duration;
+            }
+            if (project.splash_image_path) {
+                currentSplashImagePath = project.splash_image_path;
+                const splashFilename = project.splash_image_path.split(/[\\/]/).pop();
+                if (splashImagePreview) {
+                    splashImagePreview.innerHTML = `<img src="/uploads/${splashFilename}" alt="Splash Image" style="width: 100%; height: 100%; object-fit: contain;">`;
+                    splashImagePreview.classList.add('has-icon');
+                }
+                if (splashImageUploadLabel) {
+                    splashImageUploadLabel.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <span>Splash Image Loaded</span>
+                    `;
+                }
+            }
+
+            // Handle Error Page settings
+            if (project.error_title) {
+                const el = document.getElementById('error-title');
+                if (el) el.value = project.error_title;
+            }
+            if (project.error_message) {
+                const el = document.getElementById('error-message');
+                if (el) el.value = project.error_message;
+            }
+            if (project.error_button_text) {
+                const el = document.getElementById('error-button-text');
+                if (el) el.value = project.error_button_text;
+            }
+            if (project.error_bg_color) {
+                const el = document.getElementById('error-bg-color');
+                const elHex = document.getElementById('error-bg-color-hex');
+                if (el) el.value = project.error_bg_color;
+                if (elHex) elHex.value = project.error_bg_color;
+            }
+            if (project.error_text_color) {
+                const el = document.getElementById('error-text-color');
+                const elHex = document.getElementById('error-text-color-hex');
+                if (el) el.value = project.error_text_color;
+                if (elHex) elHex.value = project.error_text_color;
+            }
+            if (project.error_image_path) {
+                currentErrorImagePath = project.error_image_path;
+                const errFilename = project.error_image_path.split(/[\\/]/).pop();
+                if (errorImagePreview) {
+                    errorImagePreview.innerHTML = `<img src="/uploads/${errFilename}" alt="Error Image" style="width: 100%; height: 100%; object-fit: contain;">`;
+                    errorImagePreview.classList.add('has-icon');
+                }
+                if (errorImageUploadLabel) {
+                    errorImageUploadLabel.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <span>Error Image Loaded</span>
+                    `;
+                }
+            }
+
             // Reset build UI
             buildProgress.style.display = 'none';
             buildComplete.style.display = 'none';
@@ -1716,4 +2010,16 @@ document.addEventListener('DOMContentLoaded', function() {
         // Reset the stored path when a new file is selected
         currentKeystorePath = null;
     });
+
+    // Track splash & error image upload paths
+    if (splashImageFile) {
+        splashImageFile.addEventListener('change', function() {
+            currentSplashImagePath = null;
+        });
+    }
+    if (errorImageFile) {
+        errorImageFile.addEventListener('change', function() {
+            currentErrorImagePath = null;
+        });
+    }
 });

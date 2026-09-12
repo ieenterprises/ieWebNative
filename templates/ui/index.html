@@ -435,6 +435,169 @@
                             </div>
                             <small class="hint" style="margin-top: 4px; display: block;">Note: Apple requires the .ipa to be signed with an Apple Distribution Certificate & App Store Provisioning Profile.</small>
                         </div>
+                <!-- App Screens & Branding Section (Splash & Error Pages) -->
+                <div class="section" id="app-screens-section">
+                    <h2 class="section-title" style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>App Screens & Branding</span>
+                        <span style="font-size: 11px; font-weight: 500; background: rgba(2, 164, 203, 0.1); color: var(--primary); padding: 2px 8px; border-radius: 12px;">Splash & Error</span>
+                    </h2>
+
+                    <!-- Splash Screen Card -->
+                    <div class="store-publish-card" style="border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; background: var(--bg-card, rgba(255,255,255,0.02));">
+                        <label class="checkbox-item" style="margin-bottom: 0; padding: 0; cursor: pointer;">
+                            <input type="checkbox" id="enable-splash-screen" checked>
+                            <div class="checkbox-content">
+                                <span class="checkbox-label" style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                                    </svg>
+                                    Custom Splash Screen
+                                </span>
+                                <span class="checkbox-hint">Display branded splash screen on app launch while web page loads</span>
+                            </div>
+                        </label>
+
+                        <div id="splash-screen-details" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+                            <!-- Splash Image Upload -->
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label style="font-weight: 600; font-size: 13px; margin-bottom: 6px; display: block;">Splash Logo / Image (Optional)</label>
+                                <div class="icon-upload-container">
+                                    <div class="icon-preview" id="splash-image-preview" style="width: 70px; height: 70px;">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                            <rect x="3" y="3" width="18" height="18" rx="4" ry="4"/>
+                                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                                            <polyline points="21 15 16 10 5 21"/>
+                                        </svg>
+                                    </div>
+                                    <div class="icon-upload-info">
+                                        <div class="file-upload" id="splash-image-upload">
+                                            <input type="file" id="splash-image-file" accept="image/png,image/jpeg,image/jpg,image/webp">
+                                            <div class="file-upload-label" id="splash-image-upload-label">
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                                                </svg>
+                                                <span>Upload Splash Image</span>
+                                            </div>
+                                        </div>
+                                        <small class="hint">PNG or JPG, transparent background recommended</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Splash Title & Subtitle -->
+                            <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                                <div class="form-group">
+                                    <label for="splash-title">Splash Title</label>
+                                    <input type="text" id="splash-title" placeholder="App Name (default)">
+                                </div>
+                                <div class="form-group">
+                                    <label for="splash-subtitle">Splash Subtitle / Tagline</label>
+                                    <input type="text" id="splash-subtitle" placeholder="e.g. Fast, Reliable, Native">
+                                </div>
+                            </div>
+
+                            <!-- Splash Colors & Duration -->
+                            <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                                <div class="form-group">
+                                    <label for="splash-bg-color">Background Color</label>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <input type="color" id="splash-bg-color" value="#ffffff" style="width: 38px; height: 38px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; cursor: pointer; background: transparent;">
+                                        <input type="text" id="splash-bg-color-hex" value="#FFFFFF" maxlength="7" style="font-family: monospace; font-size: 12px; text-transform: uppercase;">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="splash-text-color">Text / Icon Color</label>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <input type="color" id="splash-text-color" value="#1e293b" style="width: 38px; height: 38px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; cursor: pointer; background: transparent;">
+                                        <input type="text" id="splash-text-color-hex" value="#1E293B" maxlength="7" style="font-family: monospace; font-size: 12px; text-transform: uppercase;">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="splash-duration">Max Duration (sec)</label>
+                                    <input type="number" id="splash-duration" value="2" min="1" max="10" style="height: 38px;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error / Offline Page Card -->
+                    <div class="store-publish-card" style="border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 8px; background: var(--bg-card, rgba(255,255,255,0.02));">
+                        <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text-primary);">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #ef4444;">
+                                <line x1="1" y1="1" x2="23" y2="23"/>
+                                <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+                                <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+                                <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
+                                <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+                                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                                <line x1="12" y1="20" x2="12.01" y2="20"/>
+                            </svg>
+                            <span>Offline & Error Screen</span>
+                        </div>
+                        <span class="checkbox-hint" style="display: block; margin-bottom: 12px;">Customize what users see if network fails or web app is unreachable</span>
+
+                        <div id="error-page-details" style="padding-top: 10px; border-top: 1px solid var(--border);">
+                            <!-- Error Image Upload -->
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label style="font-weight: 600; font-size: 13px; margin-bottom: 6px; display: block;">Error Illustration / Image (Optional)</label>
+                                <div class="icon-upload-container">
+                                    <div class="icon-preview" id="error-image-preview" style="width: 70px; height: 70px;">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                            <circle cx="12" cy="12" r="10"/>
+                                            <line x1="12" y1="8" x2="12" y2="12"/>
+                                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                                        </svg>
+                                    </div>
+                                    <div class="icon-upload-info">
+                                        <div class="file-upload" id="error-image-upload">
+                                            <input type="file" id="error-image-file" accept="image/png,image/jpeg,image/jpg,image/webp">
+                                            <div class="file-upload-label" id="error-image-upload-label">
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                                                </svg>
+                                                <span>Upload Error Image</span>
+                                            </div>
+                                        </div>
+                                        <small class="hint">PNG or JPG, custom offline illustration</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Error Title & Message -->
+                            <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                                <div class="form-group">
+                                    <label for="error-title">Error Title</label>
+                                    <input type="text" id="error-title" value="No Internet Connection" placeholder="No Internet Connection">
+                                </div>
+                                <div class="form-group">
+                                    <label for="error-button-text">Retry Button Text</label>
+                                    <input type="text" id="error-button-text" value="Retry" placeholder="Retry">
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label for="error-message">Error Message</label>
+                                <input type="text" id="error-message" value="Please check your connection and try again" placeholder="Please check your connection and try again">
+                            </div>
+
+                            <!-- Error Colors -->
+                            <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <div class="form-group">
+                                    <label for="error-bg-color">Background Color</label>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <input type="color" id="error-bg-color" value="#ffffff" style="width: 38px; height: 38px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; cursor: pointer; background: transparent;">
+                                        <input type="text" id="error-bg-color-hex" value="#FFFFFF" maxlength="7" style="font-family: monospace; font-size: 12px; text-transform: uppercase;">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="error-text-color">Text & Button Color</label>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <input type="color" id="error-text-color" value="#334155" style="width: 38px; height: 38px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; cursor: pointer; background: transparent;">
+                                        <input type="text" id="error-text-color-hex" value="#334155" maxlength="7" style="font-family: monospace; font-size: 12px; text-transform: uppercase;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -920,6 +1083,64 @@
                     if (issuerIdEl) issuerIdEl.value = ascIssuerId;
                 }
 
+                // Load splash & error screens settings if available
+                if (projSettings.enableSplashScreen !== undefined) {
+                    const splashCb = document.getElementById('enable-splash-screen');
+                    if (splashCb) {
+                        splashCb.checked = projSettings.enableSplashScreen;
+                        const splashDetails = document.getElementById('splash-screen-details');
+                        if (splashDetails) splashDetails.style.display = splashCb.checked ? 'block' : 'none';
+                    }
+                }
+                if (projSettings.splashTitle) {
+                    const el = document.getElementById('splash-title');
+                    if (el) el.value = projSettings.splashTitle;
+                }
+                if (projSettings.splashSubtitle) {
+                    const el = document.getElementById('splash-subtitle');
+                    if (el) el.value = projSettings.splashSubtitle;
+                }
+                if (projSettings.splashBgColor) {
+                    const el = document.getElementById('splash-bg-color');
+                    const elHex = document.getElementById('splash-bg-color-hex');
+                    if (el) el.value = projSettings.splashBgColor;
+                    if (elHex) elHex.value = projSettings.splashBgColor;
+                }
+                if (projSettings.splashTextColor) {
+                    const el = document.getElementById('splash-text-color');
+                    const elHex = document.getElementById('splash-text-color-hex');
+                    if (el) el.value = projSettings.splashTextColor;
+                    if (elHex) elHex.value = projSettings.splashTextColor;
+                }
+                if (projSettings.splashDuration) {
+                    const el = document.getElementById('splash-duration');
+                    if (el) el.value = projSettings.splashDuration;
+                }
+                if (projSettings.errorTitle) {
+                    const el = document.getElementById('error-title');
+                    if (el) el.value = projSettings.errorTitle;
+                }
+                if (projSettings.errorMessage) {
+                    const el = document.getElementById('error-message');
+                    if (el) el.value = projSettings.errorMessage;
+                }
+                if (projSettings.errorButtonText) {
+                    const el = document.getElementById('error-button-text');
+                    if (el) el.value = projSettings.errorButtonText;
+                }
+                if (projSettings.errorBgColor) {
+                    const el = document.getElementById('error-bg-color');
+                    const elHex = document.getElementById('error-bg-color-hex');
+                    if (el) el.value = projSettings.errorBgColor;
+                    if (elHex) elHex.value = projSettings.errorBgColor;
+                }
+                if (projSettings.errorTextColor) {
+                    const el = document.getElementById('error-text-color');
+                    const elHex = document.getElementById('error-text-color-hex');
+                    if (el) el.value = projSettings.errorTextColor;
+                    if (elHex) elHex.value = projSettings.errorTextColor;
+                }
+
                 // Trigger preview if URL is set
                 if (project.webUrl) {
                     const urlInput = document.getElementById('web-url');
@@ -1074,7 +1295,18 @@
                         playStatus: document.getElementById('play-status')?.value || 'draft',
                         enableAppStorePublish: document.getElementById('enable-app-store-publish')?.checked || false,
                         appStoreKeyId: document.getElementById('app-store-key-id')?.value || '',
-                        appStoreIssuerId: document.getElementById('app-store-issuer-id')?.value || ''
+                        appStoreIssuerId: document.getElementById('app-store-issuer-id')?.value || '',
+                        enableSplashScreen: document.getElementById('enable-splash-screen')?.checked ?? true,
+                        splashTitle: document.getElementById('splash-title')?.value || '',
+                        splashSubtitle: document.getElementById('splash-subtitle')?.value || '',
+                        splashBgColor: document.getElementById('splash-bg-color')?.value || '#FFFFFF',
+                        splashTextColor: document.getElementById('splash-text-color')?.value || '#1E293B',
+                        splashDuration: parseInt(document.getElementById('splash-duration')?.value || '2', 10),
+                        errorTitle: document.getElementById('error-title')?.value || 'No Internet Connection',
+                        errorMessage: document.getElementById('error-message')?.value || 'Please check your connection and try again',
+                        errorButtonText: document.getElementById('error-button-text')?.value || 'Retry',
+                        errorBgColor: document.getElementById('error-bg-color')?.value || '#FFFFFF',
+                        errorTextColor: document.getElementById('error-text-color')?.value || '#334155'
                     }
                 };
 

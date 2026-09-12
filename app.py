@@ -1395,6 +1395,90 @@ def run_build(build_id, config):
             content
         )
 
+        # Splash Screen Configuration
+        content = re.sub(
+            r'static const bool ENABLE_SPLASH_SCREEN = \w+;',
+            f'static const bool ENABLE_SPLASH_SCREEN = {bool_to_dart(config.get("enable_splash_screen", True))};',
+            content
+        )
+        splash_title_str = str(config.get("splash_title", config.get("app_name", ""))).replace("'", "\\'")
+        content = re.sub(
+            r'static const String SPLASH_TITLE = [^;]+;',
+            f"static const String SPLASH_TITLE = '{splash_title_str}';",
+            content
+        )
+        splash_subtitle_str = str(config.get("splash_subtitle", "")).replace("'", "\\'")
+        content = re.sub(
+            r'static const String SPLASH_SUBTITLE = [^;]+;',
+            f"static const String SPLASH_SUBTITLE = '{splash_subtitle_str}';",
+            content
+        )
+        splash_bg_color = str(config.get("splash_bg_color", "#FFFFFF")).strip() or "#FFFFFF"
+        content = re.sub(
+            r'static const String SPLASH_BG_COLOR = [^;]+;',
+            f"static const String SPLASH_BG_COLOR = '{splash_bg_color}';",
+            content
+        )
+        splash_text_color = str(config.get("splash_text_color", "#1E293B")).strip() or "#1E293B"
+        content = re.sub(
+            r'static const String SPLASH_TEXT_COLOR = [^;]+;',
+            f"static const String SPLASH_TEXT_COLOR = '{splash_text_color}';",
+            content
+        )
+        try:
+            splash_duration = int(config.get("splash_duration", 2))
+        except (ValueError, TypeError):
+            splash_duration = 2
+        content = re.sub(
+            r'static const int SPLASH_DURATION_SECONDS = \d+;',
+            f'static const int SPLASH_DURATION_SECONDS = {splash_duration};',
+            content
+        )
+        has_custom_splash = bool(config.get("splash_image_path") and os.path.exists(config.get("splash_image_path", "")))
+        content = re.sub(
+            r'static const bool HAS_CUSTOM_SPLASH_IMAGE = \w+;',
+            f'static const bool HAS_CUSTOM_SPLASH_IMAGE = {bool_to_dart(has_custom_splash)};',
+            content
+        )
+
+        # Error / Offline Page Configuration
+        error_title_str = str(config.get("error_title", "No Internet Connection")).replace("'", "\\'")
+        content = re.sub(
+            r'static const String ERROR_TITLE = [^;]+;',
+            f"static const String ERROR_TITLE = '{error_title_str}';",
+            content
+        )
+        error_message_str = str(config.get("error_message", "Please check your connection and try again")).replace("'", "\\'")
+        content = re.sub(
+            r'static const String ERROR_MESSAGE = [^;]+;',
+            f"static const String ERROR_MESSAGE = '{error_message_str}';",
+            content
+        )
+        error_button_str = str(config.get("error_button_text", "Retry")).replace("'", "\\'")
+        content = re.sub(
+            r'static const String ERROR_BUTTON_TEXT = [^;]+;',
+            f"static const String ERROR_BUTTON_TEXT = '{error_button_str}';",
+            content
+        )
+        error_bg_color = str(config.get("error_bg_color", "#FFFFFF")).strip() or "#FFFFFF"
+        content = re.sub(
+            r'static const String ERROR_BG_COLOR = [^;]+;',
+            f"static const String ERROR_BG_COLOR = '{error_bg_color}';",
+            content
+        )
+        error_text_color = str(config.get("error_text_color", "#334155")).strip() or "#334155"
+        content = re.sub(
+            r'static const String ERROR_TEXT_COLOR = [^;]+;',
+            f"static const String ERROR_TEXT_COLOR = '{error_text_color}';",
+            content
+        )
+        has_custom_error = bool(config.get("error_image_path") and os.path.exists(config.get("error_image_path", "")))
+        content = re.sub(
+            r'static const bool HAS_CUSTOM_ERROR_IMAGE = \w+;',
+            f'static const bool HAS_CUSTOM_ERROR_IMAGE = {bool_to_dart(has_custom_error)};',
+            content
+        )
+
         with open(main_dart_path, 'w') as f:
             f.write(content)
 
@@ -1444,6 +1528,17 @@ def run_build(build_id, config):
         if icon_path and os.path.exists(icon_path):
             build_progress[build_id] = {'status': 'icons', 'progress': 18, 'message': 'Generating app icons...'}
             setup_app_icon(project_dir, icon_path, build_id)
+
+        # Setup splash and error assets if provided
+        assets_dir = os.path.join(project_dir, 'assets')
+        os.makedirs(assets_dir, exist_ok=True)
+        splash_image_path = config.get('splash_image_path')
+        if splash_image_path and os.path.exists(splash_image_path):
+            shutil.copy(splash_image_path, os.path.join(assets_dir, 'splash.png'))
+
+        error_image_path = config.get('error_image_path')
+        if error_image_path and os.path.exists(error_image_path):
+            shutil.copy(error_image_path, os.path.join(assets_dir, 'error.png'))
 
         # Update Android config (for keystore)
         if 'android' in config['platforms'] or 'android_aab' in config['platforms']:
@@ -2512,6 +2607,20 @@ def start_build():
             'app_store_issuer_id': data.get('app_store_issuer_id'),
 
             'icon_path': data.get('icon_path'),
+            'enable_splash_screen': data.get('enable_splash_screen', True),
+            'splash_title': data.get('splash_title', data.get('app_name', '')),
+            'splash_subtitle': data.get('splash_subtitle', ''),
+            'splash_bg_color': data.get('splash_bg_color', '#FFFFFF'),
+            'splash_text_color': data.get('splash_text_color', '#1E293B'),
+            'splash_duration': data.get('splash_duration', 2),
+            'splash_image_path': data.get('splash_image_path'),
+
+            'error_title': data.get('error_title', 'No Internet Connection'),
+            'error_message': data.get('error_message', 'Please check your connection and try again'),
+            'error_button_text': data.get('error_button_text', 'Retry'),
+            'error_bg_color': data.get('error_bg_color', '#FFFFFF'),
+            'error_text_color': data.get('error_text_color', '#334155'),
+            'error_image_path': data.get('error_image_path'),
             'webhook_url': data.get('webhook_url')
         }
 
@@ -2550,7 +2659,20 @@ def start_build():
                     'playStatus': data.get('play_status', 'draft'),
                     'enableAppStorePublish': data.get('enable_app_store_publish', False),
                     'appStoreKeyId': data.get('app_store_key_id', ''),
-                    'appStoreIssuerId': data.get('app_store_issuer_id', '')
+                    'appStoreIssuerId': data.get('app_store_issuer_id', ''),
+                    'enableSplashScreen': data.get('enable_splash_screen', True),
+                    'splashTitle': data.get('splash_title', ''),
+                    'splashSubtitle': data.get('splash_subtitle', ''),
+                    'splashBgColor': data.get('splash_bg_color', '#FFFFFF'),
+                    'splashTextColor': data.get('splash_text_color', '#1E293B'),
+                    'splashDuration': data.get('splash_duration', 2),
+                    'splashImagePath': data.get('splash_image_path', ''),
+                    'errorTitle': data.get('error_title', 'No Internet Connection'),
+                    'errorMessage': data.get('error_message', 'Please check your connection and try again'),
+                    'errorButtonText': data.get('error_button_text', 'Retry'),
+                    'errorBgColor': data.get('error_bg_color', '#FFFFFF'),
+                    'errorTextColor': data.get('error_text_color', '#334155'),
+                    'errorImagePath': data.get('error_image_path', '')
                 })
 
                 conn = get_db_connection()
@@ -2728,6 +2850,38 @@ def upload_icon():
         return jsonify({'success': True, 'filename': filename, 'path': filepath})
 
     return jsonify({'error': 'Upload failed'}), 500
+
+@app.route('/api/upload/splash-image', methods=['POST'])
+def upload_splash_image():
+    """Upload custom splash screen image"""
+    file = request.files.get('splash_image') or request.files.get('image')
+    if not file or file.filename == '':
+        return jsonify({'error': 'No image file provided'}), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ['.png', '.jpg', '.jpeg', '.webp']:
+        return jsonify({'error': 'Invalid file type. Use PNG, JPG, or WEBP'}), 400
+
+    filename = f"splash_{uuid.uuid4()}{ext}"
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+    return jsonify({'success': True, 'filename': filename, 'path': filepath})
+
+@app.route('/api/upload/error-image', methods=['POST'])
+def upload_error_image():
+    """Upload custom error / offline page image"""
+    file = request.files.get('error_image') or request.files.get('image')
+    if not file or file.filename == '':
+        return jsonify({'error': 'No image file provided'}), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ['.png', '.jpg', '.jpeg', '.webp']:
+        return jsonify({'error': 'Invalid file type. Use PNG, JPG, or WEBP'}), 400
+
+    filename = f"error_{uuid.uuid4()}{ext}"
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+    return jsonify({'success': True, 'filename': filename, 'path': filepath})
 
 
 # ==================== APPLE SIGNING API ENDPOINTS ====================
@@ -2986,7 +3140,20 @@ def save_project():
             'play_status': data.get('play_status', 'draft'),
             'enable_app_store_publish': data.get('enable_app_store_publish', False),
             'app_store_key_id': data.get('app_store_key_id', ''),
-            'app_store_issuer_id': data.get('app_store_issuer_id', '')
+            'app_store_issuer_id': data.get('app_store_issuer_id', ''),
+            # Splash screen settings
+            'enable_splash_screen': data.get('enable_splash_screen', True),
+            'splash_title': data.get('splash_title', ''),
+            'splash_subtitle': data.get('splash_subtitle', ''),
+            'splash_bg_color': data.get('splash_bg_color', '#FFFFFF'),
+            'splash_text_color': data.get('splash_text_color', '#1E293B'),
+            'splash_duration': data.get('splash_duration', 2),
+            # Error / offline page settings
+            'error_title': data.get('error_title', 'No Internet Connection'),
+            'error_message': data.get('error_message', 'Please check your connection and try again'),
+            'error_button_text': data.get('error_button_text', 'Retry'),
+            'error_bg_color': data.get('error_bg_color', '#FFFFFF'),
+            'error_text_color': data.get('error_text_color', '#334155')
         }
 
         # Save project.json
@@ -3003,6 +3170,18 @@ def save_project():
         if icon_path and os.path.exists(icon_path):
             ext = os.path.splitext(icon_path)[1]
             shutil.copy(icon_path, os.path.join(assets_dir, f'icon{ext}'))
+
+        # Copy splash image if provided
+        splash_image_path = data.get('splash_image_path')
+        if splash_image_path and os.path.exists(splash_image_path):
+            ext = os.path.splitext(splash_image_path)[1]
+            shutil.copy(splash_image_path, os.path.join(assets_dir, f'splash_image{ext}'))
+
+        # Copy error image if provided
+        error_image_path = data.get('error_image_path')
+        if error_image_path and os.path.exists(error_image_path):
+            ext = os.path.splitext(error_image_path)[1]
+            shutil.copy(error_image_path, os.path.join(assets_dir, f'error_image{ext}'))
 
         # Copy keystore if provided
         keystore_path = data.get('keystore_path')
@@ -3187,6 +3366,26 @@ def open_project():
             new_asc_path = os.path.join(app.config['UPLOAD_FOLDER'], new_asc_name)
             shutil.copy(app_store_key_path, new_asc_path)
             response_data['app_store_key_path'] = new_asc_path
+
+        # Copy splash image to uploads if exists
+        for ext in ['.png', '.jpg', '.jpeg', '.webp']:
+            splash_img_path = os.path.join(assets_dir, f'splash_image{ext}')
+            if os.path.exists(splash_img_path):
+                new_splash_name = f"splash_{uuid.uuid4()}{ext}"
+                new_splash_path = os.path.join(app.config['UPLOAD_FOLDER'], new_splash_name)
+                shutil.copy(splash_img_path, new_splash_path)
+                response_data['splash_image_path'] = new_splash_path
+                break
+
+        # Copy error image to uploads if exists
+        for ext in ['.png', '.jpg', '.jpeg', '.webp']:
+            error_img_path = os.path.join(assets_dir, f'error_image{ext}')
+            if os.path.exists(error_img_path):
+                new_error_name = f"error_{uuid.uuid4()}{ext}"
+                new_error_path = os.path.join(app.config['UPLOAD_FOLDER'], new_error_name)
+                shutil.copy(error_img_path, new_error_path)
+                response_data['error_image_path'] = new_error_path
+                break
 
         return jsonify({'success': True, 'project': response_data})
 
