@@ -237,36 +237,8 @@
         <span class="toast-message"></span>
     </div>
 
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import {
-            getAuth,
-            signInWithEmailAndPassword,
-            createUserWithEmailAndPassword,
-            sendPasswordResetEmail,
-            sendEmailVerification,
-            updateProfile,
-            onAuthStateChanged
-        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-        import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-
-        // Firebase configuration
-        const firebaseConfig = {
-            apiKey: "{{ firebase_config.api_key }}",
-            authDomain: "{{ firebase_config.auth_domain }}",
-            projectId: "{{ firebase_config.project_id }}",
-            storageBucket: "{{ firebase_config.storage_bucket }}",
-            messagingSenderId: "{{ firebase_config.messaging_sender_id }}",
-            appId: "{{ firebase_config.app_id }}",
-            measurementId: "{{ firebase_config.measurement_id }}"
-        };
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
+    <!-- Built-in Native Authentication -->
+    <script>
         // DOM Elements
         const loginForm = document.getElementById('login-form');
         const signupForm = document.getElementById('signup-form');
@@ -310,7 +282,7 @@
 
         document.getElementById('continue-to-dashboard').addEventListener('click', (e) => {
             e.preventDefault();
-            window.location.href = '/dashboard';
+            window.location.href = '/builder';
         });
 
         function showForm(formName) {
@@ -335,6 +307,12 @@
                     verifyEmailForm.style.display = 'block';
                     break;
             }
+        }
+
+        // Check URL parameters for initial tab (e.g. ?mode=signup)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('mode') === 'signup' || window.location.hash === '#signup') {
+            showForm('signup');
         }
 
         // Password toggle
@@ -362,23 +340,25 @@
         const strengthBar = document.querySelector('#password-strength .strength-bar span');
         const strengthText = document.querySelector('#password-strength .strength-text');
 
-        signupPassword.addEventListener('input', () => {
-            const password = signupPassword.value;
-            const strength = calculatePasswordStrength(password);
+        if (signupPassword) {
+            signupPassword.addEventListener('input', () => {
+                const password = signupPassword.value;
+                const strength = calculatePasswordStrength(password);
 
-            strengthBar.style.width = strength.percent + '%';
-            strengthBar.className = strength.level;
-            strengthText.textContent = strength.text;
-        });
+                strengthBar.style.width = strength.percent + '%';
+                strengthBar.className = strength.level;
+                strengthText.textContent = strength.text;
+            });
+        }
 
         function calculatePasswordStrength(password) {
             let score = 0;
-            if (password.length >= 8) score += 25;
-            if (password.length >= 12) score += 10;
+            if (password.length >= 6) score += 25;
+            if (password.length >= 10) score += 15;
             if (/[a-z]/.test(password)) score += 15;
             if (/[A-Z]/.test(password)) score += 15;
             if (/[0-9]/.test(password)) score += 15;
-            if (/[^a-zA-Z0-9]/.test(password)) score += 20;
+            if (/[^a-zA-Z0-9]/.test(password)) score += 15;
 
             if (score < 30) return { percent: score, level: 'weak', text: 'Weak password' };
             if (score < 60) return { percent: score, level: 'fair', text: 'Fair password' };
@@ -426,72 +406,34 @@
             }
         }
 
-        // Create user profile in Firestore
-        async function createUserProfile(user, additionalData = {}) {
-            const userRef = doc(db, 'users', user.uid);
-            const snapshot = await getDoc(userRef);
-
-            if (!snapshot.exists()) {
-                const { email, displayName, photoURL } = user;
-                await setDoc(userRef, {
-                    email,
-                    displayName: additionalData.displayName || displayName || '',
-                    photoURL: photoURL || '',
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp(),
-                    projects: [],
-                    settings: {
-                        theme: 'dark',
-                        notifications: true
-                    }
-                });
-            }
-        }
-
         // Login form submission
         loginFormElement.addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('login-btn');
             setButtonLoading(btn, true);
 
-            const email = document.getElementById('login-email').value;
+            const email = document.getElementById('login-email').value.trim();
             const password = document.getElementById('login-password').value;
 
             try {
-                const userCredential = await signInWithEmailAndPassword(auth, email, password);
-                const user = userCredential.user;
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
 
-                if (!user.emailVerified) {
-                    document.getElementById('verify-email-display').textContent = user.email;
-                    showForm('verify-email');
-                    setButtonLoading(btn, false);
-                    return;
+                const result = await response.json();
+
+                if (!response.ok || !result.success) {
+                    throw new Error(result.error || 'Sign in failed. Please check your credentials.');
                 }
 
                 showToast('Login successful! Redirecting...', 'success');
                 setTimeout(() => {
-                    window.location.href = '/dashboard';
-                }, 1000);
+                    window.location.href = result.redirect || '/builder';
+                }, 800);
             } catch (error) {
-                let message = 'An error occurred. Please try again.';
-                switch (error.code) {
-                    case 'auth/invalid-email':
-                        message = 'Invalid email address.';
-                        break;
-                    case 'auth/user-disabled':
-                        message = 'This account has been disabled.';
-                        break;
-                    case 'auth/user-not-found':
-                        message = 'No account found with this email.';
-                        break;
-                    case 'auth/wrong-password':
-                        message = 'Incorrect password.';
-                        break;
-                    case 'auth/invalid-credential':
-                        message = 'Invalid email or password.';
-                        break;
-                }
-                showToast(message, 'error');
+                showToast(error.message, 'error');
                 setButtonLoading(btn, false);
             }
         });
@@ -502,8 +444,8 @@
             const btn = document.getElementById('signup-btn');
             setButtonLoading(btn, true);
 
-            const name = document.getElementById('signup-name').value;
-            const email = document.getElementById('signup-email').value;
+            const name = document.getElementById('signup-name').value.trim();
+            const email = document.getElementById('signup-email').value.trim();
             const password = document.getElementById('signup-password').value;
             const confirmPassword = document.getElementById('signup-confirm-password').value;
 
@@ -513,43 +455,33 @@
                 return;
             }
 
-            if (password.length < 8) {
-                showToast('Password must be at least 8 characters.', 'error');
+            if (password.length < 6) {
+                showToast('Password must be at least 6 characters.', 'error');
                 setButtonLoading(btn, false);
                 return;
             }
 
             try {
-                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                const user = userCredential.user;
+                const response = await fetch('/api/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, password })
+                });
 
-                // Update profile with display name
-                await updateProfile(user, { displayName: name });
+                const result = await response.json();
 
-                // Create user profile in Firestore
-                await createUserProfile(user, { displayName: name });
-
-                // Send email verification
-                await sendEmailVerification(user);
-
-                document.getElementById('verify-email-display').textContent = email;
-                showForm('verify-email');
-            } catch (error) {
-                let message = 'An error occurred. Please try again.';
-                switch (error.code) {
-                    case 'auth/email-already-in-use':
-                        message = 'An account with this email already exists.';
-                        break;
-                    case 'auth/invalid-email':
-                        message = 'Invalid email address.';
-                        break;
-                    case 'auth/weak-password':
-                        message = 'Password is too weak.';
-                        break;
+                if (!response.ok || !result.success) {
+                    throw new Error(result.error || 'Account creation failed.');
                 }
-                showToast(message, 'error');
+
+                showToast('Account created successfully! Redirecting...', 'success');
+                setTimeout(() => {
+                    window.location.href = result.redirect || '/builder';
+                }, 800);
+            } catch (error) {
+                showToast(error.message, 'error');
+                setButtonLoading(btn, false);
             }
-            setButtonLoading(btn, false);
         });
 
         // Forgot password form submission
@@ -557,53 +489,25 @@
             e.preventDefault();
             const btn = document.getElementById('forgot-btn');
             setButtonLoading(btn, true);
+            const email = document.getElementById('forgot-email').value.trim();
 
-            const email = document.getElementById('forgot-email').value;
-
-            try {
-                await sendPasswordResetEmail(auth, email);
+            setTimeout(() => {
                 document.getElementById('reset-email-display').textContent = email;
                 forgotPasswordFormElement.style.display = 'none';
                 document.getElementById('reset-success').style.display = 'block';
-            } catch (error) {
-                let message = 'An error occurred. Please try again.';
-                switch (error.code) {
-                    case 'auth/invalid-email':
-                        message = 'Invalid email address.';
-                        break;
-                    case 'auth/user-not-found':
-                        message = 'No account found with this email.';
-                        break;
+                setButtonLoading(btn, false);
+            }, 600);
+        });
+
+        // Check if user is already logged in
+        fetch('/api/auth/me')
+            .then(res => res.json())
+            .then(data => {
+                if (data.authenticated) {
+                    window.location.href = '/builder';
                 }
-                showToast(message, 'error');
-            }
-            setButtonLoading(btn, false);
-        });
-
-        // Resend verification email
-        document.getElementById('resend-verification-btn').addEventListener('click', async () => {
-            const btn = document.getElementById('resend-verification-btn');
-            setButtonLoading(btn, true);
-
-            try {
-                const user = auth.currentUser;
-                if (user) {
-                    await sendEmailVerification(user);
-                    showToast('Verification email sent!', 'success');
-                }
-            } catch (error) {
-                showToast('Failed to send verification email. Please try again.', 'error');
-            }
-            setButtonLoading(btn, false);
-        });
-
-        // Check auth state on page load
-        onAuthStateChanged(auth, (user) => {
-            if (user && user.emailVerified) {
-                // User is already logged in and verified, redirect to dashboard
-                window.location.href = '/dashboard';
-            }
-        });
+            })
+            .catch(() => {});
     </script>
 </body>
 </html>

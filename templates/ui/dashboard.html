@@ -193,52 +193,8 @@
         <span class="toast-message"></span>
     </div>
 
-    <!-- Firebase SDK & Dashboard JS -->
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import {
-            getAuth,
-            onAuthStateChanged,
-            signOut
-        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-        import {
-            getFirestore,
-            collection,
-            doc,
-            getDoc,
-            getDocs,
-            addDoc,
-            updateDoc,
-            deleteDoc,
-            query,
-            where,
-            orderBy,
-            serverTimestamp
-        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-        import {
-            getStorage,
-            ref,
-            deleteObject,
-            listAll
-        } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
-
-        // Firebase configuration
-        const firebaseConfig = {
-            apiKey: "{{ firebase_config.api_key }}",
-            authDomain: "{{ firebase_config.auth_domain }}",
-            projectId: "{{ firebase_config.project_id }}",
-            storageBucket: "{{ firebase_config.storage_bucket }}",
-            messagingSenderId: "{{ firebase_config.messaging_sender_id }}",
-            appId: "{{ firebase_config.app_id }}",
-            measurementId: "{{ firebase_config.measurement_id }}"
-        };
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const storage = getStorage(app);
-
+    <!-- Dashboard Script (Built-in Auth & Project Management) -->
+    <script>
         let currentUser = null;
         let projects = [];
         let currentDeleteProjectId = null;
@@ -249,6 +205,8 @@
         const projectsGrid = document.getElementById('projects-grid');
         const emptyState = document.getElementById('empty-state');
         const loadingState = document.getElementById('loading-state');
+        const newProjectModal = document.getElementById('new-project-modal');
+        const newProjectForm = document.getElementById('new-project-form');
 
         // Toast notification
         function showToast(message, type = 'info') {
@@ -306,66 +264,55 @@
             userDropdown.classList.remove('show');
         });
 
-        // Auth state observer
-        onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                if (!user.emailVerified) {
+        // Initialize and check authentication
+        async function initDashboard() {
+            try {
+                const res = await fetch('/api/auth/me');
+                const data = await res.json();
+                if (data.authenticated && data.user) {
+                    currentUser = data.user;
+                    updateUserUI(currentUser);
+                    await loadProjects();
+                } else {
                     window.location.href = '/auth';
-                    return;
                 }
-
-                currentUser = user;
-                updateUserUI(user);
-                await loadProjects();
-            } else {
+            } catch (err) {
+                console.error(err);
                 window.location.href = '/auth';
             }
-        });
+        }
+        initDashboard();
 
         function updateUserUI(user) {
-            const initials = user.displayName
-                ? user.displayName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
-                : user.email[0].toUpperCase();
+            const initials = user.name
+                ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+                : (user.email ? user.email[0].toUpperCase() : 'U');
 
             document.getElementById('user-initials').textContent = initials;
             document.getElementById('dropdown-initials').textContent = initials;
-            document.getElementById('user-name').textContent = user.displayName || 'User';
-            document.getElementById('user-email').textContent = user.email;
-
-            if (user.photoURL) {
-                document.getElementById('user-avatar-img').src = user.photoURL;
-                document.getElementById('user-avatar-img').style.display = 'block';
-                document.getElementById('user-initials').style.display = 'none';
-                document.getElementById('dropdown-avatar-img').src = user.photoURL;
-                document.getElementById('dropdown-avatar-img').style.display = 'block';
-                document.getElementById('dropdown-initials').style.display = 'none';
-            }
+            document.getElementById('user-name').textContent = user.name || 'User';
+            document.getElementById('user-email').textContent = user.email || '';
         }
 
-        // Load projects from Firestore
+        // Load projects from API
         async function loadProjects() {
             loadingState.style.display = 'flex';
             projectsGrid.style.display = 'none';
             emptyState.style.display = 'none';
 
             try {
-                const projectsRef = collection(db, 'projects');
-                const q = query(
-                    projectsRef,
-                    where('userId', '==', currentUser.uid),
-                    orderBy('updatedAt', 'desc')
-                );
-                const snapshot = await getDocs(q);
-
-                projects = [];
-                snapshot.forEach(doc => {
-                    projects.push({ id: doc.id, ...doc.data() });
-                });
-
+                const response = await fetch('/api/projects');
+                if (response.ok) {
+                    const data = await response.json();
+                    projects = data.projects || [];
+                } else {
+                    projects = [];
+                }
                 renderProjects();
             } catch (error) {
                 console.error('Error loading projects:', error);
                 showToast('Failed to load projects', 'error');
+                renderProjects();
             }
 
             loadingState.style.display = 'none';
@@ -455,7 +402,7 @@
                     e.stopPropagation();
                     const projectId = btn.dataset.id;
                     const project = projects.find(p => p.id === projectId);
-                    showDeleteModal(projectId, project.name);
+                    showDeleteModal(projectId, project ? project.name : 'Project');
                 });
             });
 
@@ -470,7 +417,7 @@
 
         function formatDate(timestamp) {
             if (!timestamp) return 'Never';
-            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            const date = new Date(timestamp);
             const now = new Date();
             const diff = now - date;
 
@@ -478,16 +425,13 @@
             if (diff < 3600000) return `${Math.floor(diff / 60000)} min ago`;
             if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`;
             if (diff < 604800000) return `${Math.floor(diff / 86400000)} days ago`;
-
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            return date.toLocaleDateString();
         }
 
-        // New project modal
-        const newProjectModal = document.getElementById('new-project-modal');
-        const newProjectForm = document.getElementById('new-project-form');
-
+        // New Project Modal handlers
         document.getElementById('new-project-btn').addEventListener('click', () => {
             newProjectModal.style.display = 'flex';
+            document.getElementById('new-project-name').focus();
         });
 
         document.getElementById('empty-new-project-btn').addEventListener('click', () => {
@@ -518,14 +462,10 @@
             const description = document.getElementById('new-project-description').value;
 
             try {
-                // Create project in Firestore
                 const projectData = {
                     name,
                     webUrl,
                     description,
-                    userId: currentUser.uid,
-                    createdAt: serverTimestamp(),
-                    updatedAt: serverTimestamp(),
                     appVersion: '1.0.0',
                     buildNumber: 1,
                     packageName: `com.example.${name.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
@@ -546,17 +486,25 @@
                     }
                 };
 
-                const docRef = await addDoc(collection(db, 'projects'), projectData);
+                const response = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(projectData)
+                });
+
+                const resData = await response.json();
+                if (!response.ok || !resData.success) {
+                    throw new Error(resData.error || 'Failed to create project');
+                }
 
                 showToast('Project created successfully!', 'success');
                 newProjectModal.style.display = 'none';
                 newProjectForm.reset();
 
-                // Redirect to builder
-                window.location.href = `/builder?project=${docRef.id}`;
+                window.location.href = `/builder?project=${resData.projectId}`;
             } catch (error) {
                 console.error('Error creating project:', error);
-                showToast('Failed to create project', 'error');
+                showToast(error.message || 'Failed to create project', 'error');
             }
 
             setButtonLoading(btn, false);
@@ -590,18 +538,11 @@
             setButtonLoading(btn, true);
 
             try {
-                // Delete project files from Firebase Storage
-                const storageRef = ref(storage, `projects/${currentUser.uid}/${currentDeleteProjectId}`);
-                try {
-                    const listResult = await listAll(storageRef);
-                    const deletePromises = listResult.items.map(item => deleteObject(item));
-                    await Promise.all(deletePromises);
-                } catch (storageError) {
-                    console.log('No files to delete or storage error:', storageError);
-                }
+                const response = await fetch(`/api/projects/${currentDeleteProjectId}`, {
+                    method: 'DELETE'
+                });
 
-                // Delete project from Firestore
-                await deleteDoc(doc(db, 'projects', currentDeleteProjectId));
+                if (!response.ok) throw new Error('Failed to delete');
 
                 projects = projects.filter(p => p.id !== currentDeleteProjectId);
                 renderProjects();
@@ -615,21 +556,15 @@
             setButtonLoading(btn, false);
         });
 
-        // Download project as .iewebnative
+        // Download project
         async function downloadProject(projectId) {
             try {
-                const idToken = await currentUser.getIdToken();
-                const response = await fetch(`/api/projects/${projectId}/download`, {
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`
-                    }
-                });
-
+                const response = await fetch(`/api/projects/${projectId}/download`);
                 if (!response.ok) throw new Error('Download failed');
 
                 const blob = await response.blob();
                 const project = projects.find(p => p.id === projectId);
-                const filename = `${project.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.iewebnative`;
+                const filename = `${(project ? project.name : 'project').replace(/[^a-zA-Z0-9_-]/g, '_')}.iewebnative`;
 
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -662,15 +597,11 @@
             }
 
             try {
-                const idToken = await currentUser.getIdToken();
                 const formData = new FormData();
                 formData.append('project', file);
 
                 const response = await fetch('/api/projects/import', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`
-                    },
                     body: formData
                 });
 
@@ -681,8 +612,6 @@
 
                 const result = await response.json();
                 showToast('Project imported successfully!', 'success');
-
-                // Redirect to builder
                 window.location.href = `/builder?project=${result.projectId}`;
             } catch (error) {
                 console.error('Error importing project:', error);
@@ -696,10 +625,10 @@
         document.getElementById('logout-btn').addEventListener('click', async (e) => {
             e.preventDefault();
             try {
-                await signOut(auth);
-                window.location.href = '/auth';
+                await fetch('/api/auth/logout', { method: 'POST' });
+                window.location.href = '/';
             } catch (error) {
-                showToast('Failed to sign out', 'error');
+                window.location.href = '/';
             }
         });
 

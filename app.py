@@ -14,7 +14,10 @@ import hashlib
 import plistlib
 import platform
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for
+from datetime import datetime, timedelta
+import sqlite3
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, session
+from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException
 from cryptography.fernet import Fernet
@@ -99,27 +102,34 @@ def get_storage_bucket():
         return firebase_storage.bucket(bucket_name)
     return None
 
-# Authentication decorator
+# Authentication decorator supporting both Flask session & Bearer tokens
 def firebase_auth_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not firebase_initialized:
-            return jsonify({'error': 'Firebase not configured'}), 503
-
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Missing or invalid authorization header'}), 401
-
-        id_token = auth_header.split('Bearer ')[1]
-
-        try:
-            decoded_token = firebase_auth.verify_id_token(id_token)
-            request.user = decoded_token
+        # 1. Check Flask session (Built-in Native Authentication)
+        if 'user_id' in session:
+            request.user = {
+                'uid': session['user_id'],
+                'user_id': session['user_id'],
+                'name': session.get('user_name', 'User'),
+                'email': session.get('user_email', '')
+            }
             return f(*args, **kwargs)
-        except firebase_admin.exceptions.FirebaseError as e:
-            return jsonify({'error': f'Invalid token: {str(e)}'}), 401
-        except Exception as e:
-            return jsonify({'error': f'Authentication failed: {str(e)}'}), 401
+
+        # 2. Check Bearer Token (Firebase Auth fallback if configured)
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            id_token = auth_header.split('Bearer ')[1]
+            if firebase_initialized:
+                try:
+                    decoded_token = firebase_auth.verify_id_token(id_token)
+                    request.user = decoded_token
+                    return f(*args, **kwargs)
+                except Exception as e:
+                    logger.warning("Invalid Firebase token: %s", e)
+
+        # If not authenticated
+        return jsonify({'error': 'Authentication required. Please sign in.'}), 401
 
     return decorated_function
 
@@ -482,11 +492,62 @@ def is_macos():
     return platform.system() == 'Darwin'
 
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates', 'ui'))
-app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'swab-secret-key-change-in-production')
+app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'iewebnative-secret-key-2026-prod-auth-system')
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'uploads')
 app.config['BUILD_FOLDER'] = os.path.join(BASE_DIR, 'builds')
 app.config['FLUTTER_TEMPLATE'] = os.path.join(BASE_DIR, 'templates', 'webview_app')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
+
+# ===== SQLite Database Setup (Built-in Auth & Local Project Storage) =====
+SQLITE_DB_PATH = os.path.join(BASE_DIR, 'app.db')
+
+def get_db_connection():
+    """Get connection to SQLite database with Row factory"""
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_sqlite_db():
+    """Create SQLite tables for users and projects if they don't exist"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                web_url TEXT,
+                description TEXT,
+                app_version TEXT DEFAULT '1.0.0',
+                build_number INTEGER DEFAULT 1,
+                package_name TEXT,
+                icon_url TEXT,
+                splash_url TEXT,
+                settings_json TEXT,
+                keystore_json TEXT,
+                apple_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        logger.info("SQLite database initialized at %s", SQLITE_DB_PATH)
+    except Exception as e:
+        logger.error("Failed to initialize SQLite database: %s", e)
+
+init_sqlite_db()
 
 # ===== Webhook Helper =====
 
@@ -2035,27 +2096,164 @@ def build_platform(project_dir, build_dir, platform, config):
 
     return None
 
+# ==================== AUTH API ROUTES ====================
+
+@app.route('/api/auth/signup', methods=['POST'])
+def api_signup():
+    """Real built-in user registration with SQLite"""
+    try:
+        data = request.json or {}
+        name = data.get('name', '').strip()
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+
+        if not name or not email or not password:
+            return jsonify({'success': False, 'error': 'Name, email, and password are required.'}), 400
+
+        if len(password) < 6:
+            return jsonify({'success': False, 'error': 'Password must be at least 6 characters.'}), 400
+
+        if not re.match(r'[^@]+@[^@]+\.[^@]+', email):
+            return jsonify({'success': False, 'error': 'Please enter a valid email address.'}), 400
+
+        conn = get_db_connection()
+        existing = conn.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
+        if existing:
+            conn.close()
+            return jsonify({'success': False, 'error': 'An account with this email already exists. Please sign in.'}), 409
+
+        user_id = str(uuid.uuid4())
+        password_hash = generate_password_hash(password)
+        created_at = datetime.utcnow().isoformat()
+
+        conn.execute(
+            'INSERT INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
+            (user_id, name, email, password_hash, created_at)
+        )
+        conn.commit()
+        conn.close()
+
+        session.permanent = True
+        session['user_id'] = user_id
+        session['user_name'] = name
+        session['user_email'] = email
+
+        return jsonify({
+            'success': True,
+            'message': 'Account created successfully!',
+            'user': {'id': user_id, 'name': name, 'email': email},
+            'redirect': '/builder'
+        })
+    except Exception as e:
+        logger.exception("Error during signup")
+        return jsonify({'success': False, 'error': f'Signup failed: {str(e)}'}), 500
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    """Real built-in user sign-in with SQLite"""
+    try:
+        data = request.json or {}
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+
+        if not email or not password:
+            return jsonify({'success': False, 'error': 'Email and password are required.'}), 400
+
+        conn = get_db_connection()
+        user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        conn.close()
+
+        if not user or not check_password_hash(user['password_hash'], password):
+            return jsonify({'success': False, 'error': 'Invalid email or password.'}), 401
+
+        session.permanent = True
+        session['user_id'] = user['id']
+        session['user_name'] = user['name']
+        session['user_email'] = user['email']
+
+        return jsonify({
+            'success': True,
+            'message': 'Signed in successfully!',
+            'user': {'id': user['id'], 'name': user['name'], 'email': user['email']},
+            'redirect': '/builder'
+        })
+    except Exception as e:
+        logger.exception("Error during login")
+        return jsonify({'success': False, 'error': f'Login failed: {str(e)}'}), 500
+
+
+@app.route('/api/auth/logout', methods=['POST', 'GET'])
+def api_logout():
+    """Sign out user and clear session"""
+    session.clear()
+    if request.method == 'GET':
+        return redirect(url_for('index'))
+    return jsonify({'success': True, 'redirect': '/'})
+
+
+@app.route('/api/auth/me', methods=['GET'])
+def api_me():
+    """Get current authenticated user info"""
+    if 'user_id' in session:
+        return jsonify({
+            'authenticated': True,
+            'user': {
+                'id': session['user_id'],
+                'name': session.get('user_name', 'User'),
+                'email': session.get('user_email', '')
+            }
+        })
+    return jsonify({'authenticated': False, 'user': None})
+
+
 # ==================== PAGE ROUTES ====================
 
 @app.route('/')
 def index():
-    """Redirect to auth or dashboard based on session"""
-    return redirect(url_for('auth_page'))
+    """Landing page for ieWebNative"""
+    user = None
+    if 'user_id' in session:
+        user = {
+            'id': session['user_id'],
+            'name': session.get('user_name'),
+            'email': session.get('user_email')
+        }
+    return render_template('landing.html', user=user, firebase_config=get_firebase_config())
+
 
 @app.route('/auth')
 def auth_page():
     """Authentication page (login/signup)"""
+    if 'user_id' in session:
+        return redirect(url_for('builder_page'))
     return render_template('auth.html', firebase_config=get_firebase_config())
+
 
 @app.route('/dashboard')
 def dashboard_page():
-    """Dashboard page - requires authentication (checked client-side)"""
-    return render_template('dashboard.html', firebase_config=get_firebase_config())
+    """Dashboard page - requires authentication"""
+    if 'user_id' not in session:
+        return redirect(url_for('auth_page'))
+    return render_template('dashboard.html', user={
+        'id': session['user_id'],
+        'name': session.get('user_name'),
+        'email': session.get('user_email')
+    }, firebase_config=get_firebase_config())
+
 
 @app.route('/builder')
 def builder_page():
     """Builder page - the main app builder interface"""
-    return render_template('index.html', firebase_config=get_firebase_config())
+    user = None
+    if 'user_id' in session:
+        user = {
+            'id': session['user_id'],
+            'name': session.get('user_name'),
+            'email': session.get('user_email')
+        }
+    return render_template('index.html', user=user, firebase_config=get_firebase_config())
+
 
 @app.route('/uploads/<filename>')
 def serve_upload(filename):
@@ -2712,27 +2910,48 @@ def open_project():
 @firebase_auth_required
 def get_projects():
     """Get all projects for the authenticated user"""
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     try:
         user_id = request.user['uid']
-        projects_ref = db.collection('projects')
-        query = projects_ref.where('userId', '==', user_id).order_by('updatedAt', direction=firestore.Query.DESCENDING)
-        docs = query.stream()
+        if db:
+            projects_ref = db.collection('projects')
+            query = projects_ref.where('userId', '==', user_id).order_by('updatedAt', direction=firestore.Query.DESCENDING)
+            docs = query.stream()
 
-        projects = []
-        for doc in docs:
-            project = doc.to_dict()
-            project['id'] = doc.id
-            # Convert timestamps to ISO format
-            if project.get('createdAt'):
-                project['createdAt'] = project['createdAt'].isoformat() if hasattr(project['createdAt'], 'isoformat') else str(project['createdAt'])
-            if project.get('updatedAt'):
-                project['updatedAt'] = project['updatedAt'].isoformat() if hasattr(project['updatedAt'], 'isoformat') else str(project['updatedAt'])
-            projects.append(project)
+            projects = []
+            for doc in docs:
+                project = doc.to_dict()
+                project['id'] = doc.id
+                if project.get('createdAt'):
+                    project['createdAt'] = project['createdAt'].isoformat() if hasattr(project['createdAt'], 'isoformat') else str(project['createdAt'])
+                if project.get('updatedAt'):
+                    project['updatedAt'] = project['updatedAt'].isoformat() if hasattr(project['updatedAt'], 'isoformat') else str(project['updatedAt'])
+                projects.append(project)
 
-        return jsonify({'projects': projects})
+            return jsonify({'projects': projects})
+        else:
+            conn = get_db_connection()
+            rows = conn.execute('SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC', (user_id,)).fetchall()
+            projects = []
+            for r in rows:
+                projects.append({
+                    'id': r['id'],
+                    'userId': r['user_id'],
+                    'name': r['name'],
+                    'webUrl': r['web_url'],
+                    'description': r['description'],
+                    'appVersion': r['app_version'],
+                    'buildNumber': r['build_number'],
+                    'packageName': r['package_name'],
+                    'iconUrl': r['icon_url'],
+                    'splashUrl': r['splash_url'],
+                    'settings': json.loads(r['settings_json']) if r['settings_json'] else {},
+                    'keystoreData': json.loads(r['keystore_json']) if r['keystore_json'] else {},
+                    'appleData': json.loads(r['apple_json']) if r['apple_json'] else {},
+                    'createdAt': r['created_at'],
+                    'updatedAt': r['updated_at']
+                })
+            conn.close()
+            return jsonify({'projects': projects})
     except Exception as e:
         return jsonify({'error': f'Failed to fetch projects: {str(e)}'}), 500
 
@@ -2740,94 +2959,124 @@ def get_projects():
 @firebase_auth_required
 def create_project():
     """Create a new project"""
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     try:
         user_id = request.user['uid']
-        data = request.json
+        data = request.json or {}
 
         if not data:
             return jsonify({'error': 'No project data provided'}), 400
 
-        # Log received data for debugging
-        print(f"Creating project for user {user_id}")
-        print(f"Received data: {data}")
+        project_id = str(uuid.uuid4())
+        name = data.get('name', 'Untitled Project')
+        web_url = data.get('webUrl', '')
+        description = data.get('description', '')
+        app_version = data.get('appVersion', '1.0.0')
+        build_number = data.get('buildNumber', 1)
+        package_name = data.get('packageName', '')
+        icon_url = data.get('iconUrl', '')
+        splash_url = data.get('splashUrl', '')
+        settings_data = data.get('settings', {
+            'allowZoom': True,
+            'enableJavascript': True,
+            'enableDomStorage': True,
+            'enableGeolocation': True,
+            'enablePullRefresh': True,
+            'showNavigation': True,
+            'enableFileAccess': True,
+            'enableCache': True,
+            'enableMediaAutoplay': False,
+            'enableCamera': True,
+            'enableMicrophone': True
+        })
+        settings_json = json.dumps(settings_data)
+        keystore_json = json.dumps(data.get('keystoreData', {}))
+        apple_json = json.dumps(data.get('appleData', {}))
+        now = datetime.utcnow().isoformat()
 
-        project_data = {
-            'userId': user_id,
-            'name': data.get('name', 'Untitled Project'),
-            'webUrl': data.get('webUrl', ''),
-            'description': data.get('description', ''),
-            'appVersion': data.get('appVersion', '1.0.0'),
-            'buildNumber': data.get('buildNumber', 1),
-            'packageName': data.get('packageName', ''),
-            'iconUrl': data.get('iconUrl', ''),
-            'settings': data.get('settings', {
-                'allowZoom': True,
-                'enableJavascript': True,
-                'enableDomStorage': True,
-                'enableGeolocation': True,
-                'enablePullRefresh': True,
-                'showNavigation': True,
-                'enableFileAccess': True,
-                'enableCache': True,
-                'enableMediaAutoplay': False,
-                'enableCamera': True,
-                'enableMicrophone': True
-            }),
-            'createdAt': firestore.SERVER_TIMESTAMP,
-            'updatedAt': firestore.SERVER_TIMESTAMP
-        }
-
-        # Add keystore data if provided
-        if 'keystoreData' in data:
-            project_data['keystoreData'] = data['keystoreData']
-
-        # Add Apple signing data if provided
-        if 'appleData' in data:
-            project_data['appleData'] = data['appleData']
-
-        print(f"Saving project_data to Firestore: {project_data}")
-        doc_ref = db.collection('projects').add(project_data)
-        project_id = doc_ref[1].id
-        print(f"Project saved with ID: {project_id}")
+        if db:
+            project_data = {
+                'userId': user_id,
+                'name': name,
+                'webUrl': web_url,
+                'description': description,
+                'appVersion': app_version,
+                'buildNumber': build_number,
+                'packageName': package_name,
+                'iconUrl': icon_url,
+                'settings': settings_data,
+                'createdAt': firestore.SERVER_TIMESTAMP,
+                'updatedAt': firestore.SERVER_TIMESTAMP
+            }
+            if 'keystoreData' in data:
+                project_data['keystoreData'] = data['keystoreData']
+            if 'appleData' in data:
+                project_data['appleData'] = data['appleData']
+            doc_ref = db.collection('projects').add(project_data)
+            project_id = doc_ref[1].id
+        else:
+            conn = get_db_connection()
+            conn.execute('''
+                INSERT INTO projects (id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (project_id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, now, now))
+            conn.commit()
+            conn.close()
 
         return jsonify({'success': True, 'projectId': project_id})
     except Exception as e:
-        print(f"Error creating project: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("Error creating project")
         return jsonify({'error': f'Failed to create project: {str(e)}'}), 500
 
 @app.route('/api/projects/<project_id>', methods=['GET'])
 @firebase_auth_required
 def get_project(project_id):
     """Get a specific project"""
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     try:
         user_id = request.user['uid']
-        doc_ref = db.collection('projects').document(project_id)
-        doc = doc_ref.get()
+        if db:
+            doc_ref = db.collection('projects').document(project_id)
+            doc = doc_ref.get()
 
-        if not doc.exists:
-            return jsonify({'error': 'Project not found'}), 404
+            if not doc.exists:
+                return jsonify({'error': 'Project not found'}), 404
 
-        project = doc.to_dict()
+            project = doc.to_dict()
+            if project.get('userId') != user_id:
+                return jsonify({'error': 'Access denied'}), 403
 
-        # Verify ownership
-        if project.get('userId') != user_id:
-            return jsonify({'error': 'Access denied'}), 403
+            project['id'] = doc.id
+            if project.get('createdAt'):
+                project['createdAt'] = project['createdAt'].isoformat() if hasattr(project['createdAt'], 'isoformat') else str(project['createdAt'])
+            if project.get('updatedAt'):
+                project['updatedAt'] = project['updatedAt'].isoformat() if hasattr(project['updatedAt'], 'isoformat') else str(project['updatedAt'])
 
-        project['id'] = doc.id
-        if project.get('createdAt'):
-            project['createdAt'] = project['createdAt'].isoformat() if hasattr(project['createdAt'], 'isoformat') else str(project['createdAt'])
-        if project.get('updatedAt'):
-            project['updatedAt'] = project['updatedAt'].isoformat() if hasattr(project['updatedAt'], 'isoformat') else str(project['updatedAt'])
-
-        return jsonify({'project': project})
+            return jsonify({'project': project})
+        else:
+            conn = get_db_connection()
+            r = conn.execute('SELECT * FROM projects WHERE id = ?', (project_id,)).fetchone()
+            conn.close()
+            if not r:
+                return jsonify({'error': 'Project not found'}), 404
+            if r['user_id'] != user_id:
+                return jsonify({'error': 'Access denied'}), 403
+            project = {
+                'id': r['id'],
+                'userId': r['user_id'],
+                'name': r['name'],
+                'webUrl': r['web_url'],
+                'description': r['description'],
+                'appVersion': r['app_version'],
+                'buildNumber': r['build_number'],
+                'packageName': r['package_name'],
+                'iconUrl': r['icon_url'],
+                'splashUrl': r['splash_url'],
+                'settings': json.loads(r['settings_json']) if r['settings_json'] else {},
+                'keystoreData': json.loads(r['keystore_json']) if r['keystore_json'] else {},
+                'appleData': json.loads(r['apple_json']) if r['apple_json'] else {},
+                'createdAt': r['created_at'],
+                'updatedAt': r['updated_at']
+            }
+            return jsonify({'project': project})
     except Exception as e:
         return jsonify({'error': f'Failed to fetch project: {str(e)}'}), 500
 
@@ -2835,72 +3084,101 @@ def get_project(project_id):
 @firebase_auth_required
 def update_project(project_id):
     """Update a project"""
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     try:
         user_id = request.user['uid']
         data = request.json
-
         if not data:
             return jsonify({'error': 'No project data provided'}), 400
 
-        print(f"Updating project {project_id} for user {user_id}")
-        print(f"Received data: {data}")
+        if db:
+            doc_ref = db.collection('projects').document(project_id)
+            doc = doc_ref.get()
 
-        doc_ref = db.collection('projects').document(project_id)
-        doc = doc_ref.get()
+            if not doc.exists:
+                return jsonify({'error': 'Project not found'}), 404
 
-        if not doc.exists:
-            return jsonify({'error': 'Project not found'}), 404
+            project = doc.to_dict()
+            if project.get('userId') != user_id:
+                return jsonify({'error': 'Access denied'}), 403
 
-        project = doc.to_dict()
-        if project.get('userId') != user_id:
-            return jsonify({'error': 'Access denied'}), 403
+            update_data = {'updatedAt': firestore.SERVER_TIMESTAMP}
+            allowed_fields = ['name', 'webUrl', 'description', 'appVersion', 'buildNumber',
+                              'packageName', 'iconUrl', 'settings', 'keystoreData', 'appleData',
+                              'iconStoragePath', 'keystoreStoragePath', 'appleCertStoragePath', 'appleProfileStoragePath']
+            for field in allowed_fields:
+                if field in data:
+                    update_data[field] = data[field]
 
-        # Update allowed fields
-        update_data = {'updatedAt': firestore.SERVER_TIMESTAMP}
-        allowed_fields = ['name', 'webUrl', 'description', 'appVersion', 'buildNumber',
-                          'packageName', 'iconUrl', 'settings', 'keystoreData', 'appleData',
-                          'iconStoragePath', 'keystoreStoragePath', 'appleCertStoragePath', 'appleProfileStoragePath']
-        for field in allowed_fields:
-            if field in data:
-                update_data[field] = data[field]
+            doc_ref.update(update_data)
+            return jsonify({'success': True})
+        else:
+            conn = get_db_connection()
+            r = conn.execute('SELECT * FROM projects WHERE id = ?', (project_id,)).fetchone()
+            if not r:
+                conn.close()
+                return jsonify({'error': 'Project not found'}), 404
+            if r['user_id'] != user_id:
+                conn.close()
+                return jsonify({'error': 'Access denied'}), 403
 
-        print(f"Updating with data: {update_data}")
-        doc_ref.update(update_data)
-        print(f"Project {project_id} updated successfully")
+            now = datetime.utcnow().isoformat()
+            name = data.get('name', r['name'])
+            web_url = data.get('webUrl', r['web_url'])
+            description = data.get('description', r['description'])
+            app_version = data.get('appVersion', r['app_version'])
+            build_number = data.get('buildNumber', r['build_number'])
+            package_name = data.get('packageName', r['package_name'])
+            icon_url = data.get('iconUrl', r['icon_url'])
+            splash_url = data.get('splashUrl', r['splash_url'])
+            settings_json = json.dumps(data['settings']) if 'settings' in data else r['settings_json']
+            keystore_json = json.dumps(data['keystoreData']) if 'keystoreData' in data else r['keystore_json']
+            apple_json = json.dumps(data['appleData']) if 'appleData' in data else r['apple_json']
 
-        return jsonify({'success': True})
+            conn.execute('''
+                UPDATE projects SET name=?, web_url=?, description=?, app_version=?, build_number=?,
+                                   package_name=?, icon_url=?, splash_url=?, settings_json=?, keystore_json=?,
+                                   apple_json=?, updated_at=?
+                WHERE id=?
+            ''', (name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, now, project_id))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True})
     except Exception as e:
-        print(f"Error updating project: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("Error updating project")
         return jsonify({'error': f'Failed to update project: {str(e)}'}), 500
 
 @app.route('/api/projects/<project_id>', methods=['DELETE'])
 @firebase_auth_required
 def delete_project(project_id):
     """Delete a project"""
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     try:
         user_id = request.user['uid']
+        if db:
+            doc_ref = db.collection('projects').document(project_id)
+            doc = doc_ref.get()
 
-        doc_ref = db.collection('projects').document(project_id)
-        doc = doc_ref.get()
+            if not doc.exists:
+                return jsonify({'error': 'Project not found'}), 404
 
-        if not doc.exists:
-            return jsonify({'error': 'Project not found'}), 404
+            project = doc.to_dict()
+            if project.get('userId') != user_id:
+                return jsonify({'error': 'Access denied'}), 403
 
-        project = doc.to_dict()
-        if project.get('userId') != user_id:
-            return jsonify({'error': 'Access denied'}), 403
-
-        doc_ref.delete()
-
-        return jsonify({'success': True})
+            doc_ref.delete()
+            return jsonify({'success': True})
+        else:
+            conn = get_db_connection()
+            r = conn.execute('SELECT * FROM projects WHERE id = ?', (project_id,)).fetchone()
+            if not r:
+                conn.close()
+                return jsonify({'error': 'Project not found'}), 404
+            if r['user_id'] != user_id:
+                conn.close()
+                return jsonify({'error': 'Access denied'}), 403
+            conn.execute('DELETE FROM projects WHERE id = ?', (project_id,))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': f'Failed to delete project: {str(e)}'}), 500
 

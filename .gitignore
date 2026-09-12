@@ -12,6 +12,7 @@ projects/
 .env.local
 .env.production
 /uploads/
+*.db
 .idea/
 *.bak
 

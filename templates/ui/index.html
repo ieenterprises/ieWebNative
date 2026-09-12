@@ -501,30 +501,8 @@
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 
-    <!-- Firebase SDK for authenticated saves -->
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-        import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-        import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
-
-        // Firebase configuration
-        const firebaseConfig = {
-            apiKey: "{{ firebase_config.api_key }}",
-            authDomain: "{{ firebase_config.auth_domain }}",
-            projectId: "{{ firebase_config.project_id }}",
-            storageBucket: "{{ firebase_config.storage_bucket }}",
-            messagingSenderId: "{{ firebase_config.messaging_sender_id }}",
-            appId: "{{ firebase_config.app_id }}",
-            measurementId: "{{ firebase_config.measurement_id }}"
-        };
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const storage = getStorage(app);
-
+    <!-- Native Project & Auth Management -->
+    <script>
         let currentUser = null;
         let currentProjectId = null;
 
@@ -538,30 +516,33 @@
         const urlParams = new URLSearchParams(window.location.search);
         currentProjectId = urlParams.get('project');
 
-        // Auth state observer
-        onAuthStateChanged(auth, async (user) => {
-            currentUser = user;
+        // Check authentication state
+        async function initBuilderAuth() {
+            try {
+                const res = await fetch('/api/auth/me');
+                const data = await res.json();
+                if (data.authenticated && data.user) {
+                    currentUser = data.user;
+                }
+            } catch (e) {
+                console.warn('Auth check error:', e);
+            }
 
-            if (user && currentProjectId) {
-                // Load project data
+            if (currentProjectId) {
                 await loadProject(currentProjectId);
             }
 
-            // Check if we should auto-build
             if (urlParams.get('build') === 'true') {
-                document.getElementById('build-button').click();
+                const buildBtn = document.getElementById('build-button');
+                if (buildBtn) buildBtn.click();
             }
-        });
+        }
+        initBuilderAuth();
 
-        // Load project from Firestore
+        // Load project from API
         async function loadProject(projectId) {
             try {
-                const idToken = await currentUser.getIdToken();
-                const response = await fetch(`/api/projects/${projectId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`
-                    }
-                });
+                const response = await fetch(`/api/projects/${projectId}`);
 
                 if (!response.ok) {
                     console.error('Failed to load project');
@@ -846,14 +827,11 @@
                     };
                 }
 
-                const idToken = await currentUser.getIdToken();
-
                 if (currentProjectId) {
                     // Update existing project
                     const response = await fetch(`/api/projects/${currentProjectId}`, {
                         method: 'PUT',
                         headers: {
-                            'Authorization': `Bearer ${idToken}`,
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify(projectData)
@@ -866,7 +844,6 @@
                     const response = await fetch('/api/projects', {
                         method: 'POST',
                         headers: {
-                            'Authorization': `Bearer ${idToken}`,
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify(projectData)
