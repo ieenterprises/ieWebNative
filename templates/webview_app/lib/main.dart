@@ -8,7 +8,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:share_plus/share_plus.dart' as share_plus;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:local_auth/local_auth.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart' as secure_storage;
 import 'package:crypto/crypto.dart';
 
 WebViewEnvironment? webViewEnvironment;
@@ -142,9 +142,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   static const String ERROR_TEXT_COLOR = '#334155';
   static const bool HAS_CUSTOM_ERROR_IMAGE = false;
 
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  final secure_storage.FlutterSecureStorage _secureStorage = const secure_storage.FlutterSecureStorage(
+    aOptions: secure_storage.AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: secure_storage.IOSOptions(accessibility: secure_storage.KeychainAccessibility.first_unlock),
   );
 
   bool _isLocked = ENABLE_BIOMETRIC_AUTH || ENABLE_APP_LOCK;
@@ -419,6 +419,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                       resources: request.resources,
                       action: PermissionResponseAction.DENY,
                     );
+                  },
                   onReceivedServerTrustAuthRequest: (controller, challenge) async {
                     if (ENABLE_SSL_PINNING && SSL_PINS.isNotEmpty) {
                       try {
