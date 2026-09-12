@@ -41,7 +41,7 @@ https://github.com/user-attachments/assets/7bbd267e-6391-4d23-b0f1-55d98281cf0a
 
 ## Screenshots
 
-![ieWebNative Interface](./assets/screenshots/screenshot-1.png)
+![ieWebNative Interface](./assets/screenshots/screenshot-1)
 
 ## Features
 
