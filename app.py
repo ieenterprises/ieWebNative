@@ -867,7 +867,7 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
     """Trigger GitHub Actions cloud build and download the resulting APK or Windows Zip"""
     github_token = os.getenv('GITHUB_TOKEN')
     github_owner = os.getenv('GITHUB_OWNER', 'ieenterprises')
-    github_repo = os.getenv('GITHUB_REPO', 'swab-builds')
+    github_repo = os.getenv('GITHUB_REPO', 'iewebnative-builds')
 
     if not github_token:
         raise RuntimeError("GitHub Token is not configured in .env for cloud builds.")
