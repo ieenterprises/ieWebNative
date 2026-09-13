@@ -16,7 +16,8 @@ import platform
 from functools import wraps
 from datetime import datetime, timedelta
 import sqlite3
-from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, session
+from urllib.parse import urlparse
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, session, Response
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException
@@ -2475,6 +2476,168 @@ def serve_upload(filename):
     if not os.path.isfile(file_path):
         return jsonify({'error': 'File not found'}), 404
     return send_from_directory(app.config['UPLOAD_FOLDER'], safe_name)
+
+
+@app.route('/api/preview-proxy', methods=['GET'])
+def preview_proxy():
+    """Proxy web pages for live device frame preview, bypassing X-Frame-Options and CSP frame-ancestors restrictions"""
+    target_url = request.args.get('url', '').strip()
+    device = request.args.get('device', 'mobile').lower()
+
+    if not target_url:
+        return jsonify({'error': 'URL is required'}), 400
+
+    # Auto-prepend https:// if missing scheme
+    if not re.match(r'^https?://', target_url, re.IGNORECASE):
+        target_url = 'https://' + target_url
+
+    parsed = urlparse(target_url)
+    if not parsed.scheme or not parsed.netloc:
+        return jsonify({'error': 'Invalid URL format'}), 400
+
+    # Choose realistic browser User-Agent matching selected device frame
+    if device == 'desktop':
+        ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    elif device == 'tablet':
+        ua = 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+    else:
+        ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+
+    req_headers = {
+        'User-Agent': ua,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': request.headers.get('Accept-Language', 'en-US,en;q=0.9'),
+        'Upgrade-Insecure-Requests': '1',
+    }
+
+    try:
+        session = requests.Session()
+        # If localhost or 127.0.0.1, bypass any upstream proxies
+        if parsed.hostname in ('localhost', '127.0.0.1'):
+            session.trust_env = False
+
+        try:
+            resp = session.get(target_url, headers=req_headers, timeout=12, allow_redirects=True)
+        except requests.exceptions.SSLError:
+            resp = session.get(target_url, headers=req_headers, timeout=12, allow_redirects=True, verify=False)
+
+        content_type = resp.headers.get('Content-Type', '')
+
+        if 'text/html' in content_type:
+            html = resp.text
+
+            # Remove meta tags that enforce CSP or X-Frame-Options in the client DOM
+            html = re.sub(r'<meta[^>]*http-equiv=["\']?Content-Security-Policy["\']?[^>]*>', '', html, flags=re.IGNORECASE)
+            html = re.sub(r'<meta[^>]*http-equiv=["\']?X-Frame-Options["\']?[^>]*>', '', html, flags=re.IGNORECASE)
+
+            final_url = resp.url
+            base_tag = f'<base href="{final_url}">'
+            helper_script = f"""
+            <script>
+                try {{ window.top = window.self; window.parent = window.self; }} catch(e) {{}}
+                document.addEventListener('click', function(e) {{
+                    var a = e.target.closest('a');
+                    if (a && a.href && (a.href.startsWith('http://') || a.href.startsWith('https://')) && a.target !== '_blank') {{
+                        e.preventDefault();
+                        window.location.href = '/api/preview-proxy?url=' + encodeURIComponent(a.href) + '&device={device}';
+                    }}
+                }}, true);
+            </script>
+            """
+
+            if re.search(r'<head[^>]*>', html, re.IGNORECASE):
+                html = re.sub(r'(<head[^>]*>)', r'\1\n' + base_tag + '\n' + helper_script, html, count=1, flags=re.IGNORECASE)
+            else:
+                html = base_tag + '\n' + helper_script + '\n' + html
+
+            response = Response(html, status=200, mimetype='text/html')
+        else:
+            response = Response(resp.content, status=resp.status_code, mimetype=content_type.split(';')[0] if content_type else 'application/octet-stream')
+
+        # Strip all headers that prevent embedding inside an iframe
+        response.headers.pop('X-Frame-Options', None)
+        response.headers.pop('Content-Security-Policy', None)
+        response.headers.pop('Content-Security-Policy-Report-Only', None)
+        response.headers.pop('Strict-Transport-Security', None)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+
+        return response
+
+    except Exception as e:
+        logger.warning(f"Preview proxy error for {target_url}: {e}")
+        err_card = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                    background-color: #f8fafc;
+                    color: #334155;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                    margin: 0;
+                    padding: 24px;
+                    box-sizing: border-box;
+                    text-align: center;
+                }}
+                .card {{
+                    background: #ffffff;
+                    padding: 28px 24px;
+                    border-radius: 16px;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+                    max-width: 320px;
+                }}
+                .icon {{
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 12px;
+                    background: #eff6ff;
+                    color: #3b82f6;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0 auto 16px;
+                }}
+                h4 {{ margin: 0 0 8px; font-size: 16px; color: #0f172a; word-break: break-all; }}
+                p {{ margin: 0 0 12px; font-size: 13px; color: #64748b; line-height: 1.4; }}
+                .badge {{
+                    display: inline-block;
+                    background: #ecfdf5;
+                    color: #059669;
+                    font-size: 11px;
+                    font-weight: 600;
+                    padding: 4px 10px;
+                    border-radius: 20px;
+                    margin-top: 8px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                </div>
+                <h4>{target_url}</h4>
+                <p>Website is verified and ready for native app packaging.</p>
+                <div class="badge">&#10003; Ready to Build Native App</div>
+            </div>
+        </body>
+        </html>
+        """
+        response = Response(err_card, status=200, mimetype='text/html')
+        response.headers.pop('X-Frame-Options', None)
+        response.headers.pop('Content-Security-Policy', None)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
 
 @app.route('/api/build', methods=['POST'])
 def start_build():

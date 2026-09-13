@@ -9,7 +9,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const downloadLinks = document.getElementById('download-links');
     const webUrlInput = document.getElementById('web-url');
     const previewIframe = document.getElementById('preview-iframe');
+    const previewLoading = document.getElementById('preview-loading');
     const placeholderContent = document.getElementById('placeholder-content');
+
+    if (previewIframe) {
+        previewIframe.addEventListener('load', function() {
+            if (previewLoading) previewLoading.style.display = 'none';
+        });
+        previewIframe.addEventListener('error', function() {
+            if (previewLoading) previewLoading.style.display = 'none';
+        });
+    }
     const deviceFrame = document.getElementById('device-frame');
     const deviceButtons = document.querySelectorAll('.device-btn');
     const keystoreSection = document.getElementById('keystore-section');
@@ -374,27 +384,45 @@ document.addEventListener('DOMContentLoaded', function() {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
             updatePreview(this.value);
-        }, 500);
+        }, 400);
     });
 
-    function updatePreview(url) {
-        if (url && isValidUrl(url)) {
-            placeholderContent.style.display = 'none';
-            previewIframe.style.display = 'block';
-            previewIframe.src = url;
-        } else {
-            placeholderContent.style.display = 'flex';
-            previewIframe.style.display = 'none';
-            previewIframe.src = '';
+    function normalizeUrl(string) {
+        if (!string) return '';
+        string = string.trim();
+        if (!/^https?:\/\//i.test(string)) {
+            return 'https://' + string;
         }
+        return string;
     }
 
     function isValidUrl(string) {
+        if (!string) return false;
+        const normalized = normalizeUrl(string);
         try {
-            const url = new URL(string);
-            return url.protocol === 'http:' || url.protocol === 'https:';
+            const url = new URL(normalized);
+            return (url.protocol === 'http:' || url.protocol === 'https:') && (url.hostname.includes('.') || url.hostname === 'localhost');
         } catch (_) {
             return false;
+        }
+    }
+
+    function updatePreview(url) {
+        if (url && isValidUrl(url)) {
+            const normalized = normalizeUrl(url);
+            placeholderContent.style.display = 'none';
+            previewIframe.style.display = 'block';
+            if (previewLoading) previewLoading.style.display = 'flex';
+
+            const activeDeviceBtn = document.querySelector('.device-btn.active');
+            const device = activeDeviceBtn ? (activeDeviceBtn.dataset.device || 'mobile') : 'mobile';
+
+            previewIframe.src = '/api/preview-proxy?url=' + encodeURIComponent(normalized) + '&device=' + encodeURIComponent(device);
+        } else {
+            placeholderContent.style.display = 'flex';
+            previewIframe.style.display = 'none';
+            if (previewLoading) previewLoading.style.display = 'none';
+            previewIframe.src = '';
         }
     }
 
@@ -406,6 +434,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const device = this.dataset.device;
             deviceFrame.className = 'device-frame ' + device;
+
+            // Re-render preview with matching device user agent if URL is present
+            if (webUrlInput && webUrlInput.value && isValidUrl(webUrlInput.value)) {
+                updatePreview(webUrlInput.value);
+            }
         });
     });
 
@@ -428,7 +461,7 @@ document.addEventListener('DOMContentLoaded', function() {
             app_version: document.getElementById('app-version').value,
             build_number: document.getElementById('build-number').value,
             package_name: document.getElementById('package-name').value,
-            web_url: document.getElementById('web-url').value,
+            web_url: normalizeUrl(document.getElementById('web-url').value),
             platforms: [selectedPlatform],
             // WebView feature options from hidden checkboxes
             allow_zoom: document.getElementById('allow-zoom').checked,
