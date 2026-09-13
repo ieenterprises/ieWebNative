@@ -777,7 +777,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </svg>
                         Export Flutter Source (.zip)
                     `;
-                    exportLink.title = 'Download complete source code with GitHub Actions';
+                    exportLink.title = 'Download complete source code with CI/CD build workflows';
                     downloadLinks.appendChild(exportLink);
 
                     // Add Google Play Console link if published

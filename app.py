@@ -953,7 +953,7 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
     build_progress[build_id] = {
         'status': 'building',
         'progress': 25,
-        'message': f'Pushing configured {platform_label} project to GitHub Cloud Builder...'
+        'message': f'Preparing {platform_label} build in Cloud Builder...'
     }
 
     # Ensure git is initialized in project_dir
@@ -967,13 +967,13 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
 
     push_res = subprocess.run(['git', '-c', 'credential.helper=', 'push', '-u', 'origin', branch_name, '--force'], cwd=project_dir, capture_output=True, text=True)
     if push_res.returncode != 0:
-        raise RuntimeError(f"Failed to push build branch to GitHub: {push_res.stderr}")
+        raise RuntimeError(f"Failed to push build branch to remote: {push_res.stderr}")
 
-    logger.info(f"Pushed branch {branch_name} to GitHub. Waiting for workflow run...")
+    logger.info(f"Pushed branch {branch_name} to remote. Waiting for workflow run...")
     build_progress[build_id] = {
         'status': 'building',
         'progress': 35,
-        'message': 'GitHub Cloud runner queued...'
+        'message': 'Cloud build server queued...'
     }
 
     # Wait for workflow run to start on branch
@@ -996,7 +996,7 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
             logger.warning(f"Error checking workflow runs: {e}")
 
     if not run_id:
-        raise RuntimeError("GitHub Actions workflow run did not start within 60 seconds.")
+        raise RuntimeError("Cloud build workflow run did not start within 60 seconds.")
 
     logger.info(f"Workflow run {run_id} started for branch {branch_name}.")
 
@@ -1023,7 +1023,7 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
                 build_progress[build_id] = {
                     'status': 'building',
                     'progress': current_pct,
-                    'message': f"Compiling {platform_label} on GitHub Cloud... ({int(elapsed)}s)"
+                    'message': f"Compiling {platform_label} on Cloud Server... ({int(elapsed)}s)"
                 }
             elif run_status == 'completed':
                 if run_conclusion == 'success':
@@ -1034,7 +1034,7 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
                     }
                     break
                 else:
-                    raise RuntimeError(f"Cloud build failed on GitHub (conclusion: {run_conclusion}).")
+                    raise RuntimeError(f"Cloud build failed (conclusion: {run_conclusion}).")
         except Exception as e:
             if "Cloud build failed" in str(e):
                 raise
@@ -1267,7 +1267,7 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
             logger.warning(f"Could not download artifact: {e}")
 
     if not downloaded or not os.path.exists(final_output_path):
-        raise RuntimeError(f"Cloud build finished, but could not download the {platform_label} artifact from GitHub.")
+        raise RuntimeError(f"Cloud build finished, but could not download the {platform_label} artifact.")
 
     # Clean up remote branch
     try:
@@ -3261,14 +3261,14 @@ def upload_app_store_key():
 
 @app.route('/api/apple/check-platform', methods=['GET'])
 def check_apple_platform():
-    """Check if Apple signing is available (macOS or GitHub Cloud Builder)"""
+    """Check if Apple signing is available (macOS or Cloud Builder)"""
     has_cloud = bool(os.getenv('GITHUB_TOKEN'))
     available = is_macos() or has_cloud
     return jsonify({
         'available': available,
         'cloud_builder': has_cloud,
         'platform': platform.system(),
-        'message': 'Apple signing & iOS builds available via GitHub Cloud Builder' if has_cloud else ('Apple signing is available' if is_macos() else 'Apple signing requires macOS or GitHub Cloud Builder')
+        'message': 'Apple signing & iOS builds available via Cloud Builder' if has_cloud else ('Apple signing is available' if is_macos() else 'Apple signing requires macOS or Cloud Builder')
     })
 
 @app.route('/api/project/save', methods=['POST'])
