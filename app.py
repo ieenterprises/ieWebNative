@@ -999,12 +999,26 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
         raise RuntimeError("Cloud build workflow run did not start within 60 seconds.")
 
     logger.info(f"Workflow run {run_id} started for branch {branch_name}.")
+    if build_id in build_progress:
+        build_progress[build_id]['github_run_id'] = run_id
 
     # Poll workflow run until completion (timeout 25 mins)
     start_run = time.time()
     while time.time() - start_run < 1500:
         time.sleep(5)
         try:
+            # Check if cancellation was requested
+            if build_progress.get(build_id, {}).get('cancel_requested') or build_progress.get(build_id, {}).get('status') == 'cancelled':
+                try:
+                    requests.post(
+                        f"https://api.github.com/repos/{github_owner}/{github_repo}/actions/runs/{run_id}/cancel",
+                        headers=headers,
+                        timeout=10
+                    )
+                except Exception:
+                    pass
+                raise RuntimeError("Build cancelled by user.")
+
             r = requests.get(
                 f"https://api.github.com/repos/{github_owner}/{github_repo}/actions/runs/{run_id}",
                 headers=headers,
@@ -1020,23 +1034,23 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
             if run_status == 'in_progress':
                 elapsed = time.time() - start_run
                 current_pct = min(88, int(40 + (elapsed / 240.0) * 45))
-                build_progress[build_id] = {
+                build_progress[build_id].update({
                     'status': 'building',
                     'progress': current_pct,
                     'message': f"Compiling {platform_label} on Cloud Server... ({int(elapsed)}s)"
-                }
+                })
             elif run_status == 'completed':
                 if run_conclusion == 'success':
-                    build_progress[build_id] = {
+                    build_progress[build_id].update({
                         'status': 'building',
                         'progress': 92,
                         'message': f'Build succeeded! Downloading {platform_label} files...'
-                    }
+                    })
                     break
                 else:
                     raise RuntimeError(f"Cloud build failed (conclusion: {run_conclusion}).")
         except Exception as e:
-            if "Cloud build failed" in str(e):
+            if "Cloud build failed" in str(e) or "Build cancelled by user" in str(e):
                 raise
             logger.warning(f"Polling error: {e}")
 
@@ -1697,12 +1711,19 @@ def run_build(build_id, config):
         ).start()
 
     except Exception as e:
-        error_status = {
-            'status': 'error',
-            'progress': 0,
-            'message': f'Build failed: {str(e)}'
-        }
-        build_progress[build_id] = error_status
+        if build_progress.get(build_id, {}).get('cancel_requested') or build_progress.get(build_id, {}).get('status') == 'cancelled':
+            build_progress[build_id].update({
+                'status': 'cancelled',
+                'progress': 0,
+                'message': 'Build cancelled by user.'
+            })
+        else:
+            error_status = {
+                'status': 'error',
+                'progress': 0,
+                'message': f'Build failed: {str(e)}'
+            }
+            build_progress[build_id].update(error_status)
 
         # ✅ Webhook on failure
         webhook_url = config.get('webhook_url')
@@ -2892,6 +2913,22 @@ def start_build():
             except Exception as auto_save_err:
                 logger.warning(f"Project auto-save note: {auto_save_err}")
 
+        # Store initial build progress record with metadata
+        selected_plat = config.get('platforms', ['android'])[0] if config.get('platforms') else 'android'
+        session['active_build_id'] = build_id
+        build_progress[build_id] = {
+            'status': 'preparing',
+            'progress': 5,
+            'message': 'Preparing build environment...',
+            'build_id': build_id,
+            'app_name': config.get('app_name', 'App'),
+            'platform': selected_plat,
+            'platforms': config.get('platforms', [selected_plat]),
+            'user_id': auth_user_id,
+            'start_time': datetime.now().isoformat(),
+            'cancel_requested': False
+        }
+
         # Run build
         thread = threading.Thread(target=run_build, args=(build_id, config))
         thread.start()
@@ -2941,6 +2978,86 @@ def get_build_status(build_id):
     if build_id not in build_progress:
         return jsonify({'error': 'Build not found'}), 404
     return jsonify(build_progress[build_id])
+
+@app.route('/api/build/active', methods=['GET'])
+def get_active_build():
+    """Get currently active or recent build for the current user/session"""
+    auth_user_id = session.get('user_id')
+    active_build_id = session.get('active_build_id')
+
+    # If active_build_id is in session, check it first
+    if active_build_id:
+        _recover_build_if_on_disk(active_build_id)
+        if active_build_id in build_progress:
+            b = build_progress[active_build_id]
+            is_active = b.get('status') in ['preparing', 'running', 'in_progress', 'queued', 'building']
+            return jsonify({
+                'has_active_build': is_active,
+                'build_id': active_build_id,
+                'build': b
+            })
+
+    # Search build_progress for any active build belonging to this user
+    if auth_user_id:
+        for bid, b in reversed(list(build_progress.items())):
+            if b.get('user_id') == auth_user_id:
+                is_active = b.get('status') in ['preparing', 'running', 'in_progress', 'queued', 'building']
+                if is_active:
+                    session['active_build_id'] = bid
+                    return jsonify({
+                        'has_active_build': True,
+                        'build_id': bid,
+                        'build': b
+                    })
+                return jsonify({
+                    'has_active_build': False,
+                    'build_id': bid,
+                    'build': b
+                })
+
+    return jsonify({'has_active_build': False, 'build': None, 'build_id': None})
+
+@app.route('/api/build/<build_id>/cancel', methods=['POST'])
+def cancel_build(build_id):
+    """Cancel an ongoing build"""
+    _recover_build_if_on_disk(build_id)
+    if build_id not in build_progress:
+        return jsonify({'error': 'Build not found'}), 404
+
+    b = build_progress[build_id]
+    if b.get('status') in ['completed', 'failed', 'error', 'cancelled']:
+        return jsonify({'message': f"Build is already {b.get('status')}", 'status': b.get('status')})
+
+    # Mark as cancelled
+    b['cancel_requested'] = True
+    b['status'] = 'cancelled'
+    b['message'] = 'Build cancelled by user.'
+
+    # Attempt to cancel GitHub Actions workflow run if running in cloud
+    run_id = b.get('github_run_id')
+    github_token = os.getenv('GITHUB_TOKEN')
+    github_owner = os.getenv('GITHUB_OWNER', 'ieenterprises')
+    github_repo = os.getenv('GITHUB_REPO', 'iewebnative-builds')
+
+    if run_id and github_token:
+        try:
+            requests.post(
+                f"https://api.github.com/repos/{github_owner}/{github_repo}/actions/runs/{run_id}/cancel",
+                headers={
+                    'Authorization': f'Bearer {github_token}',
+                    'Accept': 'application/vnd.github.v3+json'
+                },
+                timeout=10
+            )
+            logger.info(f"Triggered GitHub Actions cancel for run {run_id}")
+        except Exception as e:
+            logger.warning(f"Error cancelling GitHub Actions run: {e}")
+
+    if session.get('active_build_id') == build_id:
+        session.pop('active_build_id', None)
+
+    return jsonify({'success': True, 'message': 'Build cancelled successfully', 'status': 'cancelled'})
+
 
 @app.route('/api/build/<build_id>/export', methods=['GET'])
 def export_build_project(build_id):

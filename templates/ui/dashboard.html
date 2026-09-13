@@ -91,6 +91,46 @@
 
     <!-- Main Content -->
     <main class="main-content">
+        <!-- Active Background Build Banner -->
+        <div id="active-build-banner" class="active-build-banner" style="display: none; margin-bottom: 24px; padding: 18px 24px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; box-shadow: 0 4px 20px -2px rgba(99, 102, 241, 0.1);">
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 14px;">
+                    <div class="banner-spinner" style="width: 38px; height: 38px; border: 3px solid rgba(99, 102, 241, 0.2); border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; flex-shrink: 0;"></div>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <h3 style="margin: 0; font-size: 1.05rem; font-weight: 600; color: var(--text-primary, #0f172a);" id="banner-build-title">Build In Progress</h3>
+                            <span id="banner-build-badge" style="display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; background: rgba(99, 102, 241, 0.15); color: #6366f1;">Building...</span>
+                        </div>
+                        <p style="margin: 4px 0 0 0; font-size: 0.85rem; color: var(--text-secondary, #64748b);" id="banner-build-desc">Compiling app on Cloud Server...</p>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                    <div style="min-width: 140px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <span style="font-size: 0.78rem; color: var(--text-secondary, #64748b);">Progress</span>
+                            <span id="banner-progress-percent" style="font-weight: 700; font-size: 0.85rem; color: #6366f1;">0%</span>
+                        </div>
+                        <div style="width: 140px; height: 6px; background: rgba(99, 102, 241, 0.15); border-radius: 9999px; overflow: hidden;">
+                            <div id="banner-progress-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #6366f1, #8b5cf6); border-radius: 9999px; transition: width 0.3s ease;"></div>
+                        </div>
+                    </div>
+                    <a href="/builder" class="btn btn-primary" style="text-decoration: none; padding: 8px 16px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                        Resume in Builder
+                    </a>
+                    <button type="button" id="banner-cancel-btn" class="btn" style="padding: 7px 12px; font-size: 0.85rem; border: 1px solid #ef4444; color: #ef4444; background: transparent; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Projects Section -->
         <section class="content-section" id="projects-section">
             <div class="section-header">
@@ -705,6 +745,129 @@
                 renderProjects();
             }
         });
+
+        // ---------------- Active Background Build Poller ----------------
+        let activeDashboardBuildId = null;
+        let dashboardPollTimer = null;
+
+        async function pollActiveDashboardBuild() {
+            let candidateId = null;
+            const stored = localStorage.getItem('iewebnative_active_build');
+            if (stored) {
+                try {
+                    candidateId = JSON.parse(stored).buildId;
+                } catch(e) {}
+            }
+
+            try {
+                const res = await fetch('/api/build/active');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.build_id) {
+                        candidateId = data.build_id;
+                    }
+                }
+            } catch(e) {}
+
+            if (!candidateId) {
+                hideActiveBuildBanner();
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/build/${candidateId}/status`);
+                if (!resp.ok) {
+                    hideActiveBuildBanner();
+                    return;
+                }
+
+                const status = await resp.json();
+                if (['preparing', 'building', 'running', 'in_progress', 'queued'].includes(status.status)) {
+                    activeDashboardBuildId = candidateId;
+                    showActiveBuildBanner(status);
+                    dashboardPollTimer = setTimeout(pollActiveDashboardBuild, 2000);
+                } else if (status.status === 'completed') {
+                    showCompletedBuildBanner(status);
+                    localStorage.removeItem('iewebnative_active_build');
+                } else {
+                    hideActiveBuildBanner();
+                    localStorage.removeItem('iewebnative_active_build');
+                }
+            } catch(e) {
+                dashboardPollTimer = setTimeout(pollActiveDashboardBuild, 4000);
+            }
+        }
+
+        function showActiveBuildBanner(status) {
+            const banner = document.getElementById('active-build-banner');
+            if (!banner) return;
+            banner.style.display = 'block';
+
+            const title = document.getElementById('banner-build-title');
+            const desc = document.getElementById('banner-build-desc');
+            const pct = document.getElementById('banner-progress-percent');
+            const fill = document.getElementById('banner-progress-fill');
+            const badge = document.getElementById('banner-build-badge');
+
+            if (title) title.textContent = `Building: ${status.app_name || 'App'}`;
+            if (desc) desc.textContent = status.message || 'Compiling app on Cloud Server...';
+            const progressVal = status.progress || 10;
+            if (pct) pct.textContent = progressVal + '%';
+            if (fill) fill.style.width = progressVal + '%';
+            if (badge) {
+                badge.textContent = `${status.platform || 'app'}`.toUpperCase();
+                badge.style.background = 'rgba(99, 102, 241, 0.15)';
+                badge.style.color = '#6366f1';
+            }
+        }
+
+        function showCompletedBuildBanner(status) {
+            const banner = document.getElementById('active-build-banner');
+            if (!banner) return;
+            banner.style.display = 'block';
+
+            const title = document.getElementById('banner-build-title');
+            const desc = document.getElementById('banner-build-desc');
+            const pct = document.getElementById('banner-progress-percent');
+            const fill = document.getElementById('banner-progress-fill');
+            const badge = document.getElementById('banner-build-badge');
+            const spinner = banner.querySelector('.banner-spinner');
+
+            if (spinner) spinner.style.display = 'none';
+            if (title) title.textContent = `Build Completed: ${status.app_name || 'App'}`;
+            if (desc) desc.textContent = 'Your app binaries are ready to download in the Builder!';
+            if (pct) pct.textContent = '100%';
+            if (fill) {
+                fill.style.width = '100%';
+                fill.style.background = '#10b981';
+            }
+            if (badge) {
+                badge.textContent = 'READY';
+                badge.style.background = 'rgba(16, 185, 129, 0.15)';
+                badge.style.color = '#10b981';
+            }
+        }
+
+        function hideActiveBuildBanner() {
+            const banner = document.getElementById('active-build-banner');
+            if (banner) banner.style.display = 'none';
+        }
+
+        document.getElementById('banner-cancel-btn')?.addEventListener('click', async function() {
+            if (!activeDashboardBuildId) return;
+            if (!confirm('Are you sure you want to cancel the running build?')) return;
+            try {
+                await fetch(`/api/build/${activeDashboardBuildId}/cancel`, { method: 'POST' });
+                localStorage.removeItem('iewebnative_active_build');
+                hideActiveBuildBanner();
+                showToast('Build cancelled.', 'info');
+            } catch(e) {
+                showToast('Error cancelling build: ' + e.message, 'error');
+            }
+        });
+
+        // Start checking for active build on dashboard
+        pollActiveDashboardBuild();
     </script>
 </body>
 </html>

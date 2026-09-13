@@ -669,6 +669,22 @@
                     <div class="progress-fill" id="progress-fill"></div>
                 </div>
                 <p class="progress-message" id="progress-message">Preparing build environment...</p>
+                <div class="progress-footer" style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <span style="font-size: 0.8rem; color: var(--text-muted, #94a3b8); display: inline-flex; align-items: center; gap: 5px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        Runs safely in the background
+                    </span>
+                    <button type="button" class="btn" id="cancel-build-btn" style="padding: 6px 14px; font-size: 0.85rem; border: 1px solid #ef4444; color: #ef4444; background: transparent; cursor: pointer; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        Cancel Build
+                    </button>
+                </div>
             </div>
 
             <!-- Build Complete -->
@@ -681,6 +697,9 @@
                 </div>
                 <h3>Build Complete!</h3>
                 <div id="download-links" class="download-links"></div>
+                <div style="margin-top: 18px; text-align: center;">
+                    <button type="button" class="btn btn-secondary" id="start-new-build-btn" style="padding: 8px 18px; font-size: 0.9rem; cursor: pointer; border-radius: 6px;">Start Another Build</button>
+                </div>
             </div>
         </div>
 

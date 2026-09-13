@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Store paths for icon and keystore (set after upload)
     let currentIconPath = null;
     let currentKeystorePath = null;
+    let activeBuildId = null;
 
     // Apple signing paths and info
     let currentAppleCertificatePath = null;
@@ -653,10 +654,17 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             const result = await response.json();
-            const buildId = result.build_id;
+            activeBuildId = result.build_id;
+
+            // Persist to localStorage for cross-page navigation
+            localStorage.setItem('iewebnative_active_build', JSON.stringify({
+                buildId: activeBuildId,
+                appName: formData.app_name || 'App',
+                startTime: Date.now()
+            }));
 
             // Poll for status
-            pollBuildStatus(buildId);
+            pollBuildStatus(activeBuildId);
 
         } catch (error) {
             console.error('Build error:', error);
@@ -671,9 +679,140 @@ document.addEventListener('DOMContentLoaded', function() {
         centerProgress.style.display = 'none';
         platformDropdownWrapper.style.display = 'flex';
         centerProgressFill.style.width = '0%';
+        progressFill.style.width = '0%';
+        activeBuildId = null;
+    }
+
+    function renderBuildComplete(buildId, status) {
+        // Show completion
+        buildProgress.style.display = 'none';
+        buildComplete.style.display = 'block';
+        buildButton.disabled = false;
+
+        // Hide center progress and show dropdown
+        centerProgress.style.display = 'none';
+        platformDropdownWrapper.style.display = 'flex';
+        centerProgressFill.style.width = '0%';
+
+        localStorage.removeItem('iewebnative_active_build');
+
+        const getPlatformDisplayName = (plat) => {
+            const names = {
+                'android': 'Android APK',
+                'android_aab': 'Android (.aab)',
+                'ios': 'iOS (.ipa)',
+                'ios_xcode': 'Xcode Project (TestFlight)',
+                'windows': 'Windows (.zip)',
+                'macos': 'macOS (.dmg)',
+                'linux': 'Linux (.tar.gz)'
+            };
+            return names[plat] || plat.toUpperCase();
+        };
+
+        // Generate download links
+        downloadLinks.innerHTML = '';
+        if (status.outputs) {
+            for (const [platform, path] of Object.entries(status.outputs)) {
+                if (path.startsWith('Error:')) {
+                    const errorBtn = document.createElement('span');
+                    errorBtn.className = 'download-btn error';
+                    errorBtn.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="15" y1="9" x2="9" y2="15"/>
+                            <line x1="9" y1="9" x2="15" y2="15"/>
+                        </svg>
+                        ${getPlatformDisplayName(platform)} failed
+                    `;
+                    errorBtn.title = path;
+                    downloadLinks.appendChild(errorBtn);
+                } else {
+                    const link = document.createElement('a');
+                    link.href = `/api/build/${buildId}/download/${platform}`;
+                    link.className = 'download-btn';
+                    link.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download ${getPlatformDisplayName(platform)}
+                    `;
+                    downloadLinks.appendChild(link);
+                }
+            }
+
+            // Add keystore download link if generated
+            if (status.keystore_generated) {
+                const keystoreLink = document.createElement('a');
+                keystoreLink.href = `/api/build/${buildId}/download/keystore`;
+                keystoreLink.className = 'download-btn';
+                keystoreLink.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0110 0v4"/>
+                    </svg>
+                    Download Keystore
+                `;
+                keystoreLink.title = 'Save this keystore for future app updates';
+                downloadLinks.appendChild(keystoreLink);
+            }
+
+            // Add export source code button
+            const exportLink = document.createElement('a');
+            exportLink.href = `/api/build/${buildId}/export`;
+            exportLink.className = 'download-btn secondary';
+            exportLink.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                    <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+                Export Flutter Source (.zip)
+            `;
+            exportLink.title = 'Download complete source code with CI/CD build workflows';
+            downloadLinks.appendChild(exportLink);
+
+            // Add Google Play Console link if published
+            if (status.google_play_published || document.getElementById('enable-google-play-publish')?.checked) {
+                const playConsoleBtn = document.createElement('a');
+                playConsoleBtn.href = 'https://play.google.com/console';
+                playConsoleBtn.target = '_blank';
+                playConsoleBtn.rel = 'noopener noreferrer';
+                playConsoleBtn.className = 'download-btn';
+                playConsoleBtn.style.background = 'linear-gradient(135deg, #01875f, #005c41)';
+                playConsoleBtn.style.color = '#ffffff';
+                playConsoleBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3.609 1.814L13.792 12 3.61 22.186a1.996 1.996 0 01-.61-.926V2.74c0-.348.094-.67.252-.951l.357.025zM14.852 13.06l2.808 2.808-11.888 6.793 9.08-9.601zm0-2.12L5.772 1.34 17.66 8.132l-2.808 2.808zm1.06 1.06l3.548 2.028a1.5 1.5 0 000-2.608l-3.548-2.028 1.572 1.572-1.572 1.036z"/>
+                    </svg>
+                    Open Google Play Console
+                `;
+                downloadLinks.appendChild(playConsoleBtn);
+            }
+
+            // Add App Store Connect link if published
+            if (status.app_store_published || document.getElementById('enable-app-store-publish')?.checked) {
+                const ascBtn = document.createElement('a');
+                ascBtn.href = 'https://appstoreconnect.apple.com/apps';
+                ascBtn.target = '_blank';
+                ascBtn.rel = 'noopener noreferrer';
+                ascBtn.className = 'download-btn';
+                ascBtn.style.background = 'linear-gradient(135deg, #1d1d1f, #000000)';
+                ascBtn.style.color = '#ffffff';
+                ascBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 0.92-2.85-.92.04-2.02.62-2.66 1.37-.56.65-.96 1.69-.83 2.7.99.08 2.03-.54 2.57-1.22z"/>
+                    </svg>
+                    Open App Store Connect
+                `;
+                downloadLinks.appendChild(ascBtn);
+            }
+        }
     }
 
     async function pollBuildStatus(buildId) {
+        if (!buildId) return;
         try {
             const response = await fetch(`/api/build/${buildId}/status`);
 
@@ -693,144 +832,125 @@ document.addEventListener('DOMContentLoaded', function() {
             centerProgressText.textContent = status.message;
 
             if (status.status === 'completed') {
-                // Show completion
-                buildProgress.style.display = 'none';
-                buildComplete.style.display = 'block';
-                buildButton.disabled = false;
-
-                // Hide center progress and show dropdown
-                centerProgress.style.display = 'none';
-                platformDropdownWrapper.style.display = 'flex';
-                centerProgressFill.style.width = '0%';
-
-                const getPlatformDisplayName = (plat) => {
-                    const names = {
-                        'android': 'Android APK',
-                        'android_aab': 'Android (.aab)',
-                        'ios': 'iOS (.ipa)',
-                        'ios_xcode': 'Xcode Project (TestFlight)',
-                        'windows': 'Windows (.zip)',
-                        'macos': 'macOS (.dmg)',
-                        'linux': 'Linux (.tar.gz)'
-                    };
-                    return names[plat] || plat.toUpperCase();
-                };
-
-                // Generate download links
-                downloadLinks.innerHTML = '';
-                if (status.outputs) {
-                    for (const [platform, path] of Object.entries(status.outputs)) {
-                        if (path.startsWith('Error:')) {
-                            const errorBtn = document.createElement('span');
-                            errorBtn.className = 'download-btn error';
-                            errorBtn.innerHTML = `
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <line x1="15" y1="9" x2="9" y2="15"/>
-                                    <line x1="9" y1="9" x2="15" y2="15"/>
-                                </svg>
-                                ${getPlatformDisplayName(platform)} failed
-                            `;
-                            errorBtn.title = path;
-                            downloadLinks.appendChild(errorBtn);
-                        } else {
-                            const link = document.createElement('a');
-                            link.href = `/api/build/${buildId}/download/${platform}`;
-                            link.className = 'download-btn';
-                            link.innerHTML = `
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                                    <polyline points="7 10 12 15 17 10"/>
-                                    <line x1="12" y1="15" x2="12" y2="3"/>
-                                </svg>
-                                Download ${getPlatformDisplayName(platform)}
-                            `;
-                            downloadLinks.appendChild(link);
-                        }
-                    }
-
-                    // Add keystore download link if generated
-                    if (status.keystore_generated) {
-                        const keystoreLink = document.createElement('a');
-                        keystoreLink.href = `/api/build/${buildId}/download/keystore`;
-                        keystoreLink.className = 'download-btn';
-                        keystoreLink.innerHTML = `
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                                <path d="M7 11V7a5 5 0 0110 0v4"/>
-                            </svg>
-                            Download Keystore
-                        `;
-                        keystoreLink.title = 'Save this keystore for future app updates';
-                        downloadLinks.appendChild(keystoreLink);
-                    }
-
-                    // Add export source code button
-                    const exportLink = document.createElement('a');
-                    exportLink.href = `/api/build/${buildId}/export`;
-                    exportLink.className = 'download-btn secondary';
-                    exportLink.innerHTML = `
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
-                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-                            <line x1="12" y1="22.08" x2="12" y2="12"/>
-                        </svg>
-                        Export Flutter Source (.zip)
-                    `;
-                    exportLink.title = 'Download complete source code with CI/CD build workflows';
-                    downloadLinks.appendChild(exportLink);
-
-                    // Add Google Play Console link if published
-                    if (status.google_play_published || document.getElementById('enable-google-play-publish')?.checked) {
-                        const playConsoleBtn = document.createElement('a');
-                        playConsoleBtn.href = 'https://play.google.com/console';
-                        playConsoleBtn.target = '_blank';
-                        playConsoleBtn.rel = 'noopener noreferrer';
-                        playConsoleBtn.className = 'download-btn';
-                        playConsoleBtn.style.background = 'linear-gradient(135deg, #01875f, #005c41)';
-                        playConsoleBtn.style.color = '#ffffff';
-                        playConsoleBtn.innerHTML = `
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M3.609 1.814L13.792 12 3.61 22.186a1.996 1.996 0 01-.61-.926V2.74c0-.348.094-.67.252-.951l.357.025zM14.852 13.06l2.808 2.808-11.888 6.793 9.08-9.601zm0-2.12L5.772 1.34 17.66 8.132l-2.808 2.808zm1.06 1.06l3.548 2.028a1.5 1.5 0 000-2.608l-3.548-2.028 1.572 1.572-1.572 1.036z"/>
-                            </svg>
-                            Open Google Play Console
-                        `;
-                        downloadLinks.appendChild(playConsoleBtn);
-                    }
-
-                    // Add App Store Connect link if published
-                    if (status.app_store_published || document.getElementById('enable-app-store-publish')?.checked) {
-                        const ascBtn = document.createElement('a');
-                        ascBtn.href = 'https://appstoreconnect.apple.com/apps';
-                        ascBtn.target = '_blank';
-                        ascBtn.rel = 'noopener noreferrer';
-                        ascBtn.className = 'download-btn';
-                        ascBtn.style.background = 'linear-gradient(135deg, #1d1d1f, #000000)';
-                        ascBtn.style.color = '#ffffff';
-                        ascBtn.innerHTML = `
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 0.92-2.85-.92.04-2.02.62-2.66 1.37-.56.65-.96 1.69-.83 2.7.99.08 2.03-.54 2.57-1.22z"/>
-                            </svg>
-                            Open App Store Connect
-                        `;
-                        downloadLinks.appendChild(ascBtn);
-                    }
-                }
-
+                renderBuildComplete(buildId, status);
                 showToast('Build completed successfully!', 'success');
-            } else if (status.status === 'error') {
+            } else if (status.status === 'error' || status.status === 'failed') {
                 showToast('Build failed: ' + status.message, 'error');
+                localStorage.removeItem('iewebnative_active_build');
+                resetBuildUI();
+            } else if (status.status === 'cancelled') {
+                showToast('Build was cancelled.', 'info');
+                localStorage.removeItem('iewebnative_active_build');
                 resetBuildUI();
             } else {
-                // Continue polling
-                setTimeout(() => pollBuildStatus(buildId), 1000);
+                // Continue polling in background
+                setTimeout(() => pollBuildStatus(buildId), 1500);
             }
         } catch (error) {
             console.error('Status poll error:', error);
-            showToast('Error checking build status: ' + error.message, 'error');
-            resetBuildUI();
+            // Don't immediately wipe out UI on transient network glitches
+            setTimeout(() => pollBuildStatus(buildId), 3000);
         }
     }
+
+    // Cancel active build button listener
+    const cancelBuildBtn = document.getElementById('cancel-build-btn');
+    if (cancelBuildBtn) {
+        cancelBuildBtn.addEventListener('click', async function() {
+            if (!activeBuildId) return;
+            if (!confirm('Are you sure you want to cancel the build?')) return;
+
+            cancelBuildBtn.disabled = true;
+            const originalHtml = cancelBuildBtn.innerHTML;
+            cancelBuildBtn.innerHTML = 'Cancelling...';
+
+            try {
+                const resp = await fetch(`/api/build/${activeBuildId}/cancel`, { method: 'POST' });
+                const data = await resp.json();
+                showToast('Build cancelled.', 'info');
+                localStorage.removeItem('iewebnative_active_build');
+                resetBuildUI();
+            } catch (err) {
+                showToast('Error cancelling build: ' + err.message, 'error');
+            } finally {
+                cancelBuildBtn.disabled = false;
+                cancelBuildBtn.innerHTML = originalHtml;
+            }
+        });
+    }
+
+    // Start another build button listener
+    const startNewBuildBtn = document.getElementById('start-new-build-btn');
+    if (startNewBuildBtn) {
+        startNewBuildBtn.addEventListener('click', function() {
+            buildComplete.style.display = 'none';
+            resetBuildUI();
+        });
+    }
+
+    // Auto-resume active build on page load (e.g. returning from Dashboard)
+    async function checkAndResumeActiveBuild() {
+        let candidateBuildId = null;
+        const stored = localStorage.getItem('iewebnative_active_build');
+        if (stored) {
+            try {
+                const parsed = JSON.parse(stored);
+                candidateBuildId = parsed.buildId;
+            } catch (e) {}
+        }
+
+        // Also check backend session/user active build
+        try {
+            const res = await fetch('/api/build/active');
+            if (res.ok) {
+                const data = await res.json();
+                if (data && data.build_id) {
+                    candidateBuildId = data.build_id;
+                }
+            }
+        } catch (e) {
+            console.warn('Active build check notice:', e);
+        }
+
+        if (!candidateBuildId) return;
+
+        try {
+            const resp = await fetch(`/api/build/${candidateBuildId}/status`);
+            if (!resp.ok) {
+                localStorage.removeItem('iewebnative_active_build');
+                return;
+            }
+            const status = await resp.json();
+            if (status.status === 'completed') {
+                activeBuildId = candidateBuildId;
+                renderBuildComplete(candidateBuildId, status);
+            } else if (['preparing', 'building', 'running', 'in_progress', 'queued'].includes(status.status)) {
+                activeBuildId = candidateBuildId;
+                buildButton.disabled = true;
+                buildProgress.style.display = 'block';
+                buildComplete.style.display = 'none';
+                if (platformDropdownWrapper) platformDropdownWrapper.style.display = 'none';
+                if (centerProgress) centerProgress.style.display = 'flex';
+
+                progressFill.style.width = (status.progress || 10) + '%';
+                progressPercent.textContent = (status.progress || 10) + '%';
+                progressMessage.textContent = status.message || 'Resuming build in background...';
+
+                if (centerProgressFill) centerProgressFill.style.width = (status.progress || 10) + '%';
+                if (centerProgressText) centerProgressText.textContent = status.message || 'Resuming build in background...';
+
+                showToast(`Resumed background build: ${status.app_name || 'App'}`, 'info');
+                pollBuildStatus(candidateBuildId);
+            } else {
+                localStorage.removeItem('iewebnative_active_build');
+            }
+        } catch (err) {
+            console.error('Error resuming active build:', err);
+        }
+    }
+
+    // Check for running builds upon loading builder
+    checkAndResumeActiveBuild();
 
     function getPlatformDisplayName(platform) {
         const names = {
