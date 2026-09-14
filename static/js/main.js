@@ -1010,16 +1010,46 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Cancel active build button listener
+    // Custom cancel build modal elements
+    const cancelModal = document.getElementById('builder-cancel-build-modal');
+    const closeCancelModalBtn = document.getElementById('close-builder-cancel-modal');
+    const abortCancelModalBtn = document.getElementById('abort-builder-cancel-btn');
+    const confirmCancelModalBtn = document.getElementById('confirm-builder-cancel-btn');
+
+    function openBuilderCancelModal() {
+        if (cancelModal) cancelModal.style.display = 'flex';
+    }
+
+    function closeBuilderCancelModal() {
+        if (cancelModal) cancelModal.style.display = 'none';
+    }
+
+    if (closeCancelModalBtn) closeCancelModalBtn.addEventListener('click', closeBuilderCancelModal);
+    if (abortCancelModalBtn) abortCancelModalBtn.addEventListener('click', closeBuilderCancelModal);
+    if (cancelModal) {
+        cancelModal.addEventListener('click', function(e) {
+            if (e.target === cancelModal) closeBuilderCancelModal();
+        });
+    }
+
+    // Cancel active build button listener opens custom modal
     const cancelBuildBtn = document.getElementById('cancel-build-btn');
     if (cancelBuildBtn) {
-        cancelBuildBtn.addEventListener('click', async function() {
+        cancelBuildBtn.addEventListener('click', function() {
             if (!activeBuildId) return;
-            if (!confirm('Are you sure you want to cancel the build?')) return;
+            openBuilderCancelModal();
+        });
+    }
 
-            cancelBuildBtn.disabled = true;
-            const originalHtml = cancelBuildBtn.innerHTML;
-            cancelBuildBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Cancelling...';
+    if (confirmCancelModalBtn) {
+        confirmCancelModalBtn.addEventListener('click', async function() {
+            closeBuilderCancelModal();
+            if (!activeBuildId) return;
+
+            if (cancelBuildBtn) {
+                cancelBuildBtn.disabled = true;
+                cancelBuildBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Cancelling...';
+            }
 
             if (window._pollStatusTimer) {
                 clearTimeout(window._pollStatusTimer);
@@ -1036,8 +1066,10 @@ document.addEventListener('DOMContentLoaded', function() {
             } catch (err) {
                 showToast('Error cancelling build: ' + err.message, 'error');
             } finally {
-                cancelBuildBtn.disabled = false;
-                cancelBuildBtn.innerHTML = originalHtml;
+                if (cancelBuildBtn) {
+                    cancelBuildBtn.disabled = false;
+                    cancelBuildBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Cancel Build';
+                }
                 resetBuildUI();
             }
         });

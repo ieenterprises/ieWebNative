@@ -4925,9 +4925,12 @@ def get_project_builds(project_id):
 @app.route('/api/projects/<project_id>', methods=['DELETE'])
 @firebase_auth_required
 def delete_project(project_id):
-    """Delete a project"""
+    """Delete a project and permanently remove all its built files (APK, AAB, iOS, etc.) from disk, Storage, and database"""
     try:
         user_id = request.user['uid']
+        project_build_ids = set()
+
+        # 1. Check ownership and gather build IDs
         if db:
             doc_ref = db.collection('projects').document(project_id)
             doc = doc_ref.get()
@@ -4935,12 +4938,30 @@ def delete_project(project_id):
             if not doc.exists:
                 return jsonify({'error': 'Project not found'}), 404
 
-            project = doc.to_dict()
+            project = doc.to_dict() or {}
             if project.get('userId') != user_id:
                 return jsonify({'error': 'Access denied'}), 403
 
+            # Collect build IDs from project's builds field
+            p_builds = project.get('builds') or {}
+            for plat, bdata in p_builds.items():
+                if isinstance(bdata, dict) and bdata.get('buildId'):
+                    project_build_ids.add(bdata.get('buildId'))
+
+            # Collect build IDs from Firestore builds collection and delete build documents
+            try:
+                build_docs = db.collection('builds').where('projectId', '==', project_id).stream()
+                for bdoc in build_docs:
+                    project_build_ids.add(bdoc.id)
+                    try:
+                        bdoc.reference.delete()
+                    except Exception as b_del_err:
+                        logger.warning(f"Error deleting Firestore build doc {bdoc.id}: {b_del_err}")
+            except Exception as b_query_err:
+                logger.warning(f"Error querying builds for project {project_id}: {b_query_err}")
+
+            # Delete project document
             doc_ref.delete()
-            return jsonify({'success': True})
         else:
             conn = get_db_connection()
             r = conn.execute('SELECT * FROM projects WHERE id = ?', (project_id,)).fetchone()
@@ -4950,11 +4971,68 @@ def delete_project(project_id):
             if r['user_id'] != user_id:
                 conn.close()
                 return jsonify({'error': 'Access denied'}), 403
+
+            # Collect build IDs from SQLite builds table
+            try:
+                b_rows = conn.execute('SELECT id FROM builds WHERE project_id = ?', (project_id,)).fetchall()
+                for brow in b_rows:
+                    project_build_ids.add(brow['id'])
+            except Exception:
+                pass
+
+            conn.execute('DELETE FROM builds WHERE project_id = ?', (project_id,))
             conn.execute('DELETE FROM projects WHERE id = ?', (project_id,))
             conn.commit()
             conn.close()
-            return jsonify({'success': True})
+
+        # Also check in-memory build_progress for this project
+        for bid, binfo in list(build_progress.items()):
+            if binfo.get('project_id') == project_id:
+                project_build_ids.add(bid)
+                build_progress.pop(bid, None)
+
+        # 2. Delete local build directories and files on disk (APK, AAB, iOS, zips, etc.)
+        for bid in project_build_ids:
+            try:
+                bdir = os.path.join(app.config['BUILD_FOLDER'], bid)
+                if os.path.exists(bdir):
+                    shutil.rmtree(bdir, ignore_errors=True)
+                    logger.info(f"Deleted local build directory: {bdir}")
+            except Exception as disk_err:
+                logger.warning(f"Error removing local build dir {bid}: {disk_err}")
+
+        # 3. Delete files from Firebase Cloud Storage (APK, AAB, iOS, icons, etc.)
+        try:
+            bucket = get_storage_bucket()
+            if bucket and user_id:
+                # Delete all blobs under builds/{user_id}/{project_id}/
+                builds_prefix = f"builds/{user_id}/{project_id}/"
+                for blob in bucket.list_blobs(prefix=builds_prefix):
+                    try:
+                        blob.delete()
+                        logger.info(f"Deleted Storage build blob: {blob.name}")
+                    except Exception as b_err:
+                        logger.warning(f"Error deleting blob {blob.name}: {b_err}")
+
+                # Delete all blobs under projects/{user_id}/{project_id}/
+                projects_prefix = f"projects/{user_id}/{project_id}/"
+                for blob in bucket.list_blobs(prefix=projects_prefix):
+                    try:
+                        blob.delete()
+                        logger.info(f"Deleted Storage project blob: {blob.name}")
+                    except Exception as p_err:
+                        logger.warning(f"Error deleting blob {blob.name}: {p_err}")
+        except Exception as storage_err:
+            logger.warning(f"Note: Error cleaning up Firebase Storage for project {project_id}: {storage_err}")
+
+        # 4. Clear active build if it belonged to this project
+        if session.get('active_build_id') in project_build_ids:
+            session.pop('active_build_id', None)
+
+        logger.info(f"Project {project_id} and all its build files (APK, AAB, iOS, etc.) were permanently deleted.")
+        return jsonify({'success': True, 'message': 'Project and all built files successfully deleted'})
     except Exception as e:
+        logger.exception("Failed to delete project")
         return jsonify({'error': f'Failed to delete project: {str(e)}'}), 500
 
 @app.route('/api/projects/<project_id>/assets', methods=['POST'])

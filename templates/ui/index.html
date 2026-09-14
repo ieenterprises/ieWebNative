@@ -1328,8 +1328,10 @@
         // Save project to cloud
         document.getElementById('save-cloud-btn').addEventListener('click', async () => {
             if (!currentUser) {
-                alert('Please sign in to save to cloud');
-                window.location.href = '/auth';
+                showToast('Please sign in to save to cloud', 'warning');
+                setTimeout(() => {
+                    window.location.href = '/auth';
+                }, 800);
                 return;
             }
 
@@ -1535,6 +1537,38 @@
             }, 3000);
         }
     </script>
+
+    <!-- Custom In-App Cancel Build Confirmation Modal -->
+    <div class="modal-overlay" id="builder-cancel-build-modal" style="display: none;">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3 style="display: flex; align-items: center; gap: 8px; color: #ef4444;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    Cancel Build
+                </h3>
+                <button type="button" class="modal-close" id="close-builder-cancel-modal" title="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to cancel the build?</p>
+                <p class="warning-text">The build process will be stopped immediately. Any partial progress will be discarded.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="abort-builder-cancel-btn" style="padding: 8px 16px; border-radius: var(--radius-md); font-weight: 500; cursor: pointer; border: 1px solid var(--border-primary); background: var(--bg-secondary); color: var(--text-primary);">Keep Building</button>
+                <button type="button" class="btn btn-danger" id="confirm-builder-cancel-btn">
+                    <span>Stop Build</span>
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Firebase SDK & Client Service -->
     <script>

@@ -264,6 +264,38 @@
         </div>
     </div>
 
+    <!-- Cancel Build Confirmation Modal -->
+    <div class="modal-overlay" id="dashboard-cancel-build-modal" style="display: none;">
+        <div class="modal modal-small">
+            <div class="modal-header">
+                <h3 style="display: flex; align-items: center; gap: 8px; color: #ef4444;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    Cancel Build
+                </h3>
+                <button type="button" class="modal-close" id="close-dashboard-cancel-modal" title="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to cancel the running build?</p>
+                <p class="warning-text">The build process will be stopped immediately. Any partial progress will be discarded.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="abort-dashboard-cancel-btn">Keep Building</button>
+                <button type="button" class="btn btn-danger" id="confirm-dashboard-cancel-btn">
+                    <span>Stop Build</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div id="dashboard-toast" class="dashboard-toast" style="display: none;">
         <div class="toast-icon"></div>
@@ -1009,13 +1041,39 @@
 
         document.getElementById('banner-dismiss-x')?.addEventListener('click', hideActiveBuildBanner);
 
-        document.getElementById('banner-cancel-btn')?.addEventListener('click', async function() {
+        const dashCancelModal = document.getElementById('dashboard-cancel-build-modal');
+        const closeDashCancelModalBtn = document.getElementById('close-dashboard-cancel-modal');
+        const abortDashCancelModalBtn = document.getElementById('abort-dashboard-cancel-btn');
+        const confirmDashCancelModalBtn = document.getElementById('confirm-dashboard-cancel-btn');
+
+        function openDashboardCancelModal() {
+            if (dashCancelModal) dashCancelModal.style.display = 'flex';
+        }
+
+        function closeDashboardCancelModal() {
+            if (dashCancelModal) dashCancelModal.style.display = 'none';
+        }
+
+        if (closeDashCancelModalBtn) closeDashCancelModalBtn.addEventListener('click', closeDashboardCancelModal);
+        if (abortDashCancelModalBtn) abortDashCancelModalBtn.addEventListener('click', closeDashboardCancelModal);
+        if (dashCancelModal) {
+            dashCancelModal.addEventListener('click', function(e) {
+                if (e.target === dashCancelModal) closeDashboardCancelModal();
+            });
+        }
+
+        document.getElementById('banner-cancel-btn')?.addEventListener('click', function() {
             if (bannerCompletedMode) {
                 hideActiveBuildBanner();
                 return;
             }
             if (!activeDashboardBuildId) return;
-            if (!confirm('Are you sure you want to cancel the running build?')) return;
+            openDashboardCancelModal();
+        });
+
+        confirmDashCancelModalBtn?.addEventListener('click', async function() {
+            closeDashboardCancelModal();
+            if (!activeDashboardBuildId) return;
 
             const bidToCancel = activeDashboardBuildId;
             activeDashboardBuildId = null;
