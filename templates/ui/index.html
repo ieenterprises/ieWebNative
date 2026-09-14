@@ -993,7 +993,7 @@
                 currentProjectId = project.id || projectId;
                 window.currentProjectId = currentProjectId;
                 if (project.builds) {
-                    window.currentProjectBuilds = project.builds;
+                    window.currentProjectBuilds = Object.assign({}, window.currentProjectBuilds || {}, project.builds);
                 }
 
                 // Populate form fields
@@ -1465,8 +1465,8 @@
                     };
                 }
 
-                if (window.currentProjectBuilds) {
-                    projectData.builds = window.currentProjectBuilds;
+                if (window.currentProjectBuilds && Object.keys(window.currentProjectBuilds).length > 0) {
+                    projectData.builds = Object.assign({}, window.currentProjectBuilds);
                 }
 
                 if (currentProjectId) {

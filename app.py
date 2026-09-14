@@ -1148,6 +1148,8 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
                             match = name_lower.endswith('.ipa')
                             # Also check for companion Xcode project zip
                             if 'xcode' in name_lower and name_lower.endswith('.zip'):
+                                if build_id in build_progress:
+                                    build_progress[build_id].setdefault('github_download_urls', {})['ios_xcode'] = asset['browser_download_url']
                                 try:
                                     with requests.get(asset['browser_download_url'], stream=True, timeout=120) as r_xc:
                                         r_xc.raise_for_status()
@@ -1163,6 +1165,8 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
                         else:
                             match = name_lower.endswith('.apk')
                             if name_lower.endswith('.aab'):
+                                if build_id in build_progress:
+                                    build_progress[build_id].setdefault('github_download_urls', {})['android_aab'] = asset['browser_download_url']
                                 try:
                                     aab_path = os.path.join(output_dir, f"{config['app_name']}.aab")
                                     with requests.get(asset['browser_download_url'], stream=True, timeout=120) as r_aab:
@@ -1177,6 +1181,8 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
 
                         if match:
                             download_url = asset['browser_download_url']
+                            if build_id in build_progress:
+                                build_progress[build_id].setdefault('github_download_urls', {})[target_platform] = download_url
                             with requests.get(download_url, stream=True, timeout=120) as r_file:
                                 r_file.raise_for_status()
                                 with open(final_output_path, 'wb') as f_out:
@@ -1421,6 +1427,9 @@ def record_completed_build(build_id, config, final_status):
                 except Exception as e:
                     logger.warning(f"Error auto-creating project in SQLite: {e}")
 
+        # Extract GitHub release download URLs if available
+        gh_urls = final_status.get('github_download_urls') or (build_progress.get(build_id, {}).get('github_download_urls') if build_id in build_progress else {}) or {}
+
         # Construct platform build artifacts
         platform_artifacts = {}
         for plat, output_path in outputs.items():
@@ -1447,6 +1456,9 @@ def record_completed_build(build_id, config, final_status):
                 'builtAt': now_iso,
                 'status': 'completed'
             }
+            if gh_urls.get(plat):
+                artifact['githubDownloadUrl'] = gh_urls[plat]
+
             platform_artifacts[plat] = artifact
 
         if not platform_artifacts:
@@ -1471,7 +1483,7 @@ def record_completed_build(build_id, config, final_status):
                 now_iso
             ))
 
-            # Update project's builds_json if project exists
+            # Update project's builds_json if project exists (merging)
             if project_id:
                 proj_row = conn.execute('SELECT builds_json FROM projects WHERE id = ?', (project_id,)).fetchone()
                 existing_builds = {}
@@ -1508,18 +1520,20 @@ def record_completed_build(build_id, config, final_status):
                 # Update project doc with new platform builds (merging so other platforms are preserved!)
                 if project_id:
                     proj_ref = db.collection('projects').document(project_id)
-                    update_payload = {'updatedAt': firestore.SERVER_TIMESTAMP}
-                    for plat, art in platform_artifacts.items():
-                        update_payload[f'builds.{plat}'] = art
-                    proj_ref.update(update_payload)
+                    proj_snap = proj_ref.get()
+                    proj_builds = {}
+                    if proj_snap.exists:
+                        proj_builds = (proj_snap.to_dict() or {}).get('builds') or {}
+                    proj_builds.update(platform_artifacts)
+                    proj_ref.set({'builds': proj_builds, 'updatedAt': firestore.SERVER_TIMESTAMP}, merge=True)
                 logger.info(f"Recorded completed build {build_id} in Firestore for project {project_id}")
             except Exception as fse:
                 logger.warning(f"Error saving build to Firestore: {fse}")
 
-        # 3. Optional background upload to Firebase Storage
+        # 3. Background upload to Firebase Storage
         def _bg_upload_to_storage():
             try:
-                bucket = get_firebase_storage_bucket()
+                bucket = get_storage_bucket()
                 if not bucket or not user_id:
                     return
                 for plat, output_path in outputs.items():
@@ -1533,19 +1547,32 @@ def record_completed_build(build_id, config, final_status):
                         blob.make_public()
                         public_url = blob.public_url
                     except Exception:
-                        public_url = blob.generate_signed_url(timedelta(days=30), method='GET')
+                        public_url = blob.generate_signed_url(timedelta(days=365), method='GET')
 
-                    # Update download url in Firestore
+                    # Update download url in Firestore builds & projects collections
+                    if db:
+                        try:
+                            db.collection('builds').document(build_id).update({
+                                f'artifacts.{plat}.storageUrl': public_url,
+                                f'artifacts.{plat}.storagePath': storage_path
+                            })
+                        except Exception:
+                            pass
                     if db and project_id:
                         try:
-                            db.collection('projects').document(project_id).update({
-                                f'builds.{plat}.storageUrl': public_url
-                            })
+                            p_ref = db.collection('projects').document(project_id)
+                            p_snap = p_ref.get()
+                            if p_snap.exists:
+                                pb = (p_snap.to_dict() or {}).get('builds') or {}
+                                if plat in pb:
+                                    pb[plat]['storageUrl'] = public_url
+                                    pb[plat]['storagePath'] = storage_path
+                                    p_ref.set({'builds': pb}, merge=True)
                         except Exception:
                             pass
                     logger.info(f"Uploaded build {build_id} ({plat}) to Firebase Storage: {storage_path}")
             except Exception as st_err:
-                logger.debug(f"Note: Cloud storage upload skipped/deferred: {st_err}")
+                logger.warning(f"Note: Cloud storage upload skipped/deferred: {st_err}")
 
         threading.Thread(target=_bg_upload_to_storage, daemon=True).start()
 
@@ -1889,6 +1916,9 @@ def run_build(build_id, config):
                     'message': 'Build completed successfully via Cloud Builder!',
                     'outputs': outputs
                 }
+                if build_id in build_progress and 'github_download_urls' in build_progress[build_id]:
+                    final_status['github_download_urls'] = build_progress[build_id]['github_download_urls']
+
                 if keystore_generated and keystore_info:
                     final_status['keystore_generated'] = True
                     final_status['keystore_path'] = keystore_info['path']
@@ -3572,13 +3602,16 @@ def download_build(build_id, platform):
         # Check SQLite
         try:
             conn = get_db_connection()
-            b_row = conn.execute('SELECT outputs_json, artifacts_json FROM builds WHERE id = ?', (build_id,)).fetchone()
+            b_row = conn.execute('SELECT outputs_json, artifacts_json, user_id, project_id FROM builds WHERE id = ?', (build_id,)).fetchone()
             conn.close()
             if b_row and b_row['outputs_json']:
                 build_progress[build_id] = {
                     'status': 'completed',
                     'progress': 100,
-                    'outputs': json.loads(b_row['outputs_json'])
+                    'outputs': json.loads(b_row['outputs_json']),
+                    'artifacts': json.loads(b_row['artifacts_json']) if b_row['artifacts_json'] else {},
+                    'userId': b_row['user_id'] if 'user_id' in b_row.keys() else '',
+                    'projectId': b_row['project_id'] if 'project_id' in b_row.keys() else ''
                 }
         except Exception as e:
             logger.debug(f"SQLite build recovery notice: {e}")
@@ -3592,7 +3625,10 @@ def download_build(build_id, platform):
                 build_progress[build_id] = {
                     'status': 'completed',
                     'progress': 100,
-                    'outputs': b_data.get('outputs', {})
+                    'outputs': b_data.get('outputs', {}),
+                    'artifacts': b_data.get('artifacts', {}),
+                    'userId': b_data.get('userId', ''),
+                    'projectId': b_data.get('projectId', '')
                 }
         except Exception as e:
             logger.debug(f"Firestore build recovery notice: {e}")
@@ -3620,20 +3656,26 @@ def download_build(build_id, platform):
         return jsonify({'error': 'Keystore file not found'}), 404
 
     outputs = progress.get('outputs', {})
+    artifacts = progress.get('artifacts', {}) or {}
+    plat_artifact = artifacts.get(platform, {}) if isinstance(artifacts, dict) else {}
     output_path = outputs.get(platform)
 
-    # Check if direct link or storage URL is available
-    if output_path and (output_path.startswith('http://') or output_path.startswith('https://')):
-        return redirect(output_path)
+    # 1. Check if direct link or storage URL is already in outputs or artifacts
+    storage_url = plat_artifact.get('storageUrl') or (output_path if output_path and (output_path.startswith('http://') or output_path.startswith('https://')) else None)
+    if storage_url:
+        return redirect(storage_url)
+
+    if plat_artifact.get('githubDownloadUrl'):
+        return redirect(plat_artifact['githubDownloadUrl'])
 
     if output_path and output_path.startswith('Error:'):
         return jsonify({'error': output_path}), 400
 
-    # If local path exists, send it
+    # 2. If local path exists on disk, send it directly
     if output_path and os.path.exists(output_path):
         return send_file(output_path, as_attachment=True, download_name=os.path.basename(output_path))
 
-    # Search in build output directory
+    # 3. Search in build output directory on local disk
     build_dir = os.path.join(app.config['BUILD_FOLDER'], build_id)
     outputs_dir = os.path.join(build_dir, 'outputs')
     if os.path.exists(outputs_dir):
@@ -3651,6 +3693,68 @@ def download_build(build_id, platform):
             if any(f.endswith(ext) for ext in target_exts):
                 candidate_path = os.path.join(outputs_dir, f)
                 return send_file(candidate_path, as_attachment=True, download_name=f)
+
+    # 4. Check Firebase Storage bucket blobs
+    try:
+        bucket = get_storage_bucket()
+        if bucket:
+            user_id = progress.get('userId')
+            project_id = progress.get('projectId')
+            fname = os.path.basename(output_path) if output_path else ''
+            candidates = []
+            if user_id and fname:
+                candidates.append(f"builds/{user_id}/{project_id or 'general'}/{platform}_{fname}")
+            if user_id:
+                for b_item in bucket.list_blobs(prefix=f"builds/{user_id}/", max_results=25):
+                    if platform in b_item.name:
+                        candidates.append(b_item.name)
+                        break
+            for c_name in candidates:
+                b_blob = bucket.blob(c_name)
+                if b_blob.exists():
+                    try:
+                        s_url = b_blob.generate_signed_url(timedelta(days=7), method='GET')
+                        return redirect(s_url)
+                    except Exception:
+                        pass
+    except Exception as st_err:
+        logger.warning(f"Error checking cloud storage during download: {st_err}")
+
+    # 5. Check GitHub Releases as public cloud fallback
+    try:
+        github_token = os.getenv('GITHUB_TOKEN')
+        github_owner = os.getenv('GITHUB_OWNER', 'ieenterprises')
+        github_repo = os.getenv('GITHUB_REPO', 'iewebnative-builds')
+        headers = {'Accept': 'application/vnd.github.v3+json'}
+        if github_token:
+            headers['Authorization'] = f'Bearer {github_token}'
+        r_rel = requests.get(f"https://api.github.com/repos/{github_owner}/{github_repo}/releases", headers=headers, timeout=10)
+        if r_rel.status_code == 200:
+            short_id = build_id[:8]
+            for rel in r_rel.json():
+                tag = rel.get('tag_name', '')
+                if short_id in tag:
+                    for asset in rel.get('assets', []):
+                        asset_name = asset['name'].lower()
+                        dl_match = False
+                        if platform == 'android' and asset_name.endswith('.apk'):
+                            dl_match = True
+                        elif platform == 'android_aab' and asset_name.endswith('.aab'):
+                            dl_match = True
+                        elif platform == 'ios' and asset_name.endswith('.ipa'):
+                            dl_match = True
+                        elif platform == 'ios_xcode' and 'xcode' in asset_name:
+                            dl_match = True
+                        elif platform == 'windows' and ('win' in asset_name or asset_name.endswith('.zip')):
+                            dl_match = True
+                        elif platform == 'macos' and ('macos' in asset_name or asset_name.endswith('.dmg')):
+                            dl_match = True
+                        elif platform == 'linux' and ('linux' in asset_name or asset_name.endswith('.tar.gz')):
+                            dl_match = True
+                        if dl_match:
+                            return redirect(asset['browser_download_url'])
+    except Exception as ge:
+        logger.warning(f"Error checking GitHub releases for download: {ge}")
 
     return jsonify({'error': 'Output file not found'}), 404
 
@@ -4241,6 +4345,131 @@ def open_project():
 
 # ==================== FIRESTORE PROJECT API ====================
 
+def aggregate_builds_for_projects(user_id, projects):
+    """
+    Dynamically cross-references all completed builds in Firestore 'builds'
+    collection for this user and ensures every project has all completed platform
+    builds attached, healing any missing or overwritten builds permanently.
+    """
+    if not db or not projects:
+        return
+    try:
+        build_docs = db.collection('builds').where('userId', '==', user_id).stream()
+        by_project_id = {}
+        by_app_name = {}
+        for b_doc in build_docs:
+            b_data = b_doc.to_dict()
+            b_id = b_doc.id
+            if b_data.get('status') != 'completed':
+                continue
+            pid = b_data.get('projectId')
+            aname = (b_data.get('appName') or '').strip().lower()
+            artifacts = b_data.get('artifacts', {}) or {}
+            outputs = b_data.get('outputs', {}) or {}
+            if not artifacts and outputs:
+                artifacts = {}
+                for plat, out_path in outputs.items():
+                    if out_path and not out_path.startswith('Error:'):
+                        artifacts[plat] = {
+                            'buildId': b_id,
+                            'platform': plat,
+                            'fileName': os.path.basename(out_path),
+                            'downloadUrl': f"/api/build/{b_id}/download/{plat}",
+                            'status': 'completed'
+                        }
+            if pid:
+                by_project_id.setdefault(pid, []).append((b_data, artifacts))
+            if aname:
+                by_app_name.setdefault(aname, []).append((b_data, artifacts))
+
+        for proj in projects:
+            p_id = proj.get('id')
+            p_name = (proj.get('name') or '').strip().lower()
+            current_builds = proj.get('builds') or {}
+            changed = False
+
+            matched_build_items = by_project_id.get(p_id, [])
+            if not matched_build_items and p_name in by_app_name:
+                matched_build_items = by_app_name[p_name]
+
+            for b_data, artifacts in matched_build_items:
+                for plat, art in artifacts.items():
+                    if plat not in current_builds:
+                        current_builds[plat] = art
+                        changed = True
+                    else:
+                        for k in ['downloadUrl', 'storageUrl', 'githubDownloadUrl', 'fileName', 'fileSizeFormatted', 'fileSize']:
+                            if not current_builds[plat].get(k) and art.get(k):
+                                current_builds[plat][k] = art[k]
+                                changed = True
+
+            proj['builds'] = current_builds
+
+            # Auto-repair project doc in Firestore if missing builds were found
+            if changed and p_id:
+                try:
+                    db.collection('projects').document(p_id).set({'builds': current_builds}, merge=True)
+                except Exception as he:
+                    logger.debug(f"Auto-heal project builds notice: {he}")
+    except Exception as e:
+        logger.warning(f"Error in aggregate_builds_for_projects: {e}")
+
+
+def aggregate_sqlite_builds_for_projects(user_id, projects):
+    """
+    Dynamically cross-references all completed builds in SQLite 'builds' table.
+    """
+    if not projects:
+        return
+    try:
+        conn = get_db_connection()
+        rows = conn.execute('SELECT * FROM builds WHERE user_id = ? AND status = "completed"', (user_id,)).fetchall()
+        conn.close()
+        by_project_id = {}
+        by_app_name = {}
+        for r in rows:
+            b_id = r['id']
+            pid = r['project_id']
+            aname = (r['app_name'] or '').strip().lower()
+            artifacts = {}
+            if r['artifacts_json']:
+                try:
+                    artifacts = json.loads(r['artifacts_json'])
+                except Exception:
+                    pass
+            if not artifacts and r['outputs_json']:
+                try:
+                    outputs = json.loads(r['outputs_json'])
+                    for plat, out_path in outputs.items():
+                        if out_path and not out_path.startswith('Error:'):
+                            artifacts[plat] = {
+                                'buildId': b_id,
+                                'platform': plat,
+                                'fileName': os.path.basename(out_path),
+                                'downloadUrl': f"/api/build/{b_id}/download/{plat}",
+                                'status': 'completed'
+                            }
+                except Exception:
+                    pass
+            if pid:
+                by_project_id.setdefault(pid, []).append(artifacts)
+            if aname:
+                by_app_name.setdefault(aname, []).append(artifacts)
+
+        for proj in projects:
+            p_id = proj.get('id')
+            p_name = (proj.get('name') or '').strip().lower()
+            current_builds = proj.get('builds') or {}
+            matched = by_project_id.get(p_id, []) or by_app_name.get(p_name, [])
+            for arts in matched:
+                for plat, art in arts.items():
+                    if plat not in current_builds:
+                        current_builds[plat] = art
+            proj['builds'] = current_builds
+    except Exception as e:
+        logger.warning(f"Error in aggregate_sqlite_builds_for_projects: {e}")
+
+
 @app.route('/api/projects', methods=['GET'])
 @firebase_auth_required
 def get_projects():
@@ -4263,6 +4492,9 @@ def get_projects():
                 if not project.get('builds'):
                     project['builds'] = {}
                 projects.append(project)
+
+            # Dynamically aggregate any completed builds from builds collection
+            aggregate_builds_for_projects(user_id, projects)
 
             projects.sort(key=lambda p: str(p.get('updatedAt') or p.get('createdAt') or ''), reverse=True)
             return jsonify({'projects': projects})
@@ -4297,6 +4529,8 @@ def get_projects():
                     'updatedAt': r['updated_at']
                 })
             conn.close()
+            # Dynamically aggregate completed builds from SQLite builds table
+            aggregate_sqlite_builds_for_projects(user_id, projects)
             return jsonify({'projects': projects})
     except Exception as e:
         logger.exception("Failed to fetch projects")
@@ -4415,6 +4649,9 @@ def get_project(project_id):
             if not project.get('builds'):
                 project['builds'] = {}
 
+            # Dynamically aggregate any completed builds from builds collection
+            aggregate_builds_for_projects(user_id, [project])
+
             return jsonify({'project': project})
         else:
             conn = get_db_connection()
@@ -4450,6 +4687,8 @@ def get_project(project_id):
                 'createdAt': r['created_at'],
                 'updatedAt': r['updated_at']
             }
+            # Dynamically aggregate completed builds from SQLite builds table
+            aggregate_sqlite_builds_for_projects(user_id, [project])
             return jsonify({'project': project})
     except Exception as e:
         return jsonify({'error': f'Failed to fetch project: {str(e)}'}), 500
@@ -4484,9 +4723,19 @@ def update_project(project_id):
             update_data = {'updatedAt': firestore.SERVER_TIMESTAMP}
             for field in allowed_fields:
                 if field in data:
-                    update_data[field] = data[field]
+                    if field == 'builds':
+                        existing_builds = project.get('builds') or {}
+                        incoming_builds = data.get('builds') or {}
+                        merged_builds = dict(existing_builds)
+                        if isinstance(incoming_builds, dict):
+                            for plat, b_info in incoming_builds.items():
+                                if b_info and isinstance(b_info, dict) and b_info.get('status') == 'completed':
+                                    merged_builds[plat] = b_info
+                        update_data['builds'] = merged_builds
+                    else:
+                        update_data[field] = data[field]
 
-            doc_ref.update(update_data)
+            doc_ref.set(update_data, merge=True)
 
         # Sync to SQLite
         try:
@@ -4504,7 +4753,18 @@ def update_project(project_id):
                 settings_json = json.dumps(data['settings']) if 'settings' in data else r['settings_json']
                 keystore_json = json.dumps(data['keystoreData']) if 'keystoreData' in data else r['keystore_json']
                 apple_json = json.dumps(data['appleData']) if 'appleData' in data else r['apple_json']
-                builds_json = json.dumps(data['builds']) if 'builds' in data else (r['builds_json'] if 'builds_json' in r.keys() else '{}')
+
+                existing_sqlite_builds = {}
+                try:
+                    if 'builds_json' in r.keys() and r['builds_json']:
+                        existing_sqlite_builds = json.loads(r['builds_json'])
+                except Exception:
+                    existing_sqlite_builds = {}
+                if 'builds' in data and isinstance(data['builds'], dict):
+                    for plat, b_info in data['builds'].items():
+                        if b_info and isinstance(b_info, dict) and b_info.get('status') == 'completed':
+                            existing_sqlite_builds[plat] = b_info
+                builds_json = json.dumps(existing_sqlite_builds)
 
                 conn.execute('''
                     UPDATE projects SET name=?, web_url=?, description=?, app_version=?, build_number=?,

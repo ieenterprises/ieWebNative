@@ -748,6 +748,31 @@ document.addEventListener('DOMContentLoaded', function() {
         localStorage.removeItem('iewebnative_active_build');
         showToast('Build completed! Saved to your project dashboard.', 'success');
 
+        if (!window.currentProjectBuilds) window.currentProjectBuilds = {};
+        if (status.outputs) {
+            for (const [platform, path] of Object.entries(status.outputs)) {
+                if (!path.startsWith('Error:')) {
+                    const fname = path.split('/').pop().split('\\').pop();
+                    window.currentProjectBuilds[platform] = {
+                        buildId: buildId,
+                        platform: platform,
+                        fileName: fname,
+                        downloadUrl: `/api/build/${buildId}/download/${platform}`,
+                        builtAt: new Date().toISOString(),
+                        status: 'completed'
+                    };
+                }
+            }
+        }
+        const activePid = window.currentProjectId || (typeof currentProjectId !== 'undefined' ? currentProjectId : null);
+        if (activePid) {
+            fetch(`/api/projects/${activePid}`).then(r => r.json()).then(data => {
+                if (data && data.project && data.project.builds) {
+                    window.currentProjectBuilds = Object.assign({}, window.currentProjectBuilds, data.project.builds);
+                }
+            }).catch(e => console.debug('Sync project builds error:', e));
+        }
+
         const getPlatformDisplayName = (plat) => {
             const names = {
                 'android': 'Android APK',
