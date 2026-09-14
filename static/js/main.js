@@ -443,6 +443,27 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // Handle mobile/tablet view switcher (Configure App vs Live Preview)
+    const viewSwitchConfig = document.getElementById('view-switch-config');
+    const viewSwitchPreview = document.getElementById('view-switch-preview');
+    const builderMainContainer = document.getElementById('builder-main-container');
+
+    if (viewSwitchConfig && viewSwitchPreview && builderMainContainer) {
+        viewSwitchConfig.addEventListener('click', function() {
+            viewSwitchConfig.classList.add('active');
+            viewSwitchPreview.classList.remove('active');
+            builderMainContainer.classList.remove('show-preview');
+            builderMainContainer.classList.add('show-config');
+        });
+
+        viewSwitchPreview.addEventListener('click', function() {
+            viewSwitchPreview.classList.add('active');
+            viewSwitchConfig.classList.remove('active');
+            builderMainContainer.classList.remove('show-config');
+            builderMainContainer.classList.add('show-preview');
+        });
+    }
+
     // Handle form submission
     form.addEventListener('submit', async function(e) {
         e.preventDefault();
@@ -633,6 +654,14 @@ document.addEventListener('DOMContentLoaded', function() {
         buildButton.disabled = true;
         buildProgress.style.display = 'block';
         buildComplete.style.display = 'none';
+
+        // Focus config view on mobile so user sees the progress panel
+        if (viewSwitchConfig && builderMainContainer) {
+            viewSwitchConfig.classList.add('active');
+            if (viewSwitchPreview) viewSwitchPreview.classList.remove('active');
+            builderMainContainer.classList.remove('show-preview');
+            builderMainContainer.classList.add('show-config');
+        }
 
         // Show center progress bar and hide dropdown
         platformDropdownWrapper.style.display = 'none';
@@ -929,6 +958,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 buildButton.disabled = true;
                 buildProgress.style.display = 'block';
                 buildComplete.style.display = 'none';
+
+                if (viewSwitchConfig && builderMainContainer) {
+                    viewSwitchConfig.classList.add('active');
+                    if (viewSwitchPreview) viewSwitchPreview.classList.remove('active');
+                    builderMainContainer.classList.remove('show-preview');
+                    builderMainContainer.classList.add('show-config');
+                }
+
                 if (platformDropdownWrapper) platformDropdownWrapper.style.display = 'none';
                 if (centerProgress) centerProgress.style.display = 'flex';
 

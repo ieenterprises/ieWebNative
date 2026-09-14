@@ -1606,36 +1606,448 @@ body {
     }
 }
 
-/* ==================== RESPONSIVE DIALOG ==================== */
+/* ==================== BUILDER VIEW SWITCHER (Mobile & Tablet) ==================== */
+.builder-view-switcher {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-primary);
+    width: 100%;
+    box-sizing: border-box;
+    flex-shrink: 0;
+}
+
+.view-switch-btn {
+    flex: 1;
+    max-width: 200px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-secondary);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.view-switch-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.view-switch-btn.active {
+    background: var(--primary);
+    color: #ffffff;
+    border-color: var(--primary);
+    box-shadow: 0 2px 8px var(--primary-glow);
+}
+
+.view-switch-btn svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+/* ==================== RESPONSIVE DESIGN FOR TABLET (<= 1024px) ==================== */
+@media (max-width: 1024px) {
+    .top-toolbar {
+        padding: 0 16px;
+        height: 64px;
+        min-height: 64px;
+        gap: 12px;
+    }
+
+    .toolbar-left .logo {
+        gap: 8px;
+    }
+
+    .toolbar-left .logo h1 {
+        font-size: 18px;
+    }
+
+    .toolbar-left .logo-badge {
+        display: none;
+    }
+
+    .toolbar-actions {
+        gap: 6px;
+    }
+
+    /* Buttons with text collapse to sleek icons on Tablet */
+    .toolbar-btn {
+        padding: 8px 10px;
+    }
+
+    .toolbar-btn span {
+        display: none;
+    }
+
+    .toolbar-nav-btn {
+        padding: 8px 10px;
+        gap: 0;
+    }
+
+    .toolbar-nav-btn span {
+        display: none;
+    }
+
+    .platform-dropdown-wrapper label {
+        display: none;
+    }
+
+    .platform-dropdown-wrapper select {
+        min-width: 140px;
+        font-size: 13px;
+        padding: 8px 32px 8px 10px;
+    }
+
+    .center-progress-bar {
+        width: 140px;
+    }
+
+    .build-button,
+    .toolbar-right .build-button,
+    #build-button {
+        padding: 8px 14px !important;
+        font-size: 13px !important;
+        gap: 6px !important;
+    }
+}
+
+/* ==================== RESPONSIVE DESIGN FOR TABLET PORTRAIT (<= 900px) ==================== */
+@media (max-width: 900px) {
+    body {
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        height: auto !important;
+        min-height: 100vh !important;
+    }
+
+    .builder-view-switcher {
+        display: flex;
+    }
+
+    .container {
+        flex-direction: column;
+        overflow: visible;
+        height: auto;
+        flex: 1 0 auto;
+    }
+
+    /* By default (or show-config active), show left configuration panel full width */
+    .container:not(.show-preview) .left-panel {
+        display: flex !important;
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        border-right: none !important;
+        padding: 20px 16px !important;
+        overflow-y: visible !important;
+    }
+
+    .container:not(.show-preview) .right-panel {
+        display: none !important;
+    }
+
+    /* When user switches to Live Preview mode */
+    .container.show-preview .left-panel {
+        display: none !important;
+    }
+
+    .container.show-preview .right-panel {
+        display: flex !important;
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        padding: 20px 16px !important;
+        min-height: calc(100vh - 140px) !important;
+        overflow-y: auto !important;
+    }
+
+    .preview-container {
+        width: 100%;
+        padding: 10px 0;
+    }
+
+    .device-frame.mobile {
+        width: min(320px, 92vw) !important;
+        height: min(640px, 75vh) !important;
+    }
+
+    .device-frame.tablet {
+        width: min(540px, 94vw) !important;
+        height: min(680px, 75vh) !important;
+    }
+
+    .device-frame.laptop,
+    .device-frame.desktop {
+        width: min(700px, 96vw) !important;
+        height: auto !important;
+    }
+}
+
+/* ==================== RESPONSIVE DESIGN FOR PHONES (<= 768px) ==================== */
 @media (max-width: 768px) {
-    .dialog {
-        width: 95%;
-        max-height: 85vh;
+    .top-toolbar {
+        height: auto;
+        min-height: 56px;
+        padding: 10px 12px;
+        flex-wrap: wrap;
+        gap: 10px;
     }
 
-    .dialog-header {
-        padding: 16px 20px;
+    .toolbar-left {
+        order: 1;
+        flex: 1 1 auto;
+        justify-content: flex-start;
+        gap: 8px;
     }
 
-    .dialog-content {
-        padding: 20px;
+    .toolbar-left .logo h1 {
+        font-size: 16px;
     }
 
-    .dialog-footer {
-        padding: 12px 20px;
+    .toolbar-left .logo img {
+        width: 28px;
+        height: 28px;
     }
 
-    .settings-grid .checkbox-item {
-        padding: 14px;
+    .toolbar-right {
+        order: 2;
+        gap: 6px;
+        flex-shrink: 0;
     }
 
+    .toolbar-center {
+        order: 3;
+        flex: 1 1 100%;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 4px;
+        padding-top: 8px;
+        border-top: 1px solid var(--border-primary);
+    }
+
+    .platform-dropdown-wrapper {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .platform-dropdown-wrapper select {
+        width: 100%;
+        min-width: 0;
+        padding: 8px 30px 8px 10px;
+        font-size: 13px;
+        background-position: right 8px center;
+    }
+
+    .center-progress {
+        width: 100%;
+        padding: 0 4px;
+        gap: 8px;
+    }
+
+    .center-progress-bar {
+        flex: 1;
+        width: auto;
+    }
+
+    .build-button,
+    .toolbar-right .build-button,
+    #build-button {
+        padding: 7px 14px !important;
+        font-size: 12px !important;
+        font-weight: 600 !important;
+    }
+
+    .toolbar-btn {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+    }
+
+    .toolbar-nav-btn {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+    }
+
+    .toolbar-icon-btn {
+        width: 34px;
+        height: 34px;
+    }
+
+    /* Configuration Sections on Phone */
+    .section {
+        padding: 16px 12px;
+        margin-bottom: 12px;
+        border-radius: var(--radius-md);
+    }
+
+    .form-group {
+        margin-bottom: 14px;
+    }
+
+    .form-group label {
+        font-size: 12px;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        font-size: 13px;
+        padding: 8px 12px;
+    }
+
+    /* Icon Upload */
     .icon-upload-container {
         flex-direction: column;
         align-items: flex-start;
+        gap: 12px;
     }
 
     .icon-preview {
-        width: 72px;
-        height: 72px;
+        width: 64px;
+        height: 64px;
+    }
+
+    .icon-upload-info .file-upload {
+        width: 100%;
+    }
+
+    .icon-upload-info .file-upload-label {
+        width: 100%;
+        justify-content: center;
+        padding: 14px;
+    }
+
+    /* Color picker and customizer groups */
+    .color-picker-group,
+    .screen-mode-options,
+    .radio-group {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    /* Build Progress & Complete Panels */
+    .build-progress,
+    .build-complete {
+        padding: 16px 12px;
+    }
+
+    .progress-footer {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 10px;
+    }
+
+    #cancel-build-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .download-links {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .download-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    /* Settings Dialog on Phone */
+    .dialog {
+        width: calc(100% - 20px) !important;
+        max-width: 100% !important;
+        margin: 10px !important;
+        max-height: 90vh !important;
+        border-radius: var(--radius-lg) !important;
+    }
+
+    .dialog-header {
+        padding: 14px 16px;
+    }
+
+    .dialog-content {
+        padding: 16px;
+    }
+
+    .dialog-footer {
+        padding: 12px 16px;
+    }
+
+    .settings-grid {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .settings-grid .checkbox-item {
+        padding: 10px 12px;
     }
 }
+
+/* ==================== EXTRA SMALL PHONES (<= 420px) ==================== */
+@media (max-width: 420px) {
+    .top-toolbar {
+        padding: 8px 10px;
+    }
+
+    .toolbar-left .logo h1 {
+        font-size: 15px;
+    }
+
+    .build-button span {
+        display: none;
+    }
+
+    .build-button,
+    .toolbar-right .build-button,
+    #build-button {
+        width: 34px !important;
+        height: 34px !important;
+        padding: 0 !important;
+        border-radius: var(--radius-sm) !important;
+    }
+
+    .device-btn {
+        width: 30px;
+        height: 30px;
+    }
+
+    .preview-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .preview-header .device-selector {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .view-switch-btn {
+        padding: 7px 10px;
+        font-size: 12px;
+    }
+}
+

@@ -930,10 +930,25 @@
     }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
     .dashboard-header {
         padding: 0 20px;
-        min-height: 64px;
+    }
+
+    .header-center {
+        max-width: 320px;
+    }
+
+    .projects-grid {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 16px;
+    }
+}
+
+@media (max-width: 768px) {
+    .dashboard-header {
+        padding: 0 16px;
+        min-height: 60px;
     }
 
     .header-left .logo h1 {
@@ -944,126 +959,192 @@
         display: none;
     }
 
+    /* Buttons with text collapse to sleek icons on Phone/Tablet */
+    .dashboard-header .header-right {
+        gap: 8px;
+    }
+
+    .dashboard-header .header-right .btn span {
+        display: none;
+    }
+
+    .dashboard-header .header-right .btn {
+        padding: 8px 10px !important;
+        min-width: 36px;
+        height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Active Background Build Banner Responsive */
+    .active-build-banner {
+        padding: 14px 16px !important;
+        margin-bottom: 16px !important;
+    }
+
+    .active-build-banner > div {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 14px !important;
+    }
+
+    .active-build-banner > div > div:last-child {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 10px !important;
+        width: 100% !important;
+    }
+
+    .active-build-banner > div > div:last-child > div {
+        width: 100% !important;
+        min-width: 100% !important;
+    }
+
+    .active-build-banner > div > div:last-child > div > div {
+        width: 100% !important;
+    }
+
+    .active-build-banner > div > div:last-child a.btn,
+    .active-build-banner > div > div:last-child button.btn {
+        width: 100% !important;
+        justify-content: center !important;
+        text-align: center !important;
+    }
+
     .content-section {
-        padding: 24px 20px;
+        padding: 20px 16px;
     }
 
     .section-title-area h2 {
-        font-size: 24px;
+        font-size: 22px;
     }
 
     .section-header {
         flex-direction: column;
         align-items: stretch;
-        gap: 16px;
-        margin-bottom: 24px;
+        gap: 14px;
+        margin-bottom: 20px;
     }
 
     .section-actions {
         width: 100%;
+        display: flex;
+        gap: 8px;
     }
 
     .section-actions .btn {
         flex: 1;
         justify-content: center;
+        font-size: 13px;
+        padding: 10px 14px;
     }
 
     .projects-grid {
         grid-template-columns: 1fr;
-        gap: 16px;
+        gap: 14px;
     }
 
     .project-card {
-        padding: 20px;
+        padding: 16px;
+        flex-wrap: wrap;
     }
 
     .project-actions {
         opacity: 1;
         position: static;
-        margin-top: 16px;
-        padding-top: 16px;
+        margin-top: 12px;
+        padding-top: 12px;
         border-top: 1px solid var(--border-primary);
         width: 100%;
         justify-content: flex-end;
     }
 
-    .project-card {
-        flex-wrap: wrap;
-    }
-
     .user-dropdown {
-        right: -16px;
-        width: 280px;
+        right: -8px;
+        width: 260px;
     }
 
     .modal {
-        margin: 16px;
-        max-width: calc(100% - 32px);
+        margin: 12px;
+        max-width: calc(100% - 24px);
+        width: 100%;
     }
 
     .modal-header {
-        padding: 20px 24px;
+        padding: 16px 20px;
     }
 
     .modal-form {
-        padding: 24px;
+        padding: 20px;
     }
 
     .modal-footer {
-        padding: 16px 24px;
+        padding: 14px 20px;
     }
 
     .dashboard-toast {
-        left: 16px;
-        right: 16px;
-        bottom: 16px;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
         max-width: none;
     }
 
     .empty-state {
-        padding: 60px 20px;
+        padding: 40px 16px;
     }
 
     .empty-icon {
-        width: 80px;
-        height: 80px;
+        width: 64px;
+        height: 64px;
     }
 
     .empty-icon svg {
-        width: 40px;
-        height: 40px;
+        width: 32px;
+        height: 32px;
     }
 
     .empty-state h3 {
-        font-size: 20px;
+        font-size: 18px;
     }
 }
 
 @media (max-width: 480px) {
+    .dashboard-header {
+        padding: 0 12px;
+        min-height: 56px;
+    }
+
+    .header-left .logo img {
+        width: 30px;
+        height: 30px;
+    }
+
+    .header-right {
+        gap: 6px;
+    }
+
     .section-actions {
         flex-direction: column;
+        width: 100%;
     }
 
     .section-actions .btn {
         width: 100%;
     }
 
-    .header-right {
-        gap: 12px;
-    }
-
     .user-avatar {
-        width: 38px;
-        height: 38px;
+        width: 34px;
+        height: 34px;
     }
 
     .project-icon {
-        width: 52px;
-        height: 52px;
+        width: 46px;
+        height: 46px;
     }
 
     .btn {
-        padding: 11px 18px;
+        padding: 10px 14px;
         font-size: 13px;
     }
 }

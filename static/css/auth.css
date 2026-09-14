@@ -602,7 +602,7 @@
 
 @media (max-width: 480px) {
     .auth-forms {
-        padding: 24px;
+        padding: 24px 16px;
     }
 
     .auth-card-header h2 {
@@ -623,5 +623,19 @@
         left: 16px;
         right: 16px;
         top: 16px;
+    }
+}
+
+@media (max-width: 380px) {
+    .auth-forms {
+        padding: 16px 10px;
+    }
+
+    .auth-card-header h2 {
+        font-size: 20px;
+    }
+
+    .auth-card-header p {
+        font-size: 13px;
     }
 }
