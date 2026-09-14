@@ -1291,11 +1291,24 @@
             }
         }
 
-        // Helper function to upload file to Firebase Storage
+        // Helper function to upload file to Firebase Storage (with server upload fallback)
         async function uploadFileToStorage(file, path) {
-            const storageRef = ref(storage, path);
-            const snapshot = await uploadBytes(storageRef, file);
-            return await getDownloadURL(snapshot.ref);
+            if (window.FirebaseAppService) {
+                return await window.FirebaseAppService.uploadFile(file, path);
+            }
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('path', path);
+            const res = await fetch('/api/storage/upload', {
+                method: 'POST',
+                body: formData
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to upload asset');
+            }
+            const data = await res.json();
+            return data.url || data.downloadUrl;
         }
 
         // Save project to cloud
@@ -1502,5 +1515,11 @@
             }, 3000);
         }
     </script>
+
+    <!-- Firebase SDK & Client Service -->
+    <script>
+        window.FIREBASE_CONFIG = {{ firebase_config|tojson if firebase_config else '{}' }};
+    </script>
+    <script src="{{ url_for('static', filename='js/firebase-app.js') }}"></script>
 </body>
 </html>

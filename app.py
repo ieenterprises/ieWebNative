@@ -57,28 +57,52 @@ def init_firebase():
     global firebase_initialized, db
     if not firebase_initialized:
         try:
-            cred_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'serviceAccount.json')
-            print(f"[Firebase Init] BASE_DIR: {BASE_DIR}")
-            print(f"[Firebase Init] Original cred_path: {cred_path}")
-            # Resolve relative paths from BASE_DIR
-            if not os.path.isabs(cred_path):
-                cred_path = os.path.join(BASE_DIR, cred_path)
-            print(f"[Firebase Init] Resolved cred_path: {cred_path}")
-            print(f"[Firebase Init] File exists: {os.path.exists(cred_path)}")
-            if os.path.exists(cred_path):
-                cred = credentials.Certificate(cred_path)
-                firebase_admin.initialize_app(cred)
+            cred = None
+            # 1. Check for raw JSON string in environment variable (useful for cloud deployments)
+            service_account_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON', '').strip()
+            if service_account_json:
+                try:
+                    cred_dict = json.loads(service_account_json)
+                    cred = credentials.Certificate(cred_dict)
+                    logger.info("Loaded Firebase credentials from FIREBASE_SERVICE_ACCOUNT_JSON")
+                except Exception as e:
+                    logger.warning("Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON: %s", e)
+
+            # 2. Check for service account JSON file
+            if not cred:
+                cred_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH') or os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'serviceAccount.json')
+                if not os.path.isabs(cred_path):
+                    cred_path = os.path.join(BASE_DIR, cred_path)
+
+                if os.path.exists(cred_path):
+                    cred = credentials.Certificate(cred_path)
+                    logger.info("Loaded Firebase credentials from file: %s", cred_path)
+
+            if cred:
+                app_options = {}
+                storage_bucket = os.getenv('FIREBASE_STORAGE_BUCKET', '').strip()
+                if storage_bucket:
+                    app_options['storageBucket'] = storage_bucket
+
+                if not firebase_admin._apps:
+                    firebase_admin.initialize_app(cred, app_options if app_options else None)
+
                 db = firestore.client()
                 firebase_initialized = True
-                print("Firebase Admin SDK initialized successfully")
+                logger.info("Firebase Admin SDK & Firestore initialized successfully")
+                print("[Firebase] Admin SDK & Firestore initialized successfully")
             else:
-                print(f"Warning: Firebase credentials file not found at {cred_path}")
-                print("Firebase features will be disabled. Download serviceAccount.json from Firebase Console.")
+                logger.info("Firebase credentials not found. Running in local SQLite mode.")
+                print("[Firebase] Credentials not found. Running in local SQLite mode.")
         except Exception as e:
-            print(f"Warning: Failed to initialize Firebase Admin SDK: {e}")
-            import traceback
-            traceback.print_exc()
-            print("Firebase features will be disabled.")
+            logger.warning("Failed to initialize Firebase Admin SDK: %s", e)
+            print(f"[Firebase] Warning: Failed to initialize Firebase Admin SDK: {e}")
+            firebase_initialized = False
+            db = None
+
+def is_firebase_enabled():
+    """Returns True if Firebase Admin SDK and Firestore are active"""
+    return firebase_initialized and db is not None
 
 # Try to initialize Firebase on module load
 init_firebase()
@@ -98,9 +122,12 @@ def get_firebase_config():
 # Get Firebase Storage bucket
 def get_storage_bucket():
     """Get Firebase Storage bucket for file operations"""
-    bucket_name = os.getenv('FIREBASE_STORAGE_BUCKET', '')
+    bucket_name = os.getenv('FIREBASE_STORAGE_BUCKET', '').strip()
     if bucket_name and firebase_initialized:
-        return firebase_storage.bucket(bucket_name)
+        try:
+            return firebase_storage.bucket(bucket_name)
+        except Exception as e:
+            logger.warning("Failed to get Firebase Storage bucket %s: %s", bucket_name, e)
     return None
 
 # Authentication decorator supporting both Flask session & Bearer tokens
@@ -2413,10 +2440,166 @@ def api_me():
                 'id': session['user_id'],
                 'uid': session['user_id'],
                 'name': session.get('user_name', 'User'),
-                'email': session.get('user_email', '')
+                'email': session.get('user_email', ''),
+                'picture': session.get('user_picture', '')
             }
         })
     return jsonify({'authenticated': False, 'user': None})
+
+
+@app.route('/api/auth/firebase-session', methods=['POST'])
+def api_firebase_session():
+    """Verify Firebase ID token, sync user to Firestore & SQLite, and establish Flask session"""
+    try:
+        data = request.json or {}
+        id_token = data.get('idToken')
+        if not id_token:
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                id_token = auth_header.split('Bearer ')[1].strip()
+
+        if not id_token:
+            return jsonify({'success': False, 'error': 'Firebase ID token is required.'}), 400
+
+        if not firebase_initialized:
+            return jsonify({
+                'success': False,
+                'error': 'Firebase backend is not initialized. Please configure serviceAccount.json or environment credentials.'
+            }), 503
+
+        try:
+            decoded_token = firebase_auth.verify_id_token(id_token)
+        except Exception as e:
+            logger.warning("Failed to verify Firebase ID token: %s", e)
+            return jsonify({'success': False, 'error': f'Invalid or expired Firebase token: {str(e)}'}), 401
+
+        uid = decoded_token.get('uid')
+        email = decoded_token.get('email', '').strip().lower()
+        name = decoded_token.get('name') or (email.split('@')[0] if email else 'User')
+        picture = decoded_token.get('picture', '')
+
+        # 1. Upsert user in Firestore if active
+        if db:
+            try:
+                user_ref = db.collection('users').document(uid)
+                user_ref.set({
+                    'uid': uid,
+                    'name': name,
+                    'email': email,
+                    'picture': picture,
+                    'lastLogin': firestore.SERVER_TIMESTAMP,
+                    'updatedAt': firestore.SERVER_TIMESTAMP
+                }, merge=True)
+            except Exception as fe:
+                logger.warning("Could not sync user to Firestore: %s", fe)
+
+        # 2. Upsert user in SQLite for local data continuity
+        try:
+            conn = get_db_connection()
+            existing = conn.execute('SELECT id FROM users WHERE id = ? OR email = ?', (uid, email)).fetchone()
+            now = datetime.utcnow().isoformat()
+            if existing:
+                conn.execute(
+                    'UPDATE users SET name = ?, email = ? WHERE id = ?',
+                    (name, email, existing['id'])
+                )
+            else:
+                conn.execute(
+                    'INSERT INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
+                    (uid, name, email, 'FIREBASE_AUTH', now)
+                )
+            conn.commit()
+            conn.close()
+        except Exception as se:
+            logger.warning("Could not sync user to SQLite: %s", se)
+
+        # 3. Establish Flask session
+        session.permanent = True
+        session['user_id'] = uid
+        session['user_name'] = name
+        session['user_email'] = email
+        session['user_picture'] = picture
+        session['auth_provider'] = 'firebase'
+
+        return jsonify({
+            'success': True,
+            'message': 'Firebase session established!',
+            'user': {
+                'id': uid,
+                'uid': uid,
+                'name': name,
+                'email': email,
+                'picture': picture
+            },
+            'redirect': '/dashboard'
+        })
+    except Exception as e:
+        logger.exception("Error during Firebase session creation")
+        return jsonify({'success': False, 'error': f'Failed to create session: {str(e)}'}), 500
+
+
+@app.route('/api/firebase-config', methods=['GET'])
+def api_firebase_config():
+    """Return client Firebase configuration and active status"""
+    return jsonify({
+        'enabled': is_firebase_enabled(),
+        'config': get_firebase_config()
+    })
+
+
+@app.route('/api/storage/upload', methods=['POST'])
+def api_storage_upload():
+    """Upload asset (icon, keystore, cert, image) to Firebase Storage or local static storage"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if not file or not file.filename:
+            return jsonify({'error': 'No file selected'}), 400
+
+        storage_path = request.form.get('path', '').strip()
+        filename = secure_filename(file.filename) or 'asset'
+
+        # 1. Try Firebase Cloud Storage if bucket is available
+        bucket = get_storage_bucket()
+        if bucket:
+            target_path = storage_path if storage_path else f"uploads/{uuid.uuid4().hex}_{filename}"
+            blob = bucket.blob(target_path)
+            content_type = file.content_type or 'application/octet-stream'
+            blob.upload_from_file(file, content_type=content_type)
+            try:
+                blob.make_public()
+                public_url = blob.public_url
+            except Exception:
+                public_url = blob.generate_signed_url(expiration=timedelta(days=365))
+
+            return jsonify({
+                'success': True,
+                'url': public_url,
+                'downloadUrl': public_url,
+                'storagePath': target_path,
+                'provider': 'firebase'
+            })
+
+        # 2. Resilient local fallback
+        local_upload_dir = os.path.join(BASE_DIR, 'static', 'uploads')
+        os.makedirs(local_upload_dir, exist_ok=True)
+        unique_name = f"{uuid.uuid4().hex}_{filename}"
+        local_file_path = os.path.join(local_upload_dir, unique_name)
+        file.save(local_file_path)
+
+        local_url = url_for('static', filename=f'uploads/{unique_name}')
+        return jsonify({
+            'success': True,
+            'url': local_url,
+            'downloadUrl': local_url,
+            'storagePath': f'uploads/{unique_name}',
+            'provider': 'local'
+        })
+    except Exception as e:
+        logger.exception("Storage upload failed")
+        return jsonify({'error': f'Storage upload failed: {str(e)}'}), 500
 
 
 # ==================== PAGE ROUTES ====================
@@ -2452,7 +2635,8 @@ def dashboard_page():
         'id': session['user_id'],
         'uid': session['user_id'],
         'name': session.get('user_name'),
-        'email': session.get('user_email')
+        'email': session.get('user_email'),
+        'picture': session.get('user_picture')
     }, firebase_config=get_firebase_config())
 
 
@@ -2465,7 +2649,8 @@ def builder_page():
         'id': session['user_id'],
         'uid': session['user_id'],
         'name': session.get('user_name'),
-        'email': session.get('user_email')
+        'email': session.get('user_email'),
+        'picture': session.get('user_picture')
     }
     return render_template('index.html', user=user, firebase_config=get_firebase_config())
 
@@ -3808,6 +3993,7 @@ def create_project():
                 'buildNumber': build_number,
                 'packageName': package_name,
                 'iconUrl': icon_url,
+                'splashUrl': splash_url,
                 'settings': settings_data,
                 'createdAt': firestore.SERVER_TIMESTAMP,
                 'updatedAt': firestore.SERVER_TIMESTAMP
@@ -3816,6 +4002,8 @@ def create_project():
                 project_data['keystoreData'] = data['keystoreData']
             if 'appleData' in data:
                 project_data['appleData'] = data['appleData']
+            if 'publishingData' in data:
+                project_data['publishingData'] = data['publishingData']
             doc_ref = db.collection('projects').add(project_data)
             project_id = doc_ref[1].id
         else:

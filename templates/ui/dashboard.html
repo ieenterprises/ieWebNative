@@ -368,6 +368,23 @@
             document.getElementById('dropdown-initials').textContent = initials;
             document.getElementById('user-name').textContent = user.name || 'User';
             document.getElementById('user-email').textContent = user.email || '';
+
+            if (user.picture) {
+                const avatarImg = document.getElementById('user-avatar-img');
+                const dropAvatarImg = document.getElementById('dropdown-avatar-img');
+                if (avatarImg) {
+                    avatarImg.src = user.picture;
+                    avatarImg.style.display = 'block';
+                    const initEl = document.getElementById('user-initials');
+                    if (initEl) initEl.style.display = 'none';
+                }
+                if (dropAvatarImg) {
+                    dropAvatarImg.src = user.picture;
+                    dropAvatarImg.style.display = 'block';
+                    const dropInitEl = document.getElementById('dropdown-initials');
+                    if (dropInitEl) dropInitEl.style.display = 'none';
+                }
+            }
         }
 
         // Load projects from API
@@ -700,11 +717,15 @@
         // Logout
         document.getElementById('logout-btn').addEventListener('click', async (e) => {
             e.preventDefault();
-            try {
-                await fetch('/api/auth/logout', { method: 'POST' });
-                window.location.href = '/';
-            } catch (error) {
-                window.location.href = '/';
+            if (window.FirebaseAppService) {
+                await window.FirebaseAppService.signOut();
+            } else {
+                try {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                    window.location.href = '/';
+                } catch (error) {
+                    window.location.href = '/';
+                }
             }
         });
 
@@ -869,5 +890,11 @@
         // Start checking for active build on dashboard
         pollActiveDashboardBuild();
     </script>
+
+    <!-- Firebase SDK & Client Service -->
+    <script>
+        window.FIREBASE_CONFIG = {{ firebase_config|tojson if firebase_config else '{}' }};
+    </script>
+    <script src="{{ url_for('static', filename='js/firebase-app.js') }}"></script>
 </body>
 </html>
