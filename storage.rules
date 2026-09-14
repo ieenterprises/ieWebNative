@@ -39,18 +39,18 @@ service firebase.storage {
       allow write: if isSignedIn() && isOwner(userId);
     }
 
-    // Project icons
+    // Project icons (publicly readable so previews and built apps can load them)
     // Path: /projects/{userId}/icons/{filename}
     match /projects/{userId}/icons/{filename} {
-      allow read: if isSignedIn() && isOwner(userId);
+      allow read: if true;
       allow write: if isSignedIn() && isOwner(userId) && isValidImage();
       allow delete: if isSignedIn() && isOwner(userId);
     }
 
-    // Project assets folder
+    // Project assets folder (splash screen, error screen images)
     // Path: /projects/{userId}/assets/{filename}
     match /projects/{userId}/assets/{filename} {
-      allow read: if isSignedIn() && isOwner(userId);
+      allow read: if true;
       allow write: if isSignedIn() && isOwner(userId);
       allow delete: if isSignedIn() && isOwner(userId);
     }
