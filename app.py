@@ -539,7 +539,7 @@ def get_db_connection():
     return conn
 
 def init_sqlite_db():
-    """Create SQLite tables for users and projects if they don't exist"""
+    """Create SQLite tables for users, projects, and builds if they don't exist"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -567,8 +567,30 @@ def init_sqlite_db():
                 settings_json TEXT,
                 keystore_json TEXT,
                 apple_json TEXT,
+                builds_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            )
+        ''')
+        # Ensure builds_json column exists if projects table was previously created without it
+        try:
+            cols = [col[1] for col in cursor.execute('PRAGMA table_info(projects)').fetchall()]
+            if 'builds_json' not in cols:
+                cursor.execute('ALTER TABLE projects ADD COLUMN builds_json TEXT')
+        except Exception as col_err:
+            logger.debug(f"Column check notice: {col_err}")
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS builds (
+                id TEXT PRIMARY KEY,
+                project_id TEXT,
+                user_id TEXT NOT NULL,
+                app_name TEXT,
+                platform TEXT NOT NULL,
+                status TEXT NOT NULL,
+                outputs_json TEXT,
+                artifacts_json TEXT,
+                created_at TEXT NOT NULL
             )
         ''')
         conn.commit()
@@ -1322,6 +1344,214 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
 
     return final_output_path
 
+def record_completed_build(build_id, config, final_status):
+    """
+    Saves completed build outputs (.apk, .aab, .ipa, windows, macos, linux)
+    and associates them with the user project in Firestore and SQLite.
+    Also uploads the binary to Firebase Storage if configured.
+    """
+    try:
+        user_id = config.get('user_id')
+        project_id = config.get('project_id')
+        app_name = config.get('app_name', 'Untitled App')
+        outputs = final_status.get('outputs', {})
+        if not outputs:
+            return
+
+        now_iso = datetime.utcnow().isoformat()
+
+        # If project_id not given, try to find or create project for this user
+        if not project_id and user_id:
+            web_url = config.get('web_url', '')
+            if db:
+                try:
+                    p_query = db.collection('projects').where('userId', '==', user_id).stream()
+                    for doc in p_query:
+                        p_data = doc.to_dict()
+                        if p_data.get('name') == app_name or (web_url and p_data.get('webUrl') == web_url):
+                            project_id = doc.id
+                            break
+                except Exception as e:
+                    logger.warning(f"Error finding existing project in Firestore: {e}")
+
+            if not project_id:
+                try:
+                    conn = get_db_connection()
+                    row = conn.execute(
+                        'SELECT id FROM projects WHERE user_id = ? AND (name = ? OR (web_url != "" AND web_url = ?))',
+                        (user_id, app_name, web_url)
+                    ).fetchone()
+                    conn.close()
+                    if row:
+                        project_id = row['id']
+                except Exception as e:
+                    logger.warning(f"Error finding existing project in SQLite: {e}")
+
+            # If still no project, auto-create one
+            if not project_id and user_id:
+                project_id = str(uuid.uuid4())
+                if db:
+                    try:
+                        new_proj = {
+                            'userId': user_id,
+                            'name': app_name,
+                            'webUrl': web_url,
+                            'description': config.get('app_description', ''),
+                            'appVersion': config.get('app_version', '1.0.0'),
+                            'buildNumber': config.get('build_number', 1),
+                            'packageName': config.get('package_name', ''),
+                            'iconUrl': config.get('icon_path', ''),
+                            'settings': {},
+                            'builds': {},
+                            'createdAt': firestore.SERVER_TIMESTAMP,
+                            'updatedAt': firestore.SERVER_TIMESTAMP
+                        }
+                        db.collection('projects').document(project_id).set(new_proj)
+                    except Exception as e:
+                        logger.warning(f"Error auto-creating project in Firestore: {e}")
+
+                try:
+                    conn = get_db_connection()
+                    conn.execute('''
+                        INSERT INTO projects (id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, settings_json, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (project_id, user_id, app_name, web_url, config.get('app_description', ''), config.get('app_version', '1.0.0'), config.get('build_number', 1), config.get('package_name', ''), config.get('icon_path', ''), '{}', now_iso, now_iso))
+                    conn.commit()
+                    conn.close()
+                except Exception as e:
+                    logger.warning(f"Error auto-creating project in SQLite: {e}")
+
+        # Construct platform build artifacts
+        platform_artifacts = {}
+        for plat, output_path in outputs.items():
+            if not output_path or output_path.startswith('Error:'):
+                continue
+
+            file_name = os.path.basename(output_path)
+            file_size = 0
+            human_size = ''
+            if os.path.exists(output_path):
+                file_size = os.path.getsize(output_path)
+                if file_size < 1024 * 1024:
+                    human_size = f"{file_size / 1024:.1f} KB"
+                else:
+                    human_size = f"{file_size / (1024 * 1024):.1f} MB"
+
+            artifact = {
+                'buildId': build_id,
+                'platform': plat,
+                'fileName': file_name,
+                'fileSize': file_size,
+                'fileSizeFormatted': human_size,
+                'downloadUrl': f"/api/build/{build_id}/download/{plat}",
+                'builtAt': now_iso,
+                'status': 'completed'
+            }
+            platform_artifacts[plat] = artifact
+
+        if not platform_artifacts:
+            return
+
+        # 1. Update SQLite
+        try:
+            conn = get_db_connection()
+            # Save build record
+            conn.execute('''
+                INSERT OR REPLACE INTO builds (id, project_id, user_id, app_name, platform, status, outputs_json, artifacts_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                build_id,
+                project_id or '',
+                user_id or '',
+                app_name,
+                list(platform_artifacts.keys())[0] if platform_artifacts else 'unknown',
+                'completed',
+                json.dumps(outputs),
+                json.dumps(platform_artifacts),
+                now_iso
+            ))
+
+            # Update project's builds_json if project exists
+            if project_id:
+                proj_row = conn.execute('SELECT builds_json FROM projects WHERE id = ?', (project_id,)).fetchone()
+                existing_builds = {}
+                if proj_row and proj_row['builds_json']:
+                    try:
+                        existing_builds = json.loads(proj_row['builds_json'])
+                    except Exception:
+                        existing_builds = {}
+                existing_builds.update(platform_artifacts)
+                conn.execute('UPDATE projects SET builds_json = ?, updated_at = ? WHERE id = ?', (json.dumps(existing_builds), now_iso, project_id))
+            conn.commit()
+            conn.close()
+            logger.info(f"Recorded completed build {build_id} in SQLite for project {project_id}")
+        except Exception as sqle:
+            logger.warning(f"Error saving build to SQLite: {sqle}")
+
+        # 2. Update Firestore
+        if db:
+            try:
+                # Save to builds collection
+                build_doc = {
+                    'id': build_id,
+                    'projectId': project_id or '',
+                    'userId': user_id or '',
+                    'appName': app_name,
+                    'platforms': list(platform_artifacts.keys()),
+                    'status': 'completed',
+                    'outputs': outputs,
+                    'artifacts': platform_artifacts,
+                    'createdAt': firestore.SERVER_TIMESTAMP
+                }
+                db.collection('builds').document(build_id).set(build_doc)
+
+                # Update project doc with new platform builds (merging so other platforms are preserved!)
+                if project_id:
+                    proj_ref = db.collection('projects').document(project_id)
+                    update_payload = {'updatedAt': firestore.SERVER_TIMESTAMP}
+                    for plat, art in platform_artifacts.items():
+                        update_payload[f'builds.{plat}'] = art
+                    proj_ref.update(update_payload)
+                logger.info(f"Recorded completed build {build_id} in Firestore for project {project_id}")
+            except Exception as fse:
+                logger.warning(f"Error saving build to Firestore: {fse}")
+
+        # 3. Optional background upload to Firebase Storage
+        def _bg_upload_to_storage():
+            try:
+                bucket = get_firebase_storage_bucket()
+                if not bucket or not user_id:
+                    return
+                for plat, output_path in outputs.items():
+                    if not output_path or not os.path.exists(output_path):
+                        continue
+                    fname = os.path.basename(output_path)
+                    storage_path = f"builds/{user_id}/{project_id or 'general'}/{plat}_{fname}"
+                    blob = bucket.blob(storage_path)
+                    blob.upload_from_filename(output_path)
+                    try:
+                        blob.make_public()
+                        public_url = blob.public_url
+                    except Exception:
+                        public_url = blob.generate_signed_url(timedelta(days=30), method='GET')
+
+                    # Update download url in Firestore
+                    if db and project_id:
+                        try:
+                            db.collection('projects').document(project_id).update({
+                                f'builds.{plat}.storageUrl': public_url
+                            })
+                        except Exception:
+                            pass
+                    logger.info(f"Uploaded build {build_id} ({plat}) to Firebase Storage: {storage_path}")
+            except Exception as st_err:
+                logger.debug(f"Note: Cloud storage upload skipped/deferred: {st_err}")
+
+        threading.Thread(target=_bg_upload_to_storage, daemon=True).start()
+
+    except Exception as e:
+        logger.exception(f"Error in record_completed_build: {e}")
+
 def run_build(build_id, config):
     """Run the Flutter build in a background thread"""
     try:
@@ -1671,6 +1901,7 @@ def run_build(build_id, config):
                     final_status['app_store_published'] = True
 
                 build_progress[build_id] = final_status
+                record_completed_build(build_id, config, final_status)
                 return
             else:
                 raise RuntimeError("Flutter SDK is not installed on this system. Please install Flutter or configure GITHUB_TOKEN in .env for Cloud Builds.")
@@ -1722,6 +1953,7 @@ def run_build(build_id, config):
             final_status['app_store_published'] = True
 
         build_progress[build_id] = final_status
+        record_completed_build(build_id, config, final_status)
         # ✅ Webhook on success
         webhook_url = config.get('webhook_url')
         payload = {
@@ -3018,85 +3250,159 @@ def start_build():
             'webhook_url': data.get('webhook_url')
         }
 
-        # Auto-record project in user's dashboard if user is authenticated
-        if 'user_id' in session:
+        # Determine authenticated user (Flask session or Bearer token)
+        auth_user_id = session.get('user_id')
+        if not auth_user_id:
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer ') and firebase_initialized:
+                try:
+                    decoded = firebase_auth.verify_id_token(auth_header.split('Bearer ')[1].strip())
+                    auth_user_id = decoded.get('uid')
+                except Exception:
+                    pass
+
+        project_id = data.get('project_id') or data.get('projectId')
+        app_name = data.get('app_name', 'Untitled App')
+        web_url = data.get('web_url', '')
+        app_desc = data.get('app_description', '')
+        app_ver = data.get('app_version', '1.0.0')
+        build_num = int(data.get('build_number', 1) or 1)
+        pkg_name = data.get('package_name', '')
+        icon_path = data.get('icon_path', '')
+        now_str = datetime.utcnow().isoformat()
+
+        settings_dict = {
+            'allowZoom': data.get('allow_zoom', False),
+            'enableJavascript': data.get('enable_javascript', False),
+            'enableDomStorage': data.get('enable_dom_storage', False),
+            'enableGeolocation': data.get('enable_geolocation', False),
+            'enablePullRefresh': data.get('enable_pull_refresh', False),
+            'showNavigation': data.get('show_navigation', False),
+            'enableFileAccess': data.get('enable_file_access', False),
+            'enableCache': data.get('enable_cache', False),
+            'enableMediaAutoplay': data.get('enable_media_autoplay', False),
+            'enableCamera': data.get('enable_camera', False),
+            'enableMicrophone': data.get('enable_microphone', False),
+            'enableSslPinning': data.get('enable_ssl_pinning', False),
+            'sslPins': data.get('ssl_pins', ''),
+            'enableBiometrics': data.get('enable_biometric_auth', data.get('enable_biometrics', False)),
+            'enableAppLock': data.get('enable_app_lock', False),
+            'appLockPin': data.get('app_lock_pin', ''),
+            'enableSecureStorage': data.get('enable_secure_storage', False),
+            'enableGooglePlayPublish': data.get('enable_google_play_publish', False),
+            'playTrack': data.get('play_track', 'internal'),
+            'playStatus': data.get('play_status', 'draft'),
+            'enableAppStorePublish': data.get('enable_app_store_publish', False),
+            'appStoreKeyId': data.get('app_store_key_id', ''),
+            'appStoreIssuerId': data.get('app_store_issuer_id', ''),
+            'enableSplashScreen': data.get('enable_splash_screen', False),
+            'splashTitle': data.get('splash_title', ''),
+            'splashSubtitle': data.get('splash_subtitle', ''),
+            'splashBgColor': data.get('splash_bg_color', '#FFFFFF'),
+            'splashTextColor': data.get('splash_text_color', '#1E293B'),
+            'splashDuration': data.get('splash_duration', 2),
+            'splashImagePath': data.get('splash_image_path', ''),
+            'enableErrorPage': data.get('enable_error_page', False),
+            'errorTitle': data.get('error_title', 'No Internet Connection'),
+            'errorMessage': data.get('error_message', 'Please check your connection and try again'),
+            'errorButtonText': data.get('error_button_text', 'Retry'),
+            'errorBgColor': data.get('error_bg_color', '#FFFFFF'),
+            'errorTextColor': data.get('error_text_color', '#334155'),
+            'errorImagePath': data.get('error_image_path', '')
+        }
+        settings_json = json.dumps(settings_dict)
+
+        # Auto-record or associate project if user is authenticated
+        if auth_user_id:
             try:
-                auth_user_id = session['user_id']
-                app_name = data.get('app_name', 'Untitled App')
-                web_url = data.get('web_url', '')
-                app_desc = data.get('app_description', '')
-                app_ver = data.get('app_version', '1.0.0')
-                build_num = int(data.get('build_number', 1) or 1)
-                pkg_name = data.get('package_name', '')
-                icon_path = data.get('icon_path', '')
-                now_str = datetime.utcnow().isoformat()
-                settings_json = json.dumps({
-                    'allowZoom': data.get('allow_zoom', False),
-                    'enableJavascript': data.get('enable_javascript', False),
-                    'enableDomStorage': data.get('enable_dom_storage', False),
-                    'enableGeolocation': data.get('enable_geolocation', False),
-                    'enablePullRefresh': data.get('enable_pull_refresh', False),
-                    'showNavigation': data.get('show_navigation', False),
-                    'enableFileAccess': data.get('enable_file_access', False),
-                    'enableCache': data.get('enable_cache', False),
-                    'enableMediaAutoplay': data.get('enable_media_autoplay', False),
-                    'enableCamera': data.get('enable_camera', False),
-                    'enableMicrophone': data.get('enable_microphone', False),
-                    'enableSslPinning': data.get('enable_ssl_pinning', False),
-                    'sslPins': data.get('ssl_pins', ''),
-                    'enableBiometrics': data.get('enable_biometric_auth', data.get('enable_biometrics', False)),
-                    'enableAppLock': data.get('enable_app_lock', False),
-                    'appLockPin': data.get('app_lock_pin', ''),
-                    'enableSecureStorage': data.get('enable_secure_storage', False),
-                    'enableGooglePlayPublish': data.get('enable_google_play_publish', False),
-                    'playTrack': data.get('play_track', 'internal'),
-                    'playStatus': data.get('play_status', 'draft'),
-                    'enableAppStorePublish': data.get('enable_app_store_publish', False),
-                    'appStoreKeyId': data.get('app_store_key_id', ''),
-                    'appStoreIssuerId': data.get('app_store_issuer_id', ''),
-                    'enableSplashScreen': data.get('enable_splash_screen', False),
-                    'splashTitle': data.get('splash_title', ''),
-                    'splashSubtitle': data.get('splash_subtitle', ''),
-                    'splashBgColor': data.get('splash_bg_color', '#FFFFFF'),
-                    'splashTextColor': data.get('splash_text_color', '#1E293B'),
-                    'splashDuration': data.get('splash_duration', 2),
-                    'splashImagePath': data.get('splash_image_path', ''),
-                    'enableErrorPage': data.get('enable_error_page', False),
-                    'errorTitle': data.get('error_title', 'No Internet Connection'),
-                    'errorMessage': data.get('error_message', 'Please check your connection and try again'),
-                    'errorButtonText': data.get('error_button_text', 'Retry'),
-                    'errorBgColor': data.get('error_bg_color', '#FFFFFF'),
-                    'errorTextColor': data.get('error_text_color', '#334155'),
-                    'errorImagePath': data.get('error_image_path', '')
-                })
+                if not project_id:
+                    # Check if matching project already exists for this user
+                    if db:
+                        try:
+                            proj_stream = db.collection('projects').where('userId', '==', auth_user_id).stream()
+                            for p_doc in proj_stream:
+                                p_data = p_doc.to_dict()
+                                if p_data.get('name') == app_name or (web_url and p_data.get('webUrl') == web_url):
+                                    project_id = p_doc.id
+                                    break
+                        except Exception as pfe:
+                            logger.warning(f"Error checking existing project in Firestore: {pfe}")
 
+                    if not project_id:
+                        conn = get_db_connection()
+                        existing_proj = conn.execute(
+                            'SELECT id FROM projects WHERE user_id = ? AND (name = ? OR (web_url != "" AND web_url = ?))',
+                            (auth_user_id, app_name, web_url)
+                        ).fetchone()
+                        conn.close()
+                        if existing_proj:
+                            project_id = existing_proj['id']
+
+                # If still no project_id, generate one and create project
+                if not project_id:
+                    project_id = str(uuid.uuid4())
+
+                # Upsert in Firestore
+                if db:
+                    try:
+                        p_ref = db.collection('projects').document(project_id)
+                        p_snap = p_ref.get()
+                        if p_snap.exists:
+                            p_ref.update({
+                                'name': app_name,
+                                'webUrl': web_url,
+                                'description': app_desc,
+                                'appVersion': app_ver,
+                                'buildNumber': build_num,
+                                'packageName': pkg_name,
+                                'settings': settings_dict,
+                                'updatedAt': firestore.SERVER_TIMESTAMP
+                            })
+                        else:
+                            p_ref.set({
+                                'userId': auth_user_id,
+                                'name': app_name,
+                                'webUrl': web_url,
+                                'description': app_desc,
+                                'appVersion': app_ver,
+                                'buildNumber': build_num,
+                                'packageName': pkg_name,
+                                'iconUrl': icon_path,
+                                'settings': settings_dict,
+                                'builds': {},
+                                'createdAt': firestore.SERVER_TIMESTAMP,
+                                'updatedAt': firestore.SERVER_TIMESTAMP
+                            })
+                    except Exception as fe:
+                        logger.warning(f"Error syncing project to Firestore in start_build: {fe}")
+
+                # Upsert in SQLite
                 conn = get_db_connection()
-                existing_proj = conn.execute(
-                    'SELECT id FROM projects WHERE user_id = ? AND (name = ? OR web_url = ?)',
-                    (auth_user_id, app_name, web_url)
-                ).fetchone()
-
-                if existing_proj:
+                existing_row = conn.execute('SELECT id FROM projects WHERE id = ?', (project_id,)).fetchone()
+                if existing_row:
                     conn.execute('''
                         UPDATE projects SET
                             name = ?, web_url = ?, description = ?,
                             app_version = ?, build_number = ?, package_name = ?,
                             settings_json = ?, updated_at = ?
                         WHERE id = ?
-                    ''', (app_name, web_url, app_desc, app_ver, build_num, pkg_name, settings_json, now_str, existing_proj['id']))
+                    ''', (app_name, web_url, app_desc, app_ver, build_num, pkg_name, settings_json, now_str, project_id))
                 else:
-                    new_pid = str(uuid.uuid4())
                     conn.execute('''
                         INSERT INTO projects (
                             id, user_id, name, web_url, description,
                             app_version, build_number, package_name,
                             icon_url, settings_json, created_at, updated_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (new_pid, auth_user_id, app_name, web_url, app_desc, app_ver, build_num, pkg_name, icon_path, settings_json, now_str, now_str))
+                    ''', (project_id, auth_user_id, app_name, web_url, app_desc, app_ver, build_num, pkg_name, icon_path, settings_json, now_str, now_str))
                 conn.commit()
                 conn.close()
             except Exception as auto_save_err:
                 logger.warning(f"Project auto-save note: {auto_save_err}")
+
+        # Store user & project in config
+        config['user_id'] = auth_user_id
+        config['project_id'] = project_id
 
         # Store initial build progress record with metadata
         selected_plat = config.get('platforms', ['android'])[0] if config.get('platforms') else 'android'
@@ -3106,6 +3412,7 @@ def start_build():
             'progress': 5,
             'message': 'Preparing build environment...',
             'build_id': build_id,
+            'project_id': project_id,
             'app_name': config.get('app_name', 'App'),
             'platform': selected_plat,
             'platforms': config.get('platforms', [selected_plat]),
@@ -3118,8 +3425,8 @@ def start_build():
         thread = threading.Thread(target=run_build, args=(build_id, config))
         thread.start()
 
-        logger.info(f"Build thread started for build ID: {build_id}")
-        return jsonify({'build_id': build_id})
+        logger.info(f"Build thread started for build ID: {build_id} (Project ID: {project_id})")
+        return jsonify({'build_id': build_id, 'project_id': project_id})
 
     except Exception as e:
         logger.exception("Failed to start build process")
@@ -3262,10 +3569,39 @@ def export_build_project(build_id):
 def download_build(build_id, platform):
     _recover_build_if_on_disk(build_id)
     if build_id not in build_progress:
+        # Check SQLite
+        try:
+            conn = get_db_connection()
+            b_row = conn.execute('SELECT outputs_json, artifacts_json FROM builds WHERE id = ?', (build_id,)).fetchone()
+            conn.close()
+            if b_row and b_row['outputs_json']:
+                build_progress[build_id] = {
+                    'status': 'completed',
+                    'progress': 100,
+                    'outputs': json.loads(b_row['outputs_json'])
+                }
+        except Exception as e:
+            logger.debug(f"SQLite build recovery notice: {e}")
+
+    if build_id not in build_progress and db:
+        # Check Firestore
+        try:
+            b_doc = db.collection('builds').document(build_id).get()
+            if b_doc.exists:
+                b_data = b_doc.to_dict()
+                build_progress[build_id] = {
+                    'status': 'completed',
+                    'progress': 100,
+                    'outputs': b_data.get('outputs', {})
+                }
+        except Exception as e:
+            logger.debug(f"Firestore build recovery notice: {e}")
+
+    if build_id not in build_progress:
         return jsonify({'error': 'Build not found'}), 404
 
     progress = build_progress[build_id]
-    if progress['status'] != 'completed':
+    if progress.get('status') != 'completed':
         return jsonify({'error': 'Build not completed'}), 400
 
     # Handle keystore download
@@ -3274,32 +3610,47 @@ def download_build(build_id, platform):
             return jsonify({'error': 'No keystore was generated for this build'}), 404
 
         keystore_path = progress.get('keystore_path')
-
         if keystore_path and os.path.exists(keystore_path):
-            # Create a zip with both keystore and info file
             build_dir = os.path.join(app.config['BUILD_FOLDER'], build_id)
             keystore_dir = os.path.join(build_dir, 'keystore')
             zip_path = os.path.join(build_dir, 'outputs', 'keystore-bundle.zip')
-
             shutil.make_archive(zip_path.replace('.zip', ''), 'zip', keystore_dir)
-
             if os.path.exists(zip_path):
                 return send_file(zip_path, as_attachment=True, download_name='keystore-bundle.zip')
-
         return jsonify({'error': 'Keystore file not found'}), 404
 
-    if platform not in progress.get('outputs', {}):
-        return jsonify({'error': 'Platform output not found'}), 404
+    outputs = progress.get('outputs', {})
+    output_path = outputs.get(platform)
 
-    output_path = progress['outputs'][platform]
-    if output_path.startswith('http://') or output_path.startswith('https://'):
+    # Check if direct link or storage URL is available
+    if output_path and (output_path.startswith('http://') or output_path.startswith('https://')):
         return redirect(output_path)
 
-    if output_path.startswith('Error:'):
+    if output_path and output_path.startswith('Error:'):
         return jsonify({'error': output_path}), 400
 
-    if os.path.exists(output_path):
+    # If local path exists, send it
+    if output_path and os.path.exists(output_path):
         return send_file(output_path, as_attachment=True, download_name=os.path.basename(output_path))
+
+    # Search in build output directory
+    build_dir = os.path.join(app.config['BUILD_FOLDER'], build_id)
+    outputs_dir = os.path.join(build_dir, 'outputs')
+    if os.path.exists(outputs_dir):
+        ext_map = {
+            'android': ('.apk',),
+            'android_aab': ('.aab',),
+            'ios': ('.ipa',),
+            'ios_xcode': ('_xcode_project.zip', '.zip'),
+            'windows': ('_windows.zip', '.exe', '.zip'),
+            'macos': ('.dmg', '_macos.zip', '.zip'),
+            'linux': ('.tar.gz', '_linux.zip', '.zip')
+        }
+        target_exts = ext_map.get(platform, ('.zip', '.apk'))
+        for f in os.listdir(outputs_dir):
+            if any(f.endswith(ext) for ext in target_exts):
+                candidate_path = os.path.join(outputs_dir, f)
+                return send_file(candidate_path, as_attachment=True, download_name=f)
 
     return jsonify({'error': 'Output file not found'}), 404
 
@@ -3898,8 +4249,8 @@ def get_projects():
         user_id = request.user['uid']
         if db:
             projects_ref = db.collection('projects')
-            query = projects_ref.where('userId', '==', user_id).order_by('updatedAt', direction=firestore.Query.DESCENDING)
-            docs = query.stream()
+            # Query by userId only (in-memory sort avoids composite index requirement)
+            docs = projects_ref.where('userId', '==', user_id).stream()
 
             projects = []
             for doc in docs:
@@ -3909,14 +4260,24 @@ def get_projects():
                     project['createdAt'] = project['createdAt'].isoformat() if hasattr(project['createdAt'], 'isoformat') else str(project['createdAt'])
                 if project.get('updatedAt'):
                     project['updatedAt'] = project['updatedAt'].isoformat() if hasattr(project['updatedAt'], 'isoformat') else str(project['updatedAt'])
+                if not project.get('builds'):
+                    project['builds'] = {}
                 projects.append(project)
 
+            projects.sort(key=lambda p: str(p.get('updatedAt') or p.get('createdAt') or ''), reverse=True)
             return jsonify({'projects': projects})
         else:
             conn = get_db_connection()
             rows = conn.execute('SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC', (user_id,)).fetchall()
             projects = []
             for r in rows:
+                builds_dict = {}
+                try:
+                    if 'builds_json' in r.keys() and r['builds_json']:
+                        builds_dict = json.loads(r['builds_json'])
+                except Exception:
+                    builds_dict = {}
+
                 projects.append({
                     'id': r['id'],
                     'userId': r['user_id'],
@@ -3931,12 +4292,14 @@ def get_projects():
                     'settings': json.loads(r['settings_json']) if r['settings_json'] else {},
                     'keystoreData': json.loads(r['keystore_json']) if r['keystore_json'] else {},
                     'appleData': json.loads(r['apple_json']) if r['apple_json'] else {},
+                    'builds': builds_dict,
                     'createdAt': r['created_at'],
                     'updatedAt': r['updated_at']
                 })
             conn.close()
             return jsonify({'projects': projects})
     except Exception as e:
+        logger.exception("Failed to fetch projects")
         return jsonify({'error': f'Failed to fetch projects: {str(e)}'}), 500
 
 @app.route('/api/projects', methods=['POST'])
@@ -3959,6 +4322,7 @@ def create_project():
         package_name = data.get('packageName', '')
         icon_url = data.get('iconUrl', '')
         splash_url = data.get('splashUrl', '')
+        builds_data = data.get('builds', {})
         settings_data = data.get('settings', {
             'allowZoom': True,
             'enableJavascript': True,
@@ -3981,6 +4345,7 @@ def create_project():
         settings_json = json.dumps(settings_data)
         keystore_json = json.dumps(data.get('keystoreData', {}))
         apple_json = json.dumps(data.get('appleData', {}))
+        builds_json = json.dumps(builds_data)
         now = datetime.utcnow().isoformat()
 
         if db:
@@ -3995,6 +4360,7 @@ def create_project():
                 'iconUrl': icon_url,
                 'splashUrl': splash_url,
                 'settings': settings_data,
+                'builds': builds_data,
                 'createdAt': firestore.SERVER_TIMESTAMP,
                 'updatedAt': firestore.SERVER_TIMESTAMP
             }
@@ -4006,14 +4372,18 @@ def create_project():
                 project_data['publishingData'] = data['publishingData']
             doc_ref = db.collection('projects').add(project_data)
             project_id = doc_ref[1].id
-        else:
+
+        # Sync to SQLite for backup / offline support
+        try:
             conn = get_db_connection()
             conn.execute('''
-                INSERT INTO projects (id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (project_id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, now, now))
+                INSERT OR REPLACE INTO projects (id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, builds_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (project_id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, builds_json, now, now))
             conn.commit()
             conn.close()
+        except Exception as se:
+            logger.warning(f"Error syncing project to SQLite in create_project: {se}")
 
         return jsonify({'success': True, 'projectId': project_id})
     except Exception as e:
@@ -4042,6 +4412,8 @@ def get_project(project_id):
                 project['createdAt'] = project['createdAt'].isoformat() if hasattr(project['createdAt'], 'isoformat') else str(project['createdAt'])
             if project.get('updatedAt'):
                 project['updatedAt'] = project['updatedAt'].isoformat() if hasattr(project['updatedAt'], 'isoformat') else str(project['updatedAt'])
+            if not project.get('builds'):
+                project['builds'] = {}
 
             return jsonify({'project': project})
         else:
@@ -4052,6 +4424,14 @@ def get_project(project_id):
                 return jsonify({'error': 'Project not found'}), 404
             if r['user_id'] != user_id:
                 return jsonify({'error': 'Access denied'}), 403
+
+            builds_dict = {}
+            try:
+                if 'builds_json' in r.keys() and r['builds_json']:
+                    builds_dict = json.loads(r['builds_json'])
+            except Exception:
+                builds_dict = {}
+
             project = {
                 'id': r['id'],
                 'userId': r['user_id'],
@@ -4066,6 +4446,7 @@ def get_project(project_id):
                 'settings': json.loads(r['settings_json']) if r['settings_json'] else {},
                 'keystoreData': json.loads(r['keystore_json']) if r['keystore_json'] else {},
                 'appleData': json.loads(r['apple_json']) if r['apple_json'] else {},
+                'builds': builds_dict,
                 'createdAt': r['created_at'],
                 'updatedAt': r['updated_at']
             }
@@ -4083,6 +4464,12 @@ def update_project(project_id):
         if not data:
             return jsonify({'error': 'No project data provided'}), 400
 
+        allowed_fields = ['name', 'webUrl', 'description', 'appVersion', 'buildNumber',
+                          'packageName', 'iconUrl', 'splashUrl', 'settings', 'keystoreData', 'appleData', 'publishingData',
+                          'builds', 'iconStoragePath', 'keystoreStoragePath', 'appleCertStoragePath', 'appleProfileStoragePath']
+
+        now = datetime.utcnow().isoformat()
+
         if db:
             doc_ref = db.collection('projects').document(project_id)
             doc = doc_ref.get()
@@ -4095,50 +4482,83 @@ def update_project(project_id):
                 return jsonify({'error': 'Access denied'}), 403
 
             update_data = {'updatedAt': firestore.SERVER_TIMESTAMP}
-            allowed_fields = ['name', 'webUrl', 'description', 'appVersion', 'buildNumber',
-                              'packageName', 'iconUrl', 'settings', 'keystoreData', 'appleData', 'publishingData',
-                              'iconStoragePath', 'keystoreStoragePath', 'appleCertStoragePath', 'appleProfileStoragePath']
             for field in allowed_fields:
                 if field in data:
                     update_data[field] = data[field]
 
             doc_ref.update(update_data)
-            return jsonify({'success': True})
-        else:
+
+        # Sync to SQLite
+        try:
             conn = get_db_connection()
             r = conn.execute('SELECT * FROM projects WHERE id = ?', (project_id,)).fetchone()
-            if not r:
-                conn.close()
-                return jsonify({'error': 'Project not found'}), 404
-            if r['user_id'] != user_id:
-                conn.close()
-                return jsonify({'error': 'Access denied'}), 403
+            if r:
+                name = data.get('name', r['name'])
+                web_url = data.get('webUrl', r['web_url'])
+                description = data.get('description', r['description'])
+                app_version = data.get('appVersion', r['app_version'])
+                build_number = data.get('buildNumber', r['build_number'])
+                package_name = data.get('packageName', r['package_name'])
+                icon_url = data.get('iconUrl', r['icon_url'])
+                splash_url = data.get('splashUrl', r['splash_url'])
+                settings_json = json.dumps(data['settings']) if 'settings' in data else r['settings_json']
+                keystore_json = json.dumps(data['keystoreData']) if 'keystoreData' in data else r['keystore_json']
+                apple_json = json.dumps(data['appleData']) if 'appleData' in data else r['apple_json']
+                builds_json = json.dumps(data['builds']) if 'builds' in data else (r['builds_json'] if 'builds_json' in r.keys() else '{}')
 
-            now = datetime.utcnow().isoformat()
-            name = data.get('name', r['name'])
-            web_url = data.get('webUrl', r['web_url'])
-            description = data.get('description', r['description'])
-            app_version = data.get('appVersion', r['app_version'])
-            build_number = data.get('buildNumber', r['build_number'])
-            package_name = data.get('packageName', r['package_name'])
-            icon_url = data.get('iconUrl', r['icon_url'])
-            splash_url = data.get('splashUrl', r['splash_url'])
-            settings_json = json.dumps(data['settings']) if 'settings' in data else r['settings_json']
-            keystore_json = json.dumps(data['keystoreData']) if 'keystoreData' in data else r['keystore_json']
-            apple_json = json.dumps(data['appleData']) if 'appleData' in data else r['apple_json']
-
-            conn.execute('''
-                UPDATE projects SET name=?, web_url=?, description=?, app_version=?, build_number=?,
-                                   package_name=?, icon_url=?, splash_url=?, settings_json=?, keystore_json=?,
-                                   apple_json=?, updated_at=?
-                WHERE id=?
-            ''', (name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, now, project_id))
-            conn.commit()
+                conn.execute('''
+                    UPDATE projects SET name=?, web_url=?, description=?, app_version=?, build_number=?,
+                                       package_name=?, icon_url=?, splash_url=?, settings_json=?, keystore_json=?,
+                                       apple_json=?, builds_json=?, updated_at=?
+                    WHERE id=?
+                ''', (name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, builds_json, now, project_id))
+                conn.commit()
             conn.close()
-            return jsonify({'success': True})
+        except Exception as se:
+            logger.warning(f"Error syncing project update to SQLite: {se}")
+
+        return jsonify({'success': True})
     except Exception as e:
         logger.exception("Error updating project")
         return jsonify({'error': f'Failed to update project: {str(e)}'}), 500
+
+@app.route('/api/projects/<project_id>/builds', methods=['GET'])
+@firebase_auth_required
+def get_project_builds(project_id):
+    """Get all builds associated with a project"""
+    try:
+        user_id = request.user['uid']
+        builds_list = []
+        if db:
+            docs = db.collection('builds').where('projectId', '==', project_id).stream()
+            for doc in docs:
+                b = doc.to_dict()
+                b['id'] = doc.id
+                if b.get('createdAt'):
+                    b['createdAt'] = b['createdAt'].isoformat() if hasattr(b['createdAt'], 'isoformat') else str(b['createdAt'])
+                builds_list.append(b)
+        else:
+            conn = get_db_connection()
+            rows = conn.execute('SELECT * FROM builds WHERE project_id = ? ORDER BY created_at DESC', (project_id,)).fetchall()
+            for r in rows:
+                builds_list.append({
+                    'id': r['id'],
+                    'projectId': r['project_id'],
+                    'userId': r['user_id'],
+                    'appName': r['app_name'],
+                    'platform': r['platform'],
+                    'status': r['status'],
+                    'outputs': json.loads(r['outputs_json']) if r['outputs_json'] else {},
+                    'artifacts': json.loads(r['artifacts_json']) if r['artifacts_json'] else {},
+                    'createdAt': r['created_at']
+                })
+            conn.close()
+
+        builds_list.sort(key=lambda b: str(b.get('createdAt') or ''), reverse=True)
+        return jsonify({'builds': builds_list})
+    except Exception as e:
+        logger.exception("Error fetching project builds")
+        return jsonify({'error': f'Failed to fetch project builds: {str(e)}'}), 500
 
 @app.route('/api/projects/<project_id>', methods=['DELETE'])
 @firebase_auth_required
@@ -4591,25 +5011,40 @@ def import_project_swab():
 @firebase_auth_required
 def get_builds():
     """Get build history for the authenticated user"""
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
     try:
         user_id = request.user['uid']
-        builds_ref = db.collection('builds')
-        query = builds_ref.where('userId', '==', user_id).order_by('createdAt', direction=firestore.Query.DESCENDING).limit(50)
-        docs = query.stream()
-
         builds = []
-        for doc in docs:
-            build = doc.to_dict()
-            build['id'] = doc.id
-            if build.get('createdAt'):
-                build['createdAt'] = build['createdAt'].isoformat() if hasattr(build['createdAt'], 'isoformat') else str(build['createdAt'])
-            builds.append(build)
+        if db:
+            builds_ref = db.collection('builds')
+            docs = builds_ref.where('userId', '==', user_id).stream()
+            for doc in docs:
+                build = doc.to_dict()
+                build['id'] = doc.id
+                if build.get('createdAt'):
+                    build['createdAt'] = build['createdAt'].isoformat() if hasattr(build['createdAt'], 'isoformat') else str(build['createdAt'])
+                builds.append(build)
+            builds.sort(key=lambda b: str(b.get('createdAt') or ''), reverse=True)
+            builds = builds[:50]
+        else:
+            conn = get_db_connection()
+            rows = conn.execute('SELECT * FROM builds WHERE user_id = ? ORDER BY created_at DESC LIMIT 50', (user_id,)).fetchall()
+            for r in rows:
+                builds.append({
+                    'id': r['id'],
+                    'projectId': r['project_id'],
+                    'userId': r['user_id'],
+                    'appName': r['app_name'],
+                    'platform': r['platform'],
+                    'status': r['status'],
+                    'outputs': json.loads(r['outputs_json']) if r['outputs_json'] else {},
+                    'artifacts': json.loads(r['artifacts_json']) if r['artifacts_json'] else {},
+                    'createdAt': r['created_at']
+                })
+            conn.close()
 
         return jsonify({'builds': builds})
     except Exception as e:
+        logger.exception("Error fetching builds")
         return jsonify({'error': f'Failed to fetch builds: {str(e)}'}), 500
 
 if __name__ == '__main__':

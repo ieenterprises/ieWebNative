@@ -1148,3 +1148,174 @@
         font-size: 13px;
     }
 }
+
+/* ==================== PROJECT BUILDS ON DASHBOARD ==================== */
+
+.project-builds-row {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-primary, rgba(226, 232, 240, 0.8));
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.project-builds-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted, #64748b);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-right: 2px;
+}
+
+.project-builds-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.project-build-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.project-build-chip i {
+    font-size: 12px;
+}
+
+.chip-download-icon {
+    font-size: 10px !important;
+    opacity: 0.7;
+    margin-left: 2px;
+    transition: transform 0.2s ease;
+}
+
+.project-build-chip:hover .chip-download-icon {
+    transform: translateY(1px);
+    opacity: 1;
+}
+
+.project-build-chip:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* Platform-specific chip colors */
+.chip-android {
+    background: rgba(16, 185, 129, 0.12);
+    color: #059669;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.chip-android:hover {
+    background: #10b981;
+    color: white;
+    border-color: #10b981;
+}
+
+.chip-aab {
+    background: rgba(37, 99, 235, 0.12);
+    color: #2563eb;
+    border: 1px solid rgba(37, 99, 235, 0.3);
+}
+.chip-aab:hover {
+    background: #2563eb;
+    color: white;
+    border-color: #2563eb;
+}
+
+.chip-ios {
+    background: rgba(99, 102, 241, 0.12);
+    color: #6366f1;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+}
+.chip-ios:hover {
+    background: #6366f1;
+    color: white;
+    border-color: #6366f1;
+}
+
+.chip-windows {
+    background: rgba(14, 165, 233, 0.12);
+    color: #0284c7;
+    border: 1px solid rgba(14, 165, 233, 0.3);
+}
+.chip-windows:hover {
+    background: #0ea5e9;
+    color: white;
+    border-color: #0ea5e9;
+}
+
+.chip-macos {
+    background: rgba(100, 116, 139, 0.12);
+    color: #475569;
+    border: 1px solid rgba(100, 116, 139, 0.3);
+}
+.chip-macos:hover {
+    background: #475569;
+    color: white;
+    border-color: #475569;
+}
+
+.chip-linux {
+    background: rgba(245, 158, 11, 0.12);
+    color: #d97706;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.chip-linux:hover {
+    background: #f59e0b;
+    color: white;
+    border-color: #f59e0b;
+}
+
+.chip-default {
+    background: rgba(100, 116, 139, 0.1);
+    color: var(--text-secondary, #475569);
+    border: 1px solid rgba(100, 116, 139, 0.2);
+}
+.chip-default:hover {
+    background: var(--text-secondary, #475569);
+    color: white;
+}
+
+.no-builds-tag {
+    font-size: 12px;
+    color: var(--text-muted, #94a3b8);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.build-now-link {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--primary, #3b82f6);
+    text-decoration: none;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+}
+
+.build-now-link:hover {
+    background: var(--primary, #3b82f6);
+    color: white;
+}

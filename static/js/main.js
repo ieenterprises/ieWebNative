@@ -663,6 +663,14 @@ document.addEventListener('DOMContentLoaded', function() {
             builderMainContainer.classList.add('show-config');
         }
 
+        // Include project_id if available
+        const effectivePid = (typeof currentProjectId !== 'undefined' && currentProjectId) 
+            ? currentProjectId 
+            : (window.currentProjectId || null);
+        if (effectivePid) {
+            formData.project_id = effectivePid;
+        }
+
         // Show center progress bar and hide dropdown
         platformDropdownWrapper.style.display = 'none';
         centerProgress.style.display = 'flex';
@@ -684,6 +692,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const result = await response.json();
             activeBuildId = result.build_id;
+
+            if (result.project_id) {
+                if (typeof currentProjectId !== 'undefined') {
+                    currentProjectId = result.project_id;
+                }
+                window.currentProjectId = result.project_id;
+                try {
+                    const curUrl = new URL(window.location.href);
+                    if (curUrl.searchParams.get('project') !== result.project_id) {
+                        curUrl.searchParams.set('project', result.project_id);
+                        window.history.pushState({}, '', curUrl.toString());
+                    }
+                } catch (urlErr) {}
+            }
 
             // Persist to localStorage for cross-page navigation
             localStorage.setItem('iewebnative_active_build', JSON.stringify({
@@ -724,6 +746,7 @@ document.addEventListener('DOMContentLoaded', function() {
         centerProgressFill.style.width = '0%';
 
         localStorage.removeItem('iewebnative_active_build');
+        showToast('Build completed! Saved to your project dashboard.', 'success');
 
         const getPlatformDisplayName = (plat) => {
             const names = {

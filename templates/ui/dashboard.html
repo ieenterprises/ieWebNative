@@ -411,6 +411,63 @@
             loadingState.style.display = 'none';
         }
 
+        function renderProjectBuildsChips(project) {
+            const builds = project.builds || {};
+            const platformMeta = {
+                'android': { label: 'APK', icon: 'fa-brands fa-android', class: 'chip-android', title: 'Android APK' },
+                'android_aab': { label: 'AAB', icon: 'fa-brands fa-google-play', class: 'chip-aab', title: 'Google Play Bundle (.aab)' },
+                'ios': { label: 'iOS', icon: 'fa-brands fa-apple', class: 'chip-ios', title: 'iOS Application (.ipa)' },
+                'ios_xcode': { label: 'Xcode', icon: 'fa-brands fa-apple', class: 'chip-ios', title: 'Xcode Project (.zip)' },
+                'windows': { label: 'Windows', icon: 'fa-brands fa-windows', class: 'chip-windows', title: 'Windows Executable (.zip)' },
+                'macos': { label: 'macOS', icon: 'fa-solid fa-desktop', class: 'chip-macos', title: 'macOS (.dmg / .zip)' },
+                'linux': { label: 'Linux', icon: 'fa-brands fa-linux', class: 'chip-linux', title: 'Linux Application (.tar.gz)' }
+            };
+
+            const builtPlatforms = Object.keys(builds).filter(plat => {
+                const b = builds[plat];
+                return b && b.status !== 'failed' && (b.downloadUrl || b.buildId);
+            });
+
+            if (builtPlatforms.length === 0) {
+                return `
+                    <div class="project-builds-row">
+                        <span class="no-builds-tag" title="No builds completed yet">
+                            <i class="fa-solid fa-clock-rotate-left"></i> No builds yet
+                        </span>
+                        <a href="/builder?project=${project.id}&build=true" class="build-now-link" onclick="event.stopPropagation();" title="Build app now">
+                            <i class="fa-solid fa-bolt"></i> Build Now
+                        </a>
+                    </div>
+                `;
+            }
+
+            const chipsHtml = builtPlatforms.map(plat => {
+                const buildInfo = builds[plat];
+                const meta = platformMeta[plat] || { label: plat.toUpperCase(), icon: 'fa-solid fa-box', class: 'chip-default', title: plat };
+                const downloadUrl = buildInfo.downloadUrl || `/api/build/${buildInfo.buildId}/download/${plat}`;
+                const sizeText = buildInfo.fileSizeFormatted ? ` (${buildInfo.fileSizeFormatted})` : '';
+
+                return `
+                    <a href="${downloadUrl}" class="project-build-chip ${meta.class}" 
+                       title="Download ${meta.title}${sizeText}" 
+                       onclick="event.stopPropagation();" download>
+                        <i class="${meta.icon}"></i>
+                        <span>${meta.label}</span>
+                        <i class="fa-solid fa-download chip-download-icon"></i>
+                    </a>
+                `;
+            }).join('');
+
+            return `
+                <div class="project-builds-row">
+                    <span class="project-builds-label"><i class="fa-solid fa-boxes-stacked"></i> Builds:</span>
+                    <div class="project-builds-chips">
+                        ${chipsHtml}
+                    </div>
+                </div>
+            `;
+        }
+
         function renderProjects() {
             document.getElementById('projects-count').textContent = `${projects.length} project${projects.length !== 1 ? 's' : ''}`;
 
@@ -439,6 +496,7 @@
                         <h4 class="project-name">${project.name}</h4>
                         <p class="project-url">${project.webUrl || 'No URL set'}</p>
                         <span class="project-date">Updated ${formatDate(project.updatedAt)}</span>
+                        ${renderProjectBuildsChips(project)}
                     </div>
                     <div class="project-actions">
                         <button class="project-action-btn edit-btn" data-id="${project.id}" title="Edit">
@@ -452,7 +510,7 @@
                                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
                             </svg>
                         </button>
-                        <button class="project-action-btn download-btn" data-id="${project.id}" title="Download">
+                        <button class="project-action-btn download-btn" data-id="${project.id}" title="Download Project Config (.iewebnative)">
                             <i class="fa-solid fa-download"></i>
                         </button>
                         <button class="project-action-btn delete-btn" data-id="${project.id}" title="Delete">

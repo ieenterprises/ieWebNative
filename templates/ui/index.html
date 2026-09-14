@@ -949,6 +949,8 @@
         // Get project ID from URL params
         const urlParams = new URLSearchParams(window.location.search);
         currentProjectId = urlParams.get('project');
+        window.currentProjectId = currentProjectId;
+        window.currentProjectBuilds = {};
 
         // Check authentication state
         async function initBuilderAuth() {
@@ -988,6 +990,11 @@
 
                 const data = await response.json();
                 const project = data.project;
+                currentProjectId = project.id || projectId;
+                window.currentProjectId = currentProjectId;
+                if (project.builds) {
+                    window.currentProjectBuilds = project.builds;
+                }
 
                 // Populate form fields
                 document.getElementById('app-name').value = project.name || '';
@@ -1458,6 +1465,10 @@
                     };
                 }
 
+                if (window.currentProjectBuilds) {
+                    projectData.builds = window.currentProjectBuilds;
+                }
+
                 if (currentProjectId) {
                     // Update existing project
                     const response = await fetch(`/api/projects/${currentProjectId}`, {
@@ -1469,7 +1480,8 @@
                     });
 
                     if (!response.ok) throw new Error('Failed to save');
-                    showToast('Project saved to cloud!', 'success');
+                    window.currentProjectId = currentProjectId;
+                    showToast('Project saved successfully to your dashboard!', 'success');
                 } else {
                     // Create new project
                     const response = await fetch('/api/projects', {
@@ -1484,12 +1496,13 @@
 
                     const result = await response.json();
                     currentProjectId = result.projectId;
+                    window.currentProjectId = result.projectId;
 
                     // Update URL without reload
                     const newUrl = `/builder?project=${currentProjectId}`;
                     window.history.pushState({}, '', newUrl);
 
-                    showToast('Project saved to cloud!', 'success');
+                    showToast('Project saved successfully to your dashboard!', 'success');
                 }
             } catch (error) {
                 console.error('Error saving project:', error);
