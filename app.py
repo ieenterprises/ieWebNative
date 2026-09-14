@@ -1369,12 +1369,12 @@ def run_build(build_id, config):
         )
         content = re.sub(
             r'static const bool ENABLE_CAMERA = \w+;',
-            f'static const bool ENABLE_CAMERA = {bool_to_dart(config.get("enable_camera", True))};',
+            f'static const bool ENABLE_CAMERA = {bool_to_dart(config.get("enable_camera", False))};',
             content
         )
         content = re.sub(
             r'static const bool ENABLE_MICROPHONE = \w+;',
-            f'static const bool ENABLE_MICROPHONE = {bool_to_dart(config.get("enable_microphone", True))};',
+            f'static const bool ENABLE_MICROPHONE = {bool_to_dart(config.get("enable_microphone", False))};',
             content
         )
         content = re.sub(
@@ -1406,14 +1406,14 @@ def run_build(build_id, config):
         )
         content = re.sub(
             r'static const bool ENABLE_SECURE_STORAGE = \w+;',
-            f'static const bool ENABLE_SECURE_STORAGE = {bool_to_dart(config.get("enable_secure_storage", True))};',
+            f'static const bool ENABLE_SECURE_STORAGE = {bool_to_dart(config.get("enable_secure_storage", False))};',
             content
         )
 
         # Splash Screen Configuration
         content = re.sub(
             r'static const bool ENABLE_SPLASH_SCREEN = \w+;',
-            f'static const bool ENABLE_SPLASH_SCREEN = {bool_to_dart(config.get("enable_splash_screen", True))};',
+            f'static const bool ENABLE_SPLASH_SCREEN = {bool_to_dart(config.get("enable_splash_screen", False))};',
             content
         )
         splash_title_str = str(config.get("splash_title", config.get("app_name", ""))).replace("'", "\\'")
@@ -1459,7 +1459,7 @@ def run_build(build_id, config):
         # Error / Offline Page Configuration
         content = re.sub(
             r'static const bool ENABLE_ERROR_PAGE = \w+;',
-            f'static const bool ENABLE_ERROR_PAGE = {bool_to_dart(config.get("enable_error_page", True))};',
+            f'static const bool ENABLE_ERROR_PAGE = {bool_to_dart(config.get("enable_error_page", False))};',
             content
         )
         error_title_str = str(config.get("error_title", "No Internet Connection")).replace("'", "\\'")
@@ -2766,30 +2766,30 @@ def start_build():
             'web_url': data['web_url'],
             'platforms': data['platforms'],
 
-            'allow_zoom': data.get('allow_zoom', True),
-            'enable_javascript': data.get('enable_javascript', True),
-            'enable_dom_storage': data.get('enable_dom_storage', True),
-            'enable_geolocation': data.get('enable_geolocation', True),
-            'enable_pull_refresh': data.get('enable_pull_refresh', True),
-            'show_navigation': data.get('show_navigation', True),
-            'enable_file_access': data.get('enable_file_access', True),
-            'enable_cache': data.get('enable_cache', True),
+            'allow_zoom': data.get('allow_zoom', False),
+            'enable_javascript': data.get('enable_javascript', False),
+            'enable_dom_storage': data.get('enable_dom_storage', False),
+            'enable_geolocation': data.get('enable_geolocation', False),
+            'enable_pull_refresh': data.get('enable_pull_refresh', False),
+            'show_navigation': data.get('show_navigation', False),
+            'enable_file_access': data.get('enable_file_access', False),
+            'enable_cache': data.get('enable_cache', False),
             'enable_media_autoplay': data.get('enable_media_autoplay', False),
-            'enable_camera': data.get('enable_camera', data.get('enable_camera_access', True)),
-            'enable_microphone': data.get('enable_microphone', True),
+            'enable_camera': data.get('enable_camera', data.get('enable_camera_access', False)),
+            'enable_microphone': data.get('enable_microphone', False),
             'enable_ssl_pinning': data.get('enable_ssl_pinning', False),
             'ssl_pins': data.get('ssl_pins', ''),
             'enable_biometric_auth': data.get('enable_biometric_auth', data.get('enable_biometrics', False)),
             'enable_app_lock': data.get('enable_app_lock', False),
             'app_lock_pin': data.get('app_lock_pin', ''),
-            'enable_secure_storage': data.get('enable_secure_storage', True),
+            'enable_secure_storage': data.get('enable_secure_storage', False),
 
-            'enable_camera_access': data.get('enable_camera_access', True),
-            'enable_gallery_access': data.get('enable_gallery_access', True),
-            'camera_permission_prompt': data.get('camera_permission_prompt', True),
+            'enable_camera_access': data.get('enable_camera_access', False),
+            'enable_gallery_access': data.get('enable_gallery_access', False),
+            'camera_permission_prompt': data.get('camera_permission_prompt', False),
 
-            'enable_qr_scanner': data.get('enable_qr_scanner', True),
-            'enable_barcode_scanner': data.get('enable_barcode_scanner', True),
+            'enable_qr_scanner': data.get('enable_qr_scanner', False),
+            'enable_barcode_scanner': data.get('enable_barcode_scanner', False),
             'scanner_formats': data.get('scanner_formats', []),
 
             'download_directory': data.get('download_directory', 'Downloads'),
@@ -2815,7 +2815,7 @@ def start_build():
             'app_store_issuer_id': data.get('app_store_issuer_id'),
 
             'icon_path': data.get('icon_path'),
-            'enable_splash_screen': data.get('enable_splash_screen', True),
+            'enable_splash_screen': data.get('enable_splash_screen', False),
             'splash_title': data.get('splash_title', data.get('app_name', '')),
             'splash_subtitle': data.get('splash_subtitle', ''),
             'splash_bg_color': data.get('splash_bg_color', '#FFFFFF'),
@@ -2824,7 +2824,7 @@ def start_build():
             'splash_image_path': data.get('splash_image_path'),
 
             'error_title': data.get('error_title', 'No Internet Connection'),
-            'enable_error_page': data.get('enable_error_page', True),
+            'enable_error_page': data.get('enable_error_page', False),
             'error_message': data.get('error_message', 'Please check your connection and try again'),
             'error_button_text': data.get('error_button_text', 'Retry'),
             'error_bg_color': data.get('error_bg_color', '#FFFFFF'),
@@ -2846,37 +2846,37 @@ def start_build():
                 icon_path = data.get('icon_path', '')
                 now_str = datetime.utcnow().isoformat()
                 settings_json = json.dumps({
-                    'allowZoom': data.get('allow_zoom', True),
-                    'enableJavascript': data.get('enable_javascript', True),
-                    'enableDomStorage': data.get('enable_dom_storage', True),
-                    'enableGeolocation': data.get('enable_geolocation', True),
-                    'enablePullRefresh': data.get('enable_pull_refresh', True),
-                    'showNavigation': data.get('show_navigation', True),
-                    'enableFileAccess': data.get('enable_file_access', True),
-                    'enableCache': data.get('enable_cache', True),
+                    'allowZoom': data.get('allow_zoom', False),
+                    'enableJavascript': data.get('enable_javascript', False),
+                    'enableDomStorage': data.get('enable_dom_storage', False),
+                    'enableGeolocation': data.get('enable_geolocation', False),
+                    'enablePullRefresh': data.get('enable_pull_refresh', False),
+                    'showNavigation': data.get('show_navigation', False),
+                    'enableFileAccess': data.get('enable_file_access', False),
+                    'enableCache': data.get('enable_cache', False),
                     'enableMediaAutoplay': data.get('enable_media_autoplay', False),
-                    'enableCamera': data.get('enable_camera', True),
-                    'enableMicrophone': data.get('enable_microphone', True),
+                    'enableCamera': data.get('enable_camera', False),
+                    'enableMicrophone': data.get('enable_microphone', False),
                     'enableSslPinning': data.get('enable_ssl_pinning', False),
                     'sslPins': data.get('ssl_pins', ''),
                     'enableBiometrics': data.get('enable_biometric_auth', data.get('enable_biometrics', False)),
                     'enableAppLock': data.get('enable_app_lock', False),
                     'appLockPin': data.get('app_lock_pin', ''),
-                    'enableSecureStorage': data.get('enable_secure_storage', True),
+                    'enableSecureStorage': data.get('enable_secure_storage', False),
                     'enableGooglePlayPublish': data.get('enable_google_play_publish', False),
                     'playTrack': data.get('play_track', 'internal'),
                     'playStatus': data.get('play_status', 'draft'),
                     'enableAppStorePublish': data.get('enable_app_store_publish', False),
                     'appStoreKeyId': data.get('app_store_key_id', ''),
                     'appStoreIssuerId': data.get('app_store_issuer_id', ''),
-                    'enableSplashScreen': data.get('enable_splash_screen', True),
+                    'enableSplashScreen': data.get('enable_splash_screen', False),
                     'splashTitle': data.get('splash_title', ''),
                     'splashSubtitle': data.get('splash_subtitle', ''),
                     'splashBgColor': data.get('splash_bg_color', '#FFFFFF'),
                     'splashTextColor': data.get('splash_text_color', '#1E293B'),
                     'splashDuration': data.get('splash_duration', 2),
                     'splashImagePath': data.get('splash_image_path', ''),
-                    'enableErrorPage': data.get('enable_error_page', True),
+                    'enableErrorPage': data.get('enable_error_page', False),
                     'errorTitle': data.get('error_title', 'No Internet Connection'),
                     'errorMessage': data.get('error_message', 'Please check your connection and try again'),
                     'errorButtonText': data.get('error_button_text', 'Retry'),
@@ -3416,23 +3416,23 @@ def save_project():
             'package_name': data.get('package_name', ''),
             'web_url': data.get('web_url', ''),
             # WebView settings
-            'allow_zoom': data.get('allow_zoom', True),
-            'enable_javascript': data.get('enable_javascript', True),
-            'enable_dom_storage': data.get('enable_dom_storage', True),
-            'enable_geolocation': data.get('enable_geolocation', True),
-            'enable_pull_refresh': data.get('enable_pull_refresh', True),
-            'show_navigation': data.get('show_navigation', True),
-            'enable_file_access': data.get('enable_file_access', True),
-            'enable_cache': data.get('enable_cache', True),
+            'allow_zoom': data.get('allow_zoom', False),
+            'enable_javascript': data.get('enable_javascript', False),
+            'enable_dom_storage': data.get('enable_dom_storage', False),
+            'enable_geolocation': data.get('enable_geolocation', False),
+            'enable_pull_refresh': data.get('enable_pull_refresh', False),
+            'show_navigation': data.get('show_navigation', False),
+            'enable_file_access': data.get('enable_file_access', False),
+            'enable_cache': data.get('enable_cache', False),
             'enable_media_autoplay': data.get('enable_media_autoplay', False),
-            'enable_camera': data.get('enable_camera', True),
-            'enable_microphone': data.get('enable_microphone', True),
+            'enable_camera': data.get('enable_camera', False),
+            'enable_microphone': data.get('enable_microphone', False),
             'enable_ssl_pinning': data.get('enable_ssl_pinning', False),
             'ssl_pins': data.get('ssl_pins', ''),
             'enable_biometrics': data.get('enable_biometrics', False),
             'enable_app_lock': data.get('enable_app_lock', False),
             'app_lock_pin': data.get('app_lock_pin', ''),
-            'enable_secure_storage': data.get('enable_secure_storage', True),
+            'enable_secure_storage': data.get('enable_secure_storage', False),
             # Keystore info (credentials only, file stored separately)
             'keystore_password': data.get('keystore_password', ''),
             'key_alias': data.get('key_alias', ''),
@@ -3448,14 +3448,14 @@ def save_project():
             'app_store_key_id': data.get('app_store_key_id', ''),
             'app_store_issuer_id': data.get('app_store_issuer_id', ''),
             # Splash screen settings
-            'enable_splash_screen': data.get('enable_splash_screen', True),
+            'enable_splash_screen': data.get('enable_splash_screen', False),
             'splash_title': data.get('splash_title', ''),
             'splash_subtitle': data.get('splash_subtitle', ''),
             'splash_bg_color': data.get('splash_bg_color', '#FFFFFF'),
             'splash_text_color': data.get('splash_text_color', '#1E293B'),
             'splash_duration': data.get('splash_duration', 2),
             # Error / offline page settings
-            'enable_error_page': data.get('enable_error_page', True),
+            'enable_error_page': data.get('enable_error_page', False),
             'error_title': data.get('error_title', 'No Internet Connection'),
             'error_message': data.get('error_message', 'Please check your connection and try again'),
             'error_button_text': data.get('error_button_text', 'Retry'),
@@ -4118,14 +4118,14 @@ def download_project_swab(project_id):
             # Add settings
             settings = project.get('settings', {})
             project_data.update({
-                'allow_zoom': settings.get('allowZoom', True),
-                'enable_javascript': settings.get('enableJavascript', True),
-                'enable_dom_storage': settings.get('enableDomStorage', True),
-                'enable_geolocation': settings.get('enableGeolocation', True),
-                'enable_pull_refresh': settings.get('enablePullRefresh', True),
-                'show_navigation': settings.get('showNavigation', True),
-                'enable_file_access': settings.get('enableFileAccess', True),
-                'enable_cache': settings.get('enableCache', True),
+                'allow_zoom': settings.get('allowZoom', False),
+                'enable_javascript': settings.get('enableJavascript', False),
+                'enable_dom_storage': settings.get('enableDomStorage', False),
+                'enable_geolocation': settings.get('enableGeolocation', False),
+                'enable_pull_refresh': settings.get('enablePullRefresh', False),
+                'show_navigation': settings.get('showNavigation', False),
+                'enable_file_access': settings.get('enableFileAccess', False),
+                'enable_cache': settings.get('enableCache', False),
                 'enable_media_autoplay': settings.get('enableMediaAutoplay', False),
             })
 
@@ -4296,14 +4296,14 @@ def import_project_swab():
             'packageName': project_data.get('package_name', ''),
             'iconUrl': '',
             'settings': {
-                'allowZoom': project_data.get('allow_zoom', True),
-                'enableJavascript': project_data.get('enable_javascript', True),
-                'enableDomStorage': project_data.get('enable_dom_storage', True),
-                'enableGeolocation': project_data.get('enable_geolocation', True),
-                'enablePullRefresh': project_data.get('enable_pull_refresh', True),
-                'showNavigation': project_data.get('show_navigation', True),
-                'enableFileAccess': project_data.get('enable_file_access', True),
-                'enableCache': project_data.get('enable_cache', True),
+                'allowZoom': project_data.get('allow_zoom', False),
+                'enableJavascript': project_data.get('enable_javascript', False),
+                'enableDomStorage': project_data.get('enable_dom_storage', False),
+                'enableGeolocation': project_data.get('enable_geolocation', False),
+                'enablePullRefresh': project_data.get('enable_pull_refresh', False),
+                'showNavigation': project_data.get('show_navigation', False),
+                'enableFileAccess': project_data.get('enable_file_access', False),
+                'enableCache': project_data.get('enable_cache', False),
                 'enableMediaAutoplay': project_data.get('enable_media_autoplay', False)
             },
             'createdAt': firestore.SERVER_TIMESTAMP,

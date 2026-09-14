@@ -494,7 +494,7 @@
                     <!-- Splash Screen Card -->
                     <div class="store-publish-card" style="border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; background: var(--bg-card, rgba(255,255,255,0.02));">
                         <label class="checkbox-item" style="margin-bottom: 0; padding: 0; cursor: pointer;">
-                            <input type="checkbox" id="enable-splash-screen" checked>
+                            <input type="checkbox" id="enable-splash-screen">
                             <div class="checkbox-content">
                                 <span class="checkbox-label" style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -506,7 +506,7 @@
                             </div>
                         </label>
 
-                        <div id="splash-screen-details" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+                        <div id="splash-screen-details" style="display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
                             <!-- Splash Image Upload -->
                             <div class="form-group" style="margin-bottom: 12px;">
                                 <label style="font-weight: 600; font-size: 13px; margin-bottom: 6px; display: block;">Splash Logo / Image (Optional)</label>
@@ -572,7 +572,7 @@
                     <!-- Error / Offline Page Card -->
                     <div class="store-publish-card" style="border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 8px; background: var(--bg-card, rgba(255,255,255,0.02));">
                         <label class="checkbox-item" style="margin-bottom: 0; padding: 0; cursor: pointer;">
-                            <input type="checkbox" id="enable-error-page" checked>
+                            <input type="checkbox" id="enable-error-page">
                             <div class="checkbox-content">
                                 <span class="checkbox-label" style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #ef4444;">
@@ -590,7 +590,7 @@
                             </div>
                         </label>
 
-                        <div id="error-page-details" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+                        <div id="error-page-details" style="display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
                             <!-- Error Image Upload -->
                             <div class="form-group" style="margin-bottom: 12px;">
                                 <label style="font-weight: 600; font-size: 13px; margin-bottom: 6px; display: block;">Error Illustration / Image (Optional)</label>
@@ -657,23 +657,23 @@
 
                 <!-- Hidden WebView feature checkboxes (values stored here) -->
                 <div style="display: none;">
-                    <input type="checkbox" id="allow-zoom" name="allow_zoom" checked>
-                    <input type="checkbox" id="enable-javascript" name="enable_javascript" checked>
-                    <input type="checkbox" id="enable-dom-storage" name="enable_dom_storage" checked>
-                    <input type="checkbox" id="enable-geolocation" name="enable_geolocation" checked>
-                    <input type="checkbox" id="enable-pull-refresh" name="enable_pull_refresh" checked>
-                    <input type="checkbox" id="show-navigation" name="show_navigation" checked>
-                    <input type="checkbox" id="enable-file-access" name="enable_file_access" checked>
-                    <input type="checkbox" id="enable-cache" name="enable_cache" checked>
+                    <input type="checkbox" id="allow-zoom" name="allow_zoom">
+                    <input type="checkbox" id="enable-javascript" name="enable_javascript">
+                    <input type="checkbox" id="enable-dom-storage" name="enable_dom_storage">
+                    <input type="checkbox" id="enable-geolocation" name="enable_geolocation">
+                    <input type="checkbox" id="enable-pull-refresh" name="enable_pull_refresh">
+                    <input type="checkbox" id="show-navigation" name="show_navigation">
+                    <input type="checkbox" id="enable-file-access" name="enable_file_access">
+                    <input type="checkbox" id="enable-cache" name="enable_cache">
                     <input type="checkbox" id="enable-media-autoplay" name="enable_media_autoplay">
-                    <input type="checkbox" id="enable-camera" name="enable_camera" checked>
-                    <input type="checkbox" id="enable-microphone" name="enable_microphone" checked>
+                    <input type="checkbox" id="enable-camera" name="enable_camera">
+                    <input type="checkbox" id="enable-microphone" name="enable_microphone">
                     <input type="checkbox" id="enable-ssl-pinning" name="enable_ssl_pinning">
                     <input type="hidden" id="ssl-pins" name="ssl_pins" value="">
                     <input type="checkbox" id="enable-biometrics" name="enable_biometrics">
                     <input type="checkbox" id="enable-app-lock" name="enable_app_lock">
                     <input type="hidden" id="app-lock-pin" name="app_lock_pin" value="">
-                    <input type="checkbox" id="enable-secure-storage" name="enable_secure_storage" checked>
+                    <input type="checkbox" id="enable-secure-storage" name="enable_secure_storage">
                 </div>
             </form>
 
@@ -792,56 +792,56 @@
 
                 <div class="settings-grid">
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-allow-zoom" checked>
+                        <input type="checkbox" id="setting-allow-zoom">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Allow Zoom</span>
                             <span class="checkbox-hint">Enable pinch-to-zoom gestures</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-enable-javascript" checked>
+                        <input type="checkbox" id="setting-enable-javascript">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Enable JavaScript</span>
                             <span class="checkbox-hint">Run JavaScript in the WebView</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-enable-dom-storage" checked>
+                        <input type="checkbox" id="setting-enable-dom-storage">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Enable DOM Storage</span>
                             <span class="checkbox-hint">Allow localStorage and sessionStorage</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-enable-geolocation" checked>
+                        <input type="checkbox" id="setting-enable-geolocation">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Enable Geolocation</span>
                             <span class="checkbox-hint">Allow location access requests</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-enable-pull-refresh" checked>
+                        <input type="checkbox" id="setting-enable-pull-refresh">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Pull to Refresh</span>
                             <span class="checkbox-hint">Swipe down to reload page</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-show-navigation" checked>
+                        <input type="checkbox" id="setting-show-navigation">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Show Navigation Bar</span>
                             <span class="checkbox-hint">Display back, forward, refresh buttons</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-enable-file-access" checked>
+                        <input type="checkbox" id="setting-enable-file-access">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Enable File Access</span>
                             <span class="checkbox-hint">Allow file uploads and downloads</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-enable-cache" checked>
+                        <input type="checkbox" id="setting-enable-cache">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Enable Cache</span>
                             <span class="checkbox-hint">Cache web content for faster loading</span>
@@ -855,14 +855,14 @@
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-enable-camera" checked>
+                        <input type="checkbox" id="setting-enable-camera">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Enable Camera</span>
                             <span class="checkbox-hint">Allow camera access for photos, video and scanning</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-enable-microphone" checked>
+                        <input type="checkbox" id="setting-enable-microphone">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Enable Microphone</span>
                             <span class="checkbox-hint">Allow microphone access for audio and voice recording</span>
@@ -918,7 +918,7 @@
                     </div>
 
                     <label class="checkbox-item">
-                        <input type="checkbox" id="setting-enable-secure-storage" checked>
+                        <input type="checkbox" id="setting-enable-secure-storage">
                         <div class="checkbox-content">
                             <span class="checkbox-label">Hardware Secure Storage</span>
                             <span class="checkbox-hint">Enable hardware-backed keystore/keychain for sensitive data</span>
@@ -999,22 +999,22 @@
 
                 // Populate settings
                 const settings = project.settings || {};
-                document.getElementById('allow-zoom').checked = settings.allowZoom !== false;
-                document.getElementById('enable-javascript').checked = settings.enableJavascript !== false;
-                document.getElementById('enable-dom-storage').checked = settings.enableDomStorage !== false;
-                document.getElementById('enable-geolocation').checked = settings.enableGeolocation !== false;
-                document.getElementById('enable-pull-refresh').checked = settings.enablePullRefresh !== false;
-                document.getElementById('show-navigation').checked = settings.showNavigation !== false;
-                document.getElementById('enable-file-access').checked = settings.enableFileAccess !== false;
-                document.getElementById('enable-cache').checked = settings.enableCache !== false;
-                document.getElementById('enable-camera').checked = settings.enableCamera !== false;
-                document.getElementById('enable-microphone').checked = settings.enableMicrophone !== false;
+                document.getElementById('allow-zoom').checked = settings.allowZoom === true;
+                document.getElementById('enable-javascript').checked = settings.enableJavascript === true;
+                document.getElementById('enable-dom-storage').checked = settings.enableDomStorage === true;
+                document.getElementById('enable-geolocation').checked = settings.enableGeolocation === true;
+                document.getElementById('enable-pull-refresh').checked = settings.enablePullRefresh === true;
+                document.getElementById('show-navigation').checked = settings.showNavigation === true;
+                document.getElementById('enable-file-access').checked = settings.enableFileAccess === true;
+                document.getElementById('enable-cache').checked = settings.enableCache === true;
+                document.getElementById('enable-camera').checked = settings.enableCamera === true;
+                document.getElementById('enable-microphone').checked = settings.enableMicrophone === true;
                 document.getElementById('enable-ssl-pinning').checked = settings.enableSslPinning === true;
                 document.getElementById('ssl-pins').value = settings.sslPins || '';
                 document.getElementById('enable-biometrics').checked = settings.enableBiometrics === true;
                 document.getElementById('enable-app-lock').checked = settings.enableAppLock === true;
                 document.getElementById('app-lock-pin').value = settings.appLockPin || '';
-                document.getElementById('enable-secure-storage').checked = settings.enableSecureStorage !== false;
+                document.getElementById('enable-secure-storage').checked = settings.enableSecureStorage === true;
 
                 // Sync settings checkboxes
                 syncSettingsFromHidden();
@@ -1381,13 +1381,13 @@
                         enableAppStorePublish: document.getElementById('enable-app-store-publish')?.checked || false,
                         appStoreKeyId: document.getElementById('app-store-key-id')?.value || '',
                         appStoreIssuerId: document.getElementById('app-store-issuer-id')?.value || '',
-                        enableSplashScreen: document.getElementById('enable-splash-screen')?.checked ?? true,
+                        enableSplashScreen: document.getElementById('enable-splash-screen')?.checked ?? false,
                         splashTitle: document.getElementById('splash-title')?.value || '',
                         splashSubtitle: document.getElementById('splash-subtitle')?.value || '',
                         splashBgColor: document.getElementById('splash-bg-color')?.value || '#FFFFFF',
                         splashTextColor: document.getElementById('splash-text-color')?.value || '#1E293B',
                         splashDuration: parseInt(document.getElementById('splash-duration')?.value || '2', 10),
-                        enableErrorPage: document.getElementById('enable-error-page')?.checked ?? true,
+                        enableErrorPage: document.getElementById('enable-error-page')?.checked ?? false,
                         errorTitle: document.getElementById('error-title')?.value || 'No Internet Connection',
                         errorMessage: document.getElementById('error-message')?.value || 'Please check your connection and try again',
                         errorButtonText: document.getElementById('error-button-text')?.value || 'Retry',

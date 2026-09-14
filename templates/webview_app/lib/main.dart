@@ -106,17 +106,17 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
   bool get isMobile => !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
 
-  static const bool ALLOW_ZOOM = true;
-  static const bool ENABLE_JAVASCRIPT = true;
-  static const bool ENABLE_DOM_STORAGE = true;
-  static const bool ENABLE_GEOLOCATION = true;
-  static const bool ENABLE_PULL_TO_REFRESH = true;
-  static const bool SHOW_NAVIGATION_BAR = true;
-  static const bool ENABLE_FILE_ACCESS = true;
-  static const bool ENABLE_CACHE = true;
+  static const bool ALLOW_ZOOM = false;
+  static const bool ENABLE_JAVASCRIPT = false;
+  static const bool ENABLE_DOM_STORAGE = false;
+  static const bool ENABLE_GEOLOCATION = false;
+  static const bool ENABLE_PULL_TO_REFRESH = false;
+  static const bool SHOW_NAVIGATION_BAR = false;
+  static const bool ENABLE_FILE_ACCESS = false;
+  static const bool ENABLE_CACHE = false;
   static const bool ENABLE_MEDIA_AUTOPLAY = false;
-  static const bool ENABLE_CAMERA = true;
-  static const bool ENABLE_MICROPHONE = true;
+  static const bool ENABLE_CAMERA = false;
+  static const bool ENABLE_MICROPHONE = false;
   static const bool ENABLE_SSL_PINNING = false;
   static const String SSL_PINS = '';
   static const bool ENABLE_BIOMETRIC_AUTH = false;
@@ -125,7 +125,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   static const bool ENABLE_SECURE_STORAGE = false;
 
   // Splash Screen Configuration
-  static const bool ENABLE_SPLASH_SCREEN = true;
+  static const bool ENABLE_SPLASH_SCREEN = false;
   static const String SPLASH_TITLE = '{{APP_NAME}}';
   static const String SPLASH_SUBTITLE = '';
   static const String SPLASH_BG_COLOR = '#FFFFFF';
@@ -134,7 +134,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   static const bool HAS_CUSTOM_SPLASH_IMAGE = false;
 
   // Error / Offline Page Configuration
-  static const bool ENABLE_ERROR_PAGE = true;
+  static const bool ENABLE_ERROR_PAGE = false;
   static const String ERROR_TITLE = 'No Internet Connection';
   static const String ERROR_MESSAGE = 'Please check your connection and try again';
   static const String ERROR_BUTTON_TEXT = 'Retry';

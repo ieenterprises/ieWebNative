@@ -576,14 +576,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Add Splash Screen & Error Page configuration
-        formData.enable_splash_screen = document.getElementById('enable-splash-screen')?.checked ?? true;
+        formData.enable_splash_screen = document.getElementById('enable-splash-screen')?.checked ?? false;
         formData.splash_title = document.getElementById('splash-title')?.value || '';
         formData.splash_subtitle = document.getElementById('splash-subtitle')?.value || '';
         formData.splash_bg_color = document.getElementById('splash-bg-color')?.value || '#FFFFFF';
         formData.splash_text_color = document.getElementById('splash-text-color')?.value || '#1E293B';
         formData.splash_duration = parseInt(document.getElementById('splash-duration')?.value || '2', 10);
 
-        formData.enable_error_page = document.getElementById('enable-error-page')?.checked ?? true;
+        formData.enable_error_page = document.getElementById('enable-error-page')?.checked ?? false;
         formData.error_title = document.getElementById('error-title')?.value || 'No Internet Connection';
         formData.error_message = document.getElementById('error-message')?.value || 'Please check your connection and try again';
         formData.error_button_text = document.getElementById('error-button-text')?.value || 'Retry';
@@ -1745,13 +1745,13 @@ document.addEventListener('DOMContentLoaded', function() {
             app_store_key_id: (document.getElementById('app-store-key-id')?.value || '').trim(),
             app_store_issuer_id: (document.getElementById('app-store-issuer-id')?.value || '').trim(),
             // Splash & Error settings
-            enable_splash_screen: document.getElementById('enable-splash-screen')?.checked ?? true,
+            enable_splash_screen: document.getElementById('enable-splash-screen')?.checked ?? false,
             splash_title: document.getElementById('splash-title')?.value || '',
             splash_subtitle: document.getElementById('splash-subtitle')?.value || '',
             splash_bg_color: document.getElementById('splash-bg-color')?.value || '#FFFFFF',
             splash_text_color: document.getElementById('splash-text-color')?.value || '#1E293B',
             splash_duration: parseInt(document.getElementById('splash-duration')?.value || '2', 10),
-            enable_error_page: document.getElementById('enable-error-page')?.checked ?? true,
+            enable_error_page: document.getElementById('enable-error-page')?.checked ?? false,
             error_title: document.getElementById('error-title')?.value || 'No Internet Connection',
             error_message: document.getElementById('error-message')?.value || 'Please check your connection and try again',
             error_button_text: document.getElementById('error-button-text')?.value || 'Retry',
@@ -1876,42 +1876,42 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // WebView settings
-            document.getElementById('allow-zoom').checked = project.allow_zoom !== false;
-            document.getElementById('enable-javascript').checked = project.enable_javascript !== false;
-            document.getElementById('enable-dom-storage').checked = project.enable_dom_storage !== false;
-            document.getElementById('enable-geolocation').checked = project.enable_geolocation !== false;
-            document.getElementById('enable-pull-refresh').checked = project.enable_pull_refresh !== false;
-            document.getElementById('show-navigation').checked = project.show_navigation !== false;
-            document.getElementById('enable-file-access').checked = project.enable_file_access !== false;
-            document.getElementById('enable-cache').checked = project.enable_cache !== false;
+            document.getElementById('allow-zoom').checked = project.allow_zoom === true;
+            document.getElementById('enable-javascript').checked = project.enable_javascript === true;
+            document.getElementById('enable-dom-storage').checked = project.enable_dom_storage === true;
+            document.getElementById('enable-geolocation').checked = project.enable_geolocation === true;
+            document.getElementById('enable-pull-refresh').checked = project.enable_pull_refresh === true;
+            document.getElementById('show-navigation').checked = project.show_navigation === true;
+            document.getElementById('enable-file-access').checked = project.enable_file_access === true;
+            document.getElementById('enable-cache').checked = project.enable_cache === true;
             document.getElementById('enable-media-autoplay').checked = project.enable_media_autoplay === true;
-            document.getElementById('enable-camera').checked = project.enable_camera !== false;
-            document.getElementById('enable-microphone').checked = project.enable_microphone !== false;
+            document.getElementById('enable-camera').checked = project.enable_camera === true;
+            document.getElementById('enable-microphone').checked = project.enable_microphone === true;
             document.getElementById('enable-ssl-pinning').checked = project.enable_ssl_pinning === true;
             document.getElementById('ssl-pins').value = project.ssl_pins || '';
             document.getElementById('enable-biometrics').checked = project.enable_biometrics === true;
             document.getElementById('enable-app-lock').checked = project.enable_app_lock === true;
             document.getElementById('app-lock-pin').value = project.app_lock_pin || '';
-            document.getElementById('enable-secure-storage').checked = project.enable_secure_storage !== false;
+            document.getElementById('enable-secure-storage').checked = project.enable_secure_storage === true;
 
             // Sync settings dialog checkboxes
-            document.getElementById('setting-allow-zoom').checked = project.allow_zoom !== false;
-            document.getElementById('setting-enable-javascript').checked = project.enable_javascript !== false;
-            document.getElementById('setting-enable-dom-storage').checked = project.enable_dom_storage !== false;
-            document.getElementById('setting-enable-geolocation').checked = project.enable_geolocation !== false;
-            document.getElementById('setting-enable-pull-refresh').checked = project.enable_pull_refresh !== false;
-            document.getElementById('setting-show-navigation').checked = project.show_navigation !== false;
-            document.getElementById('setting-enable-file-access').checked = project.enable_file_access !== false;
-            document.getElementById('setting-enable-cache').checked = project.enable_cache !== false;
+            document.getElementById('setting-allow-zoom').checked = project.allow_zoom === true;
+            document.getElementById('setting-enable-javascript').checked = project.enable_javascript === true;
+            document.getElementById('setting-enable-dom-storage').checked = project.enable_dom_storage === true;
+            document.getElementById('setting-enable-geolocation').checked = project.enable_geolocation === true;
+            document.getElementById('setting-enable-pull-refresh').checked = project.enable_pull_refresh === true;
+            document.getElementById('setting-show-navigation').checked = project.show_navigation === true;
+            document.getElementById('setting-enable-file-access').checked = project.enable_file_access === true;
+            document.getElementById('setting-enable-cache').checked = project.enable_cache === true;
             document.getElementById('setting-enable-media-autoplay').checked = project.enable_media_autoplay === true;
-            document.getElementById('setting-enable-camera').checked = project.enable_camera !== false;
-            document.getElementById('setting-enable-microphone').checked = project.enable_microphone !== false;
+            document.getElementById('setting-enable-camera').checked = project.enable_camera === true;
+            document.getElementById('setting-enable-microphone').checked = project.enable_microphone === true;
             document.getElementById('setting-enable-ssl-pinning').checked = project.enable_ssl_pinning === true;
             document.getElementById('setting-ssl-pins').value = project.ssl_pins || '';
             document.getElementById('setting-enable-biometrics').checked = project.enable_biometrics === true;
             document.getElementById('setting-enable-app-lock').checked = project.enable_app_lock === true;
             document.getElementById('setting-app-lock-pin').value = project.app_lock_pin || '';
-            document.getElementById('setting-enable-secure-storage').checked = project.enable_secure_storage !== false;
+            document.getElementById('setting-enable-secure-storage').checked = project.enable_secure_storage === true;
 
             const openedSslGrp = document.getElementById('ssl-pinning-group');
             if (openedSslGrp) openedSslGrp.style.display = project.enable_ssl_pinning ? 'block' : 'none';
