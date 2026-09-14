@@ -659,6 +659,36 @@ os.makedirs(app.config['BUILD_FOLDER'], exist_ok=True)
 
 # Store build progress
 build_progress = {}
+ACTIVE_BUILD_PROCESSES = {}  # build_id -> list of subprocess.Popen
+
+class BuildCancelledException(Exception):
+    """Raised when a build is cancelled by the user."""
+    pass
+
+def is_build_cancelled(build_id):
+    """Check if cancellation was requested for build_id"""
+    bp = build_progress.get(build_id, {})
+    return bp.get('cancel_requested') is True or bp.get('status') == 'cancelled'
+
+def check_build_cancelled(build_id):
+    """Raise BuildCancelledException if cancellation was requested"""
+    if is_build_cancelled(build_id):
+        raise BuildCancelledException("Build cancelled by user.")
+
+def set_build_progress(build_id, status=None, progress=None, message=None, **kwargs):
+    """Safely update build progress dictionary without losing metadata or overwriting cancellation"""
+    if build_id not in build_progress:
+        build_progress[build_id] = {}
+    bp = build_progress[build_id]
+    if bp.get('cancel_requested') is True or bp.get('status') == 'cancelled':
+        return
+    if status is not None:
+        bp['status'] = status
+    if progress is not None:
+        bp['progress'] = progress
+    if message is not None:
+        bp['message'] = message
+    bp.update(kwargs)
 
 # SWAB file encryption key derived from machine-specific identifier
 SWAB_SALT = b'swab_project_file_v1'
@@ -999,11 +1029,13 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
 
     remote_url = f"https://x-access-token:{github_token}@github.com/{github_owner}/{github_repo}.git"
 
-    build_progress[build_id] = {
-        'status': 'building',
-        'progress': 25,
-        'message': f'Preparing {platform_label} build in Cloud Builder...'
-    }
+    check_build_cancelled(build_id)
+    set_build_progress(
+        build_id,
+        status='building',
+        progress=25,
+        message=f'Preparing {platform_label} build in Cloud Builder...'
+    )
 
     # Ensure git is initialized in project_dir
     subprocess.run(['git', 'init'], cwd=project_dir, check=True, capture_output=True)
@@ -1014,21 +1046,25 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
     subprocess.run(['git', 'commit', '-m', f"Build {config['app_name']} ({build_id}) for {platform_label}"], cwd=project_dir, check=True, capture_output=True)
     subprocess.run(['git', 'remote', 'add', 'origin', remote_url], cwd=project_dir, check=True, capture_output=True)
 
+    check_build_cancelled(build_id)
     push_res = subprocess.run(['git', '-c', 'credential.helper=', 'push', '-u', 'origin', branch_name, '--force'], cwd=project_dir, capture_output=True, text=True)
     if push_res.returncode != 0:
         raise RuntimeError(f"Failed to push build branch to remote: {push_res.stderr}")
 
     logger.info(f"Pushed branch {branch_name} to remote. Waiting for workflow run...")
-    build_progress[build_id] = {
-        'status': 'building',
-        'progress': 35,
-        'message': 'Cloud build server queued...'
-    }
+    check_build_cancelled(build_id)
+    set_build_progress(
+        build_id,
+        status='building',
+        progress=35,
+        message='Cloud build server queued...'
+    )
 
     # Wait for workflow run to start on branch
     run_id = None
     start_wait = time.time()
     while time.time() - start_wait < 60:
+        check_build_cancelled(build_id)
         time.sleep(3)
         try:
             r = requests.get(
@@ -1042,8 +1078,11 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
                     run_id = runs[0]['id']
                     break
         except Exception as e:
+            if isinstance(e, BuildCancelledException):
+                raise
             logger.warning(f"Error checking workflow runs: {e}")
 
+    check_build_cancelled(build_id)
     if not run_id:
         raise RuntimeError("Cloud build workflow run did not start within 60 seconds.")
 
@@ -1054,10 +1093,11 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
     # Poll workflow run until completion (timeout 25 mins)
     start_run = time.time()
     while time.time() - start_run < 1500:
+        check_build_cancelled(build_id)
         time.sleep(5)
         try:
             # Check if cancellation was requested
-            if build_progress.get(build_id, {}).get('cancel_requested') or build_progress.get(build_id, {}).get('status') == 'cancelled':
+            if is_build_cancelled(build_id):
                 try:
                     requests.post(
                         f"https://api.github.com/repos/{github_owner}/{github_repo}/actions/runs/{run_id}/cancel",
@@ -1066,7 +1106,7 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
                     )
                 except Exception:
                     pass
-                raise RuntimeError("Build cancelled by user.")
+                raise BuildCancelledException("Build cancelled by user.")
 
             r = requests.get(
                 f"https://api.github.com/repos/{github_owner}/{github_repo}/actions/runs/{run_id}",
@@ -1083,23 +1123,25 @@ def build_via_github_actions(build_id, project_dir, build_dir, config, target_pl
             if run_status == 'in_progress':
                 elapsed = time.time() - start_run
                 current_pct = min(88, int(40 + (elapsed / 240.0) * 45))
-                build_progress[build_id].update({
-                    'status': 'building',
-                    'progress': current_pct,
-                    'message': f"Compiling {platform_label} on Cloud Server... ({int(elapsed)}s)"
-                })
+                set_build_progress(
+                    build_id,
+                    status='building',
+                    progress=current_pct,
+                    message=f"Compiling {platform_label} on Cloud Server... ({int(elapsed)}s)"
+                )
             elif run_status == 'completed':
                 if run_conclusion == 'success':
-                    build_progress[build_id].update({
-                        'status': 'building',
-                        'progress': 92,
-                        'message': f'Build succeeded! Downloading {platform_label} files...'
-                    })
+                    set_build_progress(
+                        build_id,
+                        status='building',
+                        progress=92,
+                        message=f'Build succeeded! Downloading {platform_label} files...'
+                    )
                     break
                 else:
                     raise RuntimeError(f"Cloud build failed (conclusion: {run_conclusion}).")
         except Exception as e:
-            if "Cloud build failed" in str(e) or "Build cancelled by user" in str(e):
+            if isinstance(e, BuildCancelledException) or "Cloud build failed" in str(e) or "Build cancelled by user" in str(e):
                 raise
             logger.warning(f"Polling error: {e}")
 
@@ -1582,17 +1624,20 @@ def record_completed_build(build_id, config, final_status):
 def run_build(build_id, config):
     """Run the Flutter build in a background thread"""
     try:
-        build_progress[build_id] = {'status': 'preparing', 'progress': 5, 'message': 'Preparing build environment...'}
+        check_build_cancelled(build_id)
+        set_build_progress(build_id, status='preparing', progress=5, message='Preparing build environment...')
 
         # Create a unique build directory
         build_dir = os.path.join(app.config['BUILD_FOLDER'], build_id)
         os.makedirs(build_dir, exist_ok=True)
 
+        check_build_cancelled(build_id)
         # Copy template to build directory
         project_dir = os.path.join(build_dir, 'project')
         shutil.copytree(app.config['FLUTTER_TEMPLATE'], project_dir)
 
-        build_progress[build_id] = {'status': 'configuring', 'progress': 10, 'message': 'Configuring app...'}
+        check_build_cancelled(build_id)
+        set_build_progress(build_id, status='configuring', progress=10, message='Configuring app...')
 
         # Update main.dart with app details and feature options
         main_dart_path = os.path.join(project_dir, 'lib', 'main.dart')
@@ -1814,7 +1859,8 @@ def run_build(build_id, config):
         has_keystore = config.get('keystore_path') and os.path.exists(config.get('keystore_path', ''))
 
         if is_android and not has_keystore:
-            build_progress[build_id] = {'status': 'keystore', 'progress': 12, 'message': 'Generating signing keystore...'}
+            check_build_cancelled(build_id)
+            set_build_progress(build_id, status='keystore', progress=12, message='Generating signing keystore...')
             keystore_info = generate_keystore(build_dir, config)
             if keystore_info:
                 config['keystore_path'] = keystore_info['path']
@@ -1824,13 +1870,15 @@ def run_build(build_id, config):
                 keystore_generated = True
 
         # Use rename package to set app name and bundle ID
-        build_progress[build_id] = {'status': 'renaming', 'progress': 15, 'message': 'Setting app name and bundle ID...'}
+        check_build_cancelled(build_id)
+        set_build_progress(build_id, status='renaming', progress=15, message='Setting app name and bundle ID...')
         rename_app(project_dir, config['app_name'], config['package_name'])
 
         # Setup app icon if provided
         icon_path = config.get('icon_path')
         if icon_path and os.path.exists(icon_path):
-            build_progress[build_id] = {'status': 'icons', 'progress': 18, 'message': 'Generating app icons...'}
+            check_build_cancelled(build_id)
+            set_build_progress(build_id, status='icons', progress=18, message='Generating app icons...')
             setup_app_icon(project_dir, icon_path, build_id)
 
         # Setup splash and error assets if provided
@@ -1888,6 +1936,7 @@ def run_build(build_id, config):
                 else:
                     target_platform = 'android'
 
+                check_build_cancelled(build_id)
                 logger.info(f"Routing build {build_id} to GitHub Actions Cloud Builder for {target_platform}.")
                 cloud_output_path = build_via_github_actions(build_id, project_dir, build_dir, config, target_platform=target_platform)
                 outputs = {}
@@ -1930,13 +1979,15 @@ def run_build(build_id, config):
                 if config.get('enable_app_store_publish'):
                     final_status['app_store_published'] = True
 
+                check_build_cancelled(build_id)
                 build_progress[build_id] = final_status
                 record_completed_build(build_id, config, final_status)
                 return
             else:
                 raise RuntimeError("Flutter SDK is not installed on this system. Please install Flutter or configure GITHUB_TOKEN in .env for Cloud Builds.")
 
-        build_progress[build_id] = {'status': 'dependencies', 'progress': 22, 'message': 'Getting dependencies...'}
+        check_build_cancelled(build_id)
+        set_build_progress(build_id, status='dependencies', progress=22, message='Getting dependencies...')
 
         # Run flutter pub get
         subprocess.run(['flutter', 'pub', 'get'], cwd=project_dir, check=True, capture_output=True, timeout=180)
@@ -1947,11 +1998,13 @@ def run_build(build_id, config):
         current_progress = 28
 
         for platform in config['platforms']:
-            build_progress[build_id] = {
-                'status': 'building',
-                'progress': int(current_progress),
-                'message': f'Building {get_platform_display_name(platform)}...'
-            }
+            check_build_cancelled(build_id)
+            set_build_progress(
+                build_id,
+                status='building',
+                progress=int(current_progress),
+                message=f'Building {get_platform_display_name(platform)}...'
+            )
 
             try:
                 output_path = build_platform(project_dir, build_dir, platform, config)
@@ -1962,6 +2015,7 @@ def run_build(build_id, config):
 
             current_progress += progress_per_platform
 
+        check_build_cancelled(build_id)
         # Prepare final status
         final_status = {
             'status': 'completed',
@@ -1999,13 +2053,28 @@ def run_build(build_id, config):
             daemon=True
         ).start()
 
-    except Exception as e:
-        if build_progress.get(build_id, {}).get('cancel_requested') or build_progress.get(build_id, {}).get('status') == 'cancelled':
+    except BuildCancelledException:
+        logger.info(f"Build {build_id} was cancelled by user.")
+        if build_id in build_progress:
             build_progress[build_id].update({
                 'status': 'cancelled',
                 'progress': 0,
                 'message': 'Build cancelled by user.'
             })
+        if session.get('active_build_id') == build_id:
+            session.pop('active_build_id', None)
+
+    except Exception as e:
+        if is_build_cancelled(build_id):
+            logger.info(f"Build {build_id} was cancelled by user (caught {e}).")
+            if build_id in build_progress:
+                build_progress[build_id].update({
+                    'status': 'cancelled',
+                    'progress': 0,
+                    'message': 'Build cancelled by user.'
+                })
+            if session.get('active_build_id') == build_id:
+                session.pop('active_build_id', None)
         else:
             error_status = {
                 'status': 'error',
@@ -3503,57 +3572,77 @@ def get_build_status(build_id):
 
 @app.route('/api/build/active', methods=['GET'])
 def get_active_build():
-    """Get currently active or recent build for the current user/session"""
+    """Get currently active (in-progress) build for the current user/session"""
     auth_user_id = session.get('user_id')
     active_build_id = session.get('active_build_id')
+
+    ACTIVE_STATUSES = ['preparing', 'running', 'in_progress', 'queued', 'building', 'configuring', 'keystore', 'renaming', 'icons', 'dependencies']
 
     # If active_build_id is in session, check it first
     if active_build_id:
         _recover_build_if_on_disk(active_build_id)
         if active_build_id in build_progress:
             b = build_progress[active_build_id]
-            is_active = b.get('status') in ['preparing', 'running', 'in_progress', 'queued', 'building']
-            return jsonify({
-                'has_active_build': is_active,
-                'build_id': active_build_id,
-                'build': b
-            })
+            if b.get('status') in ACTIVE_STATUSES:
+                return jsonify({
+                    'has_active_build': True,
+                    'build_id': active_build_id,
+                    'build': b
+                })
+            else:
+                # Completed, cancelled, or failed - remove from session so it doesn't pop up again
+                session.pop('active_build_id', None)
 
-    # Search build_progress for any active build belonging to this user
+    # Search build_progress for any genuinely active build belonging to this user
     if auth_user_id:
         for bid, b in reversed(list(build_progress.items())):
             if b.get('user_id') == auth_user_id:
-                is_active = b.get('status') in ['preparing', 'running', 'in_progress', 'queued', 'building']
-                if is_active:
+                if b.get('status') in ACTIVE_STATUSES:
                     session['active_build_id'] = bid
                     return jsonify({
                         'has_active_build': True,
                         'build_id': bid,
                         'build': b
                     })
-                return jsonify({
-                    'has_active_build': False,
-                    'build_id': bid,
-                    'build': b
-                })
 
     return jsonify({'has_active_build': False, 'build': None, 'build_id': None})
 
+@app.route('/api/build/active/dismiss', methods=['POST'])
+@app.route('/api/build/<build_id>/dismiss', methods=['POST'])
+def dismiss_active_build(build_id=None):
+    """Dismiss active/completed build from session so modals/banners never pop up again"""
+    session.pop('active_build_id', None)
+    return jsonify({'success': True, 'message': 'Build notification dismissed'})
+
 @app.route('/api/build/<build_id>/cancel', methods=['POST'])
 def cancel_build(build_id):
-    """Cancel an ongoing build"""
+    """Cancel an ongoing build immediately"""
     _recover_build_if_on_disk(build_id)
+
+    if session.get('active_build_id') == build_id:
+        session.pop('active_build_id', None)
+
     if build_id not in build_progress:
-        return jsonify({'error': 'Build not found'}), 404
+        return jsonify({'success': True, 'message': 'Build not active', 'status': 'cancelled'})
 
     b = build_progress[build_id]
     if b.get('status') in ['completed', 'failed', 'error', 'cancelled']:
-        return jsonify({'message': f"Build is already {b.get('status')}", 'status': b.get('status')})
+        return jsonify({'success': True, 'message': f"Build is already {b.get('status')}", 'status': b.get('status')})
 
-    # Mark as cancelled
+    # Mark as cancelled immediately
     b['cancel_requested'] = True
     b['status'] = 'cancelled'
     b['message'] = 'Build cancelled by user.'
+    b['progress'] = 0
+
+    # Terminate any running subprocesses for this build
+    procs = ACTIVE_BUILD_PROCESSES.pop(build_id, [])
+    for proc in procs:
+        try:
+            proc.terminate()
+            proc.kill()
+        except Exception:
+            pass
 
     # Attempt to cancel GitHub Actions workflow run if running in cloud
     run_id = b.get('github_run_id')
@@ -3575,8 +3664,21 @@ def cancel_build(build_id):
         except Exception as e:
             logger.warning(f"Error cancelling GitHub Actions run: {e}")
 
-    if session.get('active_build_id') == build_id:
-        session.pop('active_build_id', None)
+    # Update SQLite database if build row exists
+    try:
+        conn = get_db_connection()
+        conn.execute('UPDATE builds SET status = ? WHERE id = ?', ('cancelled', build_id))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+    # Update Firestore if build doc exists
+    if db:
+        try:
+            db.collection('builds').document(build_id).set({'status': 'cancelled', 'updatedAt': firestore.SERVER_TIMESTAMP}, merge=True)
+        except Exception:
+            pass
 
     return jsonify({'success': True, 'message': 'Build cancelled successfully', 'status': 'cancelled'})
 

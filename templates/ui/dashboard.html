@@ -840,21 +840,21 @@
             }
 
             try {
-                const res = await fetch('/api/build/active');
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data && data.build_id) {
-                        candidateId = data.build_id;
+                if (!candidateId) {
+                    const res = await fetch('/api/build/active');
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data && data.has_active_build && data.build_id) {
+                            candidateId = data.build_id;
+                        }
                     }
                 }
-            } catch(e) {}
 
-            if (!candidateId) {
-                hideActiveBuildBanner();
-                return;
-            }
+                if (!candidateId) {
+                    hideActiveBuildBanner();
+                    return;
+                }
 
-            try {
                 const resp = await fetch(`/api/build/${candidateId}/status`);
                 if (!resp.ok) {
                     hideActiveBuildBanner();
@@ -862,16 +862,25 @@
                 }
 
                 const status = await resp.json();
-                if (['preparing', 'building', 'running', 'in_progress', 'queued'].includes(status.status)) {
+                const activeStatuses = ['preparing', 'building', 'running', 'in_progress', 'queued', 'configuring', 'keystore', 'renaming', 'icons', 'dependencies'];
+
+                if (activeStatuses.includes(status.status)) {
                     activeDashboardBuildId = candidateId;
                     showActiveBuildBanner(status);
                     dashboardPollTimer = setTimeout(pollActiveDashboardBuild, 2000);
                 } else if (status.status === 'completed') {
-                    showCompletedBuildBanner(status);
+                    // Only show completed banner if user was already actively tracking this build
+                    if (activeDashboardBuildId === candidateId) {
+                        showCompletedBuildBanner(status);
+                    } else {
+                        hideActiveBuildBanner();
+                    }
                     localStorage.removeItem('iewebnative_active_build');
+                    fetch('/api/build/active/dismiss', { method: 'POST' }).catch(() => {});
                 } else {
                     hideActiveBuildBanner();
                     localStorage.removeItem('iewebnative_active_build');
+                    fetch('/api/build/active/dismiss', { method: 'POST' }).catch(() => {});
                 }
             } catch(e) {
                 dashboardPollTimer = setTimeout(pollActiveDashboardBuild, 4000);
@@ -978,7 +987,14 @@
                 clearInterval(bannerDismissTimer);
                 bannerDismissTimer = null;
             }
+            if (dashboardPollTimer) {
+                clearTimeout(dashboardPollTimer);
+                dashboardPollTimer = null;
+            }
             bannerCompletedMode = false;
+            activeDashboardBuildId = null;
+            fetch('/api/build/active/dismiss', { method: 'POST' }).catch(() => {});
+            localStorage.removeItem('iewebnative_active_build');
             const banner = document.getElementById('active-build-banner');
             if (banner) {
                 banner.style.opacity = '0';
@@ -1000,10 +1016,18 @@
             }
             if (!activeDashboardBuildId) return;
             if (!confirm('Are you sure you want to cancel the running build?')) return;
+
+            const bidToCancel = activeDashboardBuildId;
+            activeDashboardBuildId = null;
+            if (dashboardPollTimer) {
+                clearTimeout(dashboardPollTimer);
+                dashboardPollTimer = null;
+            }
+            localStorage.removeItem('iewebnative_active_build');
+            hideActiveBuildBanner();
+
             try {
-                await fetch(`/api/build/${activeDashboardBuildId}/cancel`, { method: 'POST' });
-                localStorage.removeItem('iewebnative_active_build');
-                hideActiveBuildBanner();
+                await fetch(`/api/build/${bidToCancel}/cancel`, { method: 'POST' });
                 showToast('Build cancelled.', 'info');
             } catch(e) {
                 showToast('Error cancelling build: ' + e.message, 'error');

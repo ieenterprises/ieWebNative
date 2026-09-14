@@ -729,6 +729,10 @@ document.addEventListener('DOMContentLoaded', function() {
             clearInterval(window._buildCompleteDismissTimer);
             window._buildCompleteDismissTimer = null;
         }
+        if (window._pollStatusTimer) {
+            clearTimeout(window._pollStatusTimer);
+            window._pollStatusTimer = null;
+        }
         buildButton.disabled = false;
         buildProgress.style.display = 'none';
         centerProgress.style.display = 'none';
@@ -743,6 +747,13 @@ document.addEventListener('DOMContentLoaded', function() {
             clearInterval(window._buildCompleteDismissTimer);
             window._buildCompleteDismissTimer = null;
         }
+        if (window._pollStatusTimer) {
+            clearTimeout(window._pollStatusTimer);
+            window._pollStatusTimer = null;
+        }
+        fetch('/api/build/active/dismiss', { method: 'POST' }).catch(() => {});
+        localStorage.removeItem('iewebnative_active_build');
+
         if (buildComplete) {
             buildComplete.style.opacity = '0';
             buildComplete.style.transform = 'translateY(-6px)';
@@ -949,6 +960,36 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const status = await response.json();
 
+            if (status.status === 'cancelled') {
+                if (window._pollStatusTimer) {
+                    clearTimeout(window._pollStatusTimer);
+                    window._pollStatusTimer = null;
+                }
+                showToast('Build was cancelled.', 'info');
+                localStorage.removeItem('iewebnative_active_build');
+                resetBuildUI();
+                return;
+            }
+
+            if (status.status === 'completed') {
+                if (window._pollStatusTimer) {
+                    clearTimeout(window._pollStatusTimer);
+                    window._pollStatusTimer = null;
+                }
+                renderBuildComplete(buildId, status);
+                showToast('Build completed successfully!', 'success');
+                return;
+            } else if (status.status === 'error' || status.status === 'failed') {
+                if (window._pollStatusTimer) {
+                    clearTimeout(window._pollStatusTimer);
+                    window._pollStatusTimer = null;
+                }
+                showToast('Build failed: ' + status.message, 'error');
+                localStorage.removeItem('iewebnative_active_build');
+                resetBuildUI();
+                return;
+            }
+
             // Update progress UI (both sidebar and center)
             progressFill.style.width = status.progress + '%';
             progressPercent.textContent = status.progress + '%';
@@ -958,25 +999,14 @@ document.addEventListener('DOMContentLoaded', function() {
             centerProgressFill.style.width = status.progress + '%';
             centerProgressText.textContent = status.message;
 
-            if (status.status === 'completed') {
-                renderBuildComplete(buildId, status);
-                showToast('Build completed successfully!', 'success');
-            } else if (status.status === 'error' || status.status === 'failed') {
-                showToast('Build failed: ' + status.message, 'error');
-                localStorage.removeItem('iewebnative_active_build');
-                resetBuildUI();
-            } else if (status.status === 'cancelled') {
-                showToast('Build was cancelled.', 'info');
-                localStorage.removeItem('iewebnative_active_build');
-                resetBuildUI();
-            } else {
-                // Continue polling in background
-                setTimeout(() => pollBuildStatus(buildId), 1500);
-            }
+            // Continue polling in background
+            if (window._pollStatusTimer) clearTimeout(window._pollStatusTimer);
+            window._pollStatusTimer = setTimeout(() => pollBuildStatus(buildId), 1500);
         } catch (error) {
             console.error('Status poll error:', error);
             // Don't immediately wipe out UI on transient network glitches
-            setTimeout(() => pollBuildStatus(buildId), 3000);
+            if (window._pollStatusTimer) clearTimeout(window._pollStatusTimer);
+            window._pollStatusTimer = setTimeout(() => pollBuildStatus(buildId), 3000);
         }
     }
 
@@ -989,19 +1019,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
             cancelBuildBtn.disabled = true;
             const originalHtml = cancelBuildBtn.innerHTML;
-            cancelBuildBtn.innerHTML = 'Cancelling...';
+            cancelBuildBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Cancelling...';
+
+            if (window._pollStatusTimer) {
+                clearTimeout(window._pollStatusTimer);
+                window._pollStatusTimer = null;
+            }
+
+            const targetBid = activeBuildId;
+            activeBuildId = null;
+            localStorage.removeItem('iewebnative_active_build');
 
             try {
-                const resp = await fetch(`/api/build/${activeBuildId}/cancel`, { method: 'POST' });
-                const data = await resp.json();
+                const resp = await fetch(`/api/build/${targetBid}/cancel`, { method: 'POST' });
                 showToast('Build cancelled.', 'info');
-                localStorage.removeItem('iewebnative_active_build');
-                resetBuildUI();
             } catch (err) {
                 showToast('Error cancelling build: ' + err.message, 'error');
             } finally {
                 cancelBuildBtn.disabled = false;
                 cancelBuildBtn.innerHTML = originalHtml;
+                resetBuildUI();
             }
         });
     }
@@ -1055,16 +1092,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Also check backend session/user active build
-        try {
-            const res = await fetch('/api/build/active');
-            if (res.ok) {
-                const data = await res.json();
-                if (data && data.build_id) {
-                    candidateBuildId = data.build_id;
+        if (!candidateBuildId) {
+            try {
+                const res = await fetch('/api/build/active');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.has_active_build && data.build_id) {
+                        candidateBuildId = data.build_id;
+                    }
                 }
+            } catch (e) {
+                console.warn('Active build check notice:', e);
             }
-        } catch (e) {
-            console.warn('Active build check notice:', e);
         }
 
         if (!candidateBuildId) return;
@@ -1076,10 +1115,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             const status = await resp.json();
-            if (status.status === 'completed') {
-                activeBuildId = candidateBuildId;
-                renderBuildComplete(candidateBuildId, status);
-            } else if (['preparing', 'building', 'running', 'in_progress', 'queued'].includes(status.status)) {
+            const activeStatuses = ['preparing', 'building', 'running', 'in_progress', 'queued', 'configuring', 'keystore', 'renaming', 'icons', 'dependencies'];
+
+            // ONLY resume if the build is STILL ACTIVELY IN PROGRESS!
+            // Never open the modal if the build already completed, was cancelled, or failed!
+            if (activeStatuses.includes(status.status)) {
                 activeBuildId = candidateBuildId;
                 buildButton.disabled = true;
                 buildProgress.style.display = 'block';
@@ -1105,10 +1145,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 showToast(`Resumed background build: ${status.app_name || 'App'}`, 'info');
                 pollBuildStatus(candidateBuildId);
             } else {
+                // Completed, cancelled or failed from earlier: clear active build and dismiss!
                 localStorage.removeItem('iewebnative_active_build');
+                fetch('/api/build/active/dismiss', { method: 'POST' }).catch(() => {});
             }
-        } catch (err) {
-            console.error('Error resuming active build:', err);
+        } catch (e) {
+            console.warn('Active build check error:', e);
         }
     }
 
