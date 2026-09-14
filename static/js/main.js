@@ -725,6 +725,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function resetBuildUI() {
+        if (window._buildCompleteDismissTimer) {
+            clearInterval(window._buildCompleteDismissTimer);
+            window._buildCompleteDismissTimer = null;
+        }
         buildButton.disabled = false;
         buildProgress.style.display = 'none';
         centerProgress.style.display = 'none';
@@ -734,10 +738,31 @@ document.addEventListener('DOMContentLoaded', function() {
         activeBuildId = null;
     }
 
+    function closeBuildCompleteModal() {
+        if (window._buildCompleteDismissTimer) {
+            clearInterval(window._buildCompleteDismissTimer);
+            window._buildCompleteDismissTimer = null;
+        }
+        if (buildComplete) {
+            buildComplete.style.opacity = '0';
+            buildComplete.style.transform = 'translateY(-6px)';
+            setTimeout(() => {
+                buildComplete.style.display = 'none';
+                buildComplete.style.opacity = '1';
+                buildComplete.style.transform = 'none';
+                resetBuildUI();
+            }, 250);
+        } else {
+            resetBuildUI();
+        }
+    }
+
     function renderBuildComplete(buildId, status) {
         // Show completion
         buildProgress.style.display = 'none';
         buildComplete.style.display = 'block';
+        buildComplete.style.opacity = '1';
+        buildComplete.style.transform = 'none';
         buildButton.disabled = false;
 
         // Hide center progress and show dropdown
@@ -747,6 +772,31 @@ document.addEventListener('DOMContentLoaded', function() {
 
         localStorage.removeItem('iewebnative_active_build');
         showToast('Build completed! Saved to your project dashboard.', 'success');
+
+        // Start 5-second auto-close countdown
+        let buildCompleteCountdown = 5;
+        const countdownSpan = document.getElementById('build-complete-seconds');
+        const timerNotice = document.getElementById('build-complete-timer-notice');
+        if (countdownSpan) countdownSpan.textContent = '5';
+        if (timerNotice) {
+            timerNotice.innerHTML = 'Auto-closing in <span id="build-complete-seconds" style="font-weight: 700; color: #10b981;">5</span>s (saved to Dashboard)';
+        }
+
+        if (window._buildCompleteDismissTimer) {
+            clearInterval(window._buildCompleteDismissTimer);
+            window._buildCompleteDismissTimer = null;
+        }
+
+        window._buildCompleteDismissTimer = setInterval(() => {
+            buildCompleteCountdown--;
+            const currSpan = document.getElementById('build-complete-seconds');
+            if (currSpan) currSpan.textContent = buildCompleteCountdown;
+            if (buildCompleteCountdown <= 0) {
+                clearInterval(window._buildCompleteDismissTimer);
+                window._buildCompleteDismissTimer = null;
+                closeBuildCompleteModal();
+            }
+        }, 1000);
 
         if (!window.currentProjectBuilds) window.currentProjectBuilds = {};
         if (status.outputs) {
@@ -960,8 +1010,36 @@ document.addEventListener('DOMContentLoaded', function() {
     const startNewBuildBtn = document.getElementById('start-new-build-btn');
     if (startNewBuildBtn) {
         startNewBuildBtn.addEventListener('click', function() {
-            buildComplete.style.display = 'none';
-            resetBuildUI();
+            closeBuildCompleteModal();
+        });
+    }
+
+    // Close build complete buttons (X button and Close button)
+    const closeBuildCompleteX = document.getElementById('close-build-complete-x');
+    if (closeBuildCompleteX) {
+        closeBuildCompleteX.addEventListener('click', function() {
+            closeBuildCompleteModal();
+        });
+    }
+
+    const closeBuildCompleteBtn = document.getElementById('close-build-complete-btn');
+    if (closeBuildCompleteBtn) {
+        closeBuildCompleteBtn.addEventListener('click', function() {
+            closeBuildCompleteModal();
+        });
+    }
+
+    // Pause countdown if user hovers over build complete card
+    if (buildComplete) {
+        buildComplete.addEventListener('mouseenter', function() {
+            if (window._buildCompleteDismissTimer) {
+                clearInterval(window._buildCompleteDismissTimer);
+                window._buildCompleteDismissTimer = null;
+                const timerNotice = document.getElementById('build-complete-timer-notice');
+                if (timerNotice) {
+                    timerNotice.innerHTML = 'Saved to your project in the Dashboard';
+                }
+            }
         });
     }
 

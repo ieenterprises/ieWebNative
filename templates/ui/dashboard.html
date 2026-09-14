@@ -92,7 +92,8 @@
     <!-- Main Content -->
     <main class="main-content">
         <!-- Active Background Build Banner -->
-        <div id="active-build-banner" class="active-build-banner" style="display: none; margin-bottom: 24px; padding: 18px 24px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; box-shadow: 0 4px 20px -2px rgba(99, 102, 241, 0.1);">
+        <div id="active-build-banner" class="active-build-banner" style="display: none; position: relative; margin-bottom: 24px; padding: 18px 24px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; box-shadow: 0 4px 20px -2px rgba(99, 102, 241, 0.1); transition: opacity 0.3s ease, transform 0.3s ease;">
+            <button type="button" id="banner-dismiss-x" title="Dismiss" aria-label="Dismiss" style="position: absolute; top: 12px; right: 14px; background: transparent; border: none; font-size: 1.3rem; line-height: 1; color: var(--text-secondary, #64748b); cursor: pointer; padding: 4px 8px; border-radius: 4px; display: none;">&times;</button>
             <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
                 <div style="display: flex; align-items: center; gap: 14px;">
                     <div class="banner-spinner" style="width: 38px; height: 38px; border: 3px solid rgba(99, 102, 241, 0.2); border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; flex-shrink: 0;"></div>
@@ -877,33 +878,14 @@
             }
         }
 
+        let bannerCompletedMode = false;
+        let bannerDismissTimer = null;
+
         function showActiveBuildBanner(status) {
             const banner = document.getElementById('active-build-banner');
             if (!banner) return;
             banner.style.display = 'block';
-
-            const title = document.getElementById('banner-build-title');
-            const desc = document.getElementById('banner-build-desc');
-            const pct = document.getElementById('banner-progress-percent');
-            const fill = document.getElementById('banner-progress-fill');
-            const badge = document.getElementById('banner-build-badge');
-
-            if (title) title.textContent = `Building: ${status.app_name || 'App'}`;
-            if (desc) desc.textContent = status.message || 'Compiling app on Cloud Server...';
-            const progressVal = status.progress || 10;
-            if (pct) pct.textContent = progressVal + '%';
-            if (fill) fill.style.width = progressVal + '%';
-            if (badge) {
-                badge.textContent = `${status.platform || 'app'}`.toUpperCase();
-                badge.style.background = 'rgba(99, 102, 241, 0.15)';
-                badge.style.color = '#6366f1';
-            }
-        }
-
-        function showCompletedBuildBanner(status) {
-            const banner = document.getElementById('active-build-banner');
-            if (!banner) return;
-            banner.style.display = 'block';
+            bannerCompletedMode = false;
 
             const title = document.getElementById('banner-build-title');
             const desc = document.getElementById('banner-build-desc');
@@ -911,10 +893,50 @@
             const fill = document.getElementById('banner-progress-fill');
             const badge = document.getElementById('banner-build-badge');
             const spinner = banner.querySelector('.banner-spinner');
+            const cancelBtn = document.getElementById('banner-cancel-btn');
+            const dismissX = document.getElementById('banner-dismiss-x');
+
+            if (spinner) spinner.style.display = 'block';
+            if (dismissX) dismissX.style.display = 'none';
+            if (title) title.textContent = `Building: ${status.app_name || 'App'}`;
+            if (desc) desc.textContent = status.message || 'Compiling app on Cloud Server...';
+            const progressVal = status.progress || 10;
+            if (pct) pct.textContent = progressVal + '%';
+            if (fill) {
+                fill.style.width = progressVal + '%';
+                fill.style.background = 'linear-gradient(90deg, #6366f1, #8b5cf6)';
+            }
+            if (badge) {
+                badge.textContent = `${status.platform || 'app'}`.toUpperCase();
+                badge.style.background = 'rgba(99, 102, 241, 0.15)';
+                badge.style.color = '#6366f1';
+            }
+            if (cancelBtn) {
+                cancelBtn.style.borderColor = '#ef4444';
+                cancelBtn.style.color = '#ef4444';
+                cancelBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Cancel';
+            }
+        }
+
+        function showCompletedBuildBanner(status) {
+            const banner = document.getElementById('active-build-banner');
+            if (!banner) return;
+            banner.style.display = 'block';
+            bannerCompletedMode = true;
+
+            const title = document.getElementById('banner-build-title');
+            const desc = document.getElementById('banner-build-desc');
+            const pct = document.getElementById('banner-progress-percent');
+            const fill = document.getElementById('banner-progress-fill');
+            const badge = document.getElementById('banner-build-badge');
+            const spinner = banner.querySelector('.banner-spinner');
+            const cancelBtn = document.getElementById('banner-cancel-btn');
+            const dismissX = document.getElementById('banner-dismiss-x');
 
             if (spinner) spinner.style.display = 'none';
+            if (dismissX) dismissX.style.display = 'block';
             if (title) title.textContent = `Build Completed: ${status.app_name || 'App'}`;
-            if (desc) desc.textContent = 'Your app binaries are ready to download in the Builder!';
+            if (desc) desc.textContent = 'Your app binaries are ready and saved to your project card below!';
             if (pct) pct.textContent = '100%';
             if (fill) {
                 fill.style.width = '100%';
@@ -925,14 +947,57 @@
                 badge.style.background = 'rgba(16, 185, 129, 0.15)';
                 badge.style.color = '#10b981';
             }
+            if (cancelBtn) {
+                cancelBtn.style.borderColor = 'rgba(100, 116, 139, 0.3)';
+                cancelBtn.style.color = 'var(--text-secondary, #64748b)';
+                cancelBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> <span id="banner-close-text">Close (5s)</span>';
+            }
+
+            // Immediately refresh project cards on the dashboard so newly built download chips appear!
+            if (typeof loadProjects === 'function') {
+                loadProjects();
+            }
+
+            // Start 5-second countdown to auto-dismiss
+            let countdown = 5;
+            if (bannerDismissTimer) clearInterval(bannerDismissTimer);
+            bannerDismissTimer = setInterval(() => {
+                countdown--;
+                const closeText = document.getElementById('banner-close-text');
+                if (closeText) closeText.textContent = `Close (${countdown}s)`;
+                if (countdown <= 0) {
+                    clearInterval(bannerDismissTimer);
+                    bannerDismissTimer = null;
+                    hideActiveBuildBanner();
+                }
+            }, 1000);
         }
 
         function hideActiveBuildBanner() {
+            if (bannerDismissTimer) {
+                clearInterval(bannerDismissTimer);
+                bannerDismissTimer = null;
+            }
+            bannerCompletedMode = false;
             const banner = document.getElementById('active-build-banner');
-            if (banner) banner.style.display = 'none';
+            if (banner) {
+                banner.style.opacity = '0';
+                banner.style.transform = 'translateY(-10px)';
+                setTimeout(() => {
+                    banner.style.display = 'none';
+                    banner.style.opacity = '1';
+                    banner.style.transform = 'none';
+                }, 300);
+            }
         }
 
+        document.getElementById('banner-dismiss-x')?.addEventListener('click', hideActiveBuildBanner);
+
         document.getElementById('banner-cancel-btn')?.addEventListener('click', async function() {
+            if (bannerCompletedMode) {
+                hideActiveBuildBanner();
+                return;
+            }
             if (!activeDashboardBuildId) return;
             if (!confirm('Are you sure you want to cancel the running build?')) return;
             try {
@@ -942,6 +1007,17 @@
                 showToast('Build cancelled.', 'info');
             } catch(e) {
                 showToast('Error cancelling build: ' + e.message, 'error');
+            }
+        });
+
+        // Pause countdown if user hovers on completed banner
+        const dashboardBannerEl = document.getElementById('active-build-banner');
+        dashboardBannerEl?.addEventListener('mouseenter', function() {
+            if (bannerCompletedMode && bannerDismissTimer) {
+                clearInterval(bannerDismissTimer);
+                bannerDismissTimer = null;
+                const closeText = document.getElementById('banner-close-text');
+                if (closeText) closeText.textContent = 'Close';
             }
         });
 
