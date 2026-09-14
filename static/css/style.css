@@ -59,6 +59,37 @@
     --transition-slow: 300ms ease;
 }
 
+[data-theme="dark"],
+[data-theme="moon"] {
+    /* Background Colors (Moon Light / Night Theme) */
+    --bg-primary: #0b1120;
+    --bg-secondary: #131b2e;
+    --bg-tertiary: #1e293b;
+    --bg-elevated: #1e293b;
+    --bg-input: #131b2e;
+    --bg-hover: #26354a;
+
+    /* Text Colors */
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --text-placeholder: #64748b;
+
+    /* Border Colors */
+    --border-primary: #1e2d42;
+    --border-secondary: #334155;
+
+    /* Status Colors */
+    --success-bg: rgba(16, 185, 129, 0.15);
+    --error-bg: rgba(239, 68, 68, 0.15);
+    --warning-bg: rgba(245, 158, 11, 0.15);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+}
+
 html, body {
     height: 100%;
 }
@@ -72,6 +103,7 @@ body {
     flex-direction: column;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
 /* ==================== TOP TOOLBAR ==================== */
@@ -88,6 +120,12 @@ body {
     box-sizing: border-box;
     width: 100%;
     backdrop-filter: blur(10px);
+    transition: background-color var(--transition-normal), border-color var(--transition-normal);
+}
+
+[data-theme="dark"] .top-toolbar,
+[data-theme="moon"] .top-toolbar {
+    background: rgba(19, 27, 46, 0.95);
 }
 
 .toolbar-left {
@@ -266,7 +304,7 @@ body {
     align-items: center;
     gap: 8px;
     padding: 9px 16px;
-    background: #ffffff;
+    background: var(--bg-secondary);
     border: 1px solid var(--border-secondary);
     border-radius: var(--radius-md);
     color: var(--text-primary);
@@ -287,6 +325,40 @@ body {
     border-color: #ef4444;
     color: #ef4444;
     background: rgba(239, 68, 68, 0.08);
+}
+
+/* Theme Toggle Button */
+.theme-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    height: 40px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all var(--transition-fast);
+    user-select: none;
+    box-sizing: border-box;
+}
+
+.theme-toggle-btn:hover {
+    color: var(--primary);
+    border-color: var(--primary);
+    background: var(--bg-hover);
+    transform: translateY(-1px);
+}
+
+.theme-toggle-btn .theme-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: currentColor;
 }
 
 /* ==================== MAIN CONTAINER ==================== */

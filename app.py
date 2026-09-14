@@ -582,6 +582,14 @@ def init_sqlite_db():
         except Exception as col_err:
             logger.debug(f"Column check notice: {col_err}")
 
+        # Ensure picture column exists in users table
+        try:
+            user_cols = [col[1] for col in cursor.execute('PRAGMA table_info(users)').fetchall()]
+            if 'picture' not in user_cols:
+                cursor.execute('ALTER TABLE users ADD COLUMN picture TEXT')
+        except Exception as user_col_err:
+            logger.debug(f"User column check notice: {user_col_err}")
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS builds (
                 id TEXT PRIMARY KEY,
@@ -2778,11 +2786,13 @@ def api_login():
         session['user_id'] = user['id']
         session['user_name'] = user['name']
         session['user_email'] = user['email']
+        user_picture = user['picture'] if 'picture' in user.keys() and user['picture'] else ''
+        session['user_picture'] = user_picture
 
         return jsonify({
             'success': True,
             'message': 'Signed in successfully!',
-            'user': {'id': user['id'], 'uid': user['id'], 'name': user['name'], 'email': user['email']},
+            'user': {'id': user['id'], 'uid': user['id'], 'name': user['name'], 'email': user['email'], 'picture': user_picture},
             'redirect': '/dashboard'
         })
     except Exception as e:
@@ -2801,16 +2811,51 @@ def api_logout():
 
 @app.route('/api/auth/me', methods=['GET'])
 def api_me():
-    """Get current authenticated user info"""
+    """Get current authenticated user info with fresh database state"""
     if 'user_id' in session:
+        uid = session['user_id']
+        name = session.get('user_name', 'User')
+        email = session.get('user_email', '')
+        picture = session.get('user_picture', '')
+
+        # Fetch latest from Firestore or SQLite if available
+        if db:
+            try:
+                udoc = db.collection('users').document(uid).get()
+                if udoc.exists:
+                    udata = udoc.to_dict() or {}
+                    name = udata.get('name') or name
+                    email = udata.get('email') or email
+                    picture = udata.get('picture') or picture
+                    session['user_name'] = name
+                    session['user_email'] = email
+                    session['user_picture'] = picture
+            except Exception as e:
+                logger.debug(f"Firestore user fetch: {e}")
+        else:
+            try:
+                conn = get_db_connection()
+                urow = conn.execute('SELECT * FROM users WHERE id = ?', (uid,)).fetchone()
+                conn.close()
+                if urow:
+                    name = urow['name'] or name
+                    email = urow['email'] or email
+                    if 'picture' in urow.keys() and urow['picture']:
+                        picture = urow['picture']
+                    session['user_name'] = name
+                    session['user_email'] = email
+                    session['user_picture'] = picture
+            except Exception as e:
+                logger.debug(f"SQLite user fetch: {e}")
+
         return jsonify({
             'authenticated': True,
             'user': {
-                'id': session['user_id'],
-                'uid': session['user_id'],
-                'name': session.get('user_name', 'User'),
-                'email': session.get('user_email', ''),
-                'picture': session.get('user_picture', '')
+                'id': uid,
+                'uid': uid,
+                'name': name,
+                'email': email,
+                'picture': picture
             }
         })
     return jsonify({'authenticated': False, 'user': None})
@@ -2865,17 +2910,17 @@ def api_firebase_session():
         # 2. Upsert user in SQLite for local data continuity
         try:
             conn = get_db_connection()
-            existing = conn.execute('SELECT id FROM users WHERE id = ? OR email = ?', (uid, email)).fetchone()
+            existing = conn.execute('SELECT id, picture FROM users WHERE id = ? OR email = ?', (uid, email)).fetchone()
             now = datetime.utcnow().isoformat()
             if existing:
                 conn.execute(
-                    'UPDATE users SET name = ?, email = ? WHERE id = ?',
-                    (name, email, existing['id'])
+                    'UPDATE users SET name = ?, email = ?, picture = COALESCE(NULLIF(?, ""), picture) WHERE id = ?',
+                    (name, email, picture, existing['id'])
                 )
             else:
                 conn.execute(
-                    'INSERT INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
-                    (uid, name, email, 'FIREBASE_AUTH', now)
+                    'INSERT INTO users (id, name, email, password_hash, created_at, picture) VALUES (?, ?, ?, ?, ?, ?)',
+                    (uid, name, email, 'FIREBASE_AUTH', now, picture)
                 )
             conn.commit()
             conn.close()
@@ -2905,6 +2950,460 @@ def api_firebase_session():
     except Exception as e:
         logger.exception("Error during Firebase session creation")
         return jsonify({'success': False, 'error': f'Failed to create session: {str(e)}'}), 500
+
+
+# ==================== USER PROFILE & ACCOUNT MANAGEMENT ====================
+
+@app.route('/api/user/profile', methods=['PUT'])
+@firebase_auth_required
+def api_update_user_profile():
+    """Update current user's profile information (name, picture)"""
+    try:
+        user_id = request.user['uid']
+        data = request.json or {}
+        name = data.get('name', '').strip()
+        picture = data.get('picture', '').strip()
+
+        if not name and not picture:
+            return jsonify({'success': False, 'error': 'No profile data provided to update.'}), 400
+
+        # Update Firestore
+        if db:
+            try:
+                update_fields = {'updatedAt': firestore.SERVER_TIMESTAMP}
+                if name:
+                    update_fields['name'] = name
+                if picture:
+                    update_fields['picture'] = picture
+                db.collection('users').document(user_id).set(update_fields, merge=True)
+            except Exception as fe:
+                logger.warning(f"Error updating user profile in Firestore: {fe}")
+
+        # Update Firebase Auth if initialized
+        if firebase_initialized:
+            try:
+                fb_updates = {}
+                if name:
+                    fb_updates['display_name'] = name
+                if picture:
+                    fb_updates['photo_url'] = picture
+                if fb_updates:
+                    firebase_auth.update_user(user_id, **fb_updates)
+            except Exception as fae:
+                logger.warning(f"Error updating Firebase Auth user: {fae}")
+
+        # Update SQLite
+        try:
+            conn = get_db_connection()
+            if name and picture:
+                conn.execute('UPDATE users SET name = ?, picture = ? WHERE id = ?', (name, picture, user_id))
+            elif name:
+                conn.execute('UPDATE users SET name = ? WHERE id = ?', (name, user_id))
+            elif picture:
+                conn.execute('UPDATE users SET picture = ? WHERE id = ?', (picture, user_id))
+            conn.commit()
+            conn.close()
+        except Exception as se:
+            logger.warning(f"Error updating user in SQLite: {se}")
+
+        if name:
+            session['user_name'] = name
+        if picture:
+            session['user_picture'] = picture
+
+        return jsonify({
+            'success': True,
+            'message': 'Profile updated successfully!',
+            'user': {
+                'id': user_id,
+                'uid': user_id,
+                'name': session.get('user_name', name),
+                'email': session.get('user_email', ''),
+                'picture': session.get('user_picture', picture)
+            }
+        })
+    except Exception as e:
+        logger.exception("Error updating profile")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/user/photo', methods=['POST'])
+@firebase_auth_required
+def api_upload_user_photo():
+    """Upload new profile photo to Firebase Storage or local disk and update user profile"""
+    try:
+        user_id = request.user['uid']
+        if 'photo' not in request.files and 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No image file uploaded.'}), 400
+
+        file = request.files.get('photo') or request.files.get('file')
+        if not file or not file.filename:
+            return jsonify({'success': False, 'error': 'Empty file selected.'}), 400
+
+        allowed_exts = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'}
+        _, ext = os.path.splitext(file.filename.lower())
+        if ext not in allowed_exts:
+            ext = '.png'
+
+        filename = f"avatar_{int(datetime.utcnow().timestamp())}{ext}"
+        storage_path = f"users/{user_id}/{filename}"
+        public_url = None
+
+        # 1. Try Firebase Storage
+        bucket = get_storage_bucket()
+        if bucket:
+            try:
+                blob = bucket.blob(storage_path)
+                content_type = file.content_type or 'image/png'
+                blob.upload_from_file(file, content_type=content_type)
+                try:
+                    blob.make_public()
+                    public_url = blob.public_url
+                except Exception:
+                    public_url = blob.generate_signed_url(expiration=timedelta(days=3650))
+            except Exception as be:
+                logger.warning(f"Failed to upload avatar to Firebase Storage: {be}")
+
+        # 2. Local fallback if storage not available or failed
+        if not public_url:
+            local_dir = os.path.join(BASE_DIR, 'static', 'uploads', 'avatars')
+            os.makedirs(local_dir, exist_ok=True)
+            local_filename = f"{user_id}_{int(datetime.utcnow().timestamp())}{ext}"
+            local_path = os.path.join(local_dir, local_filename)
+            file.seek(0)
+            file.save(local_path)
+            public_url = f"/static/uploads/avatars/{local_filename}"
+
+        # Update profile with new photo
+        if db:
+            try:
+                db.collection('users').document(user_id).set({
+                    'picture': public_url,
+                    'updatedAt': firestore.SERVER_TIMESTAMP
+                }, merge=True)
+            except Exception as fe:
+                logger.warning(f"Error updating picture in Firestore: {fe}")
+
+        if firebase_initialized:
+            try:
+                firebase_auth.update_user(user_id, photo_url=public_url)
+            except Exception as fae:
+                logger.warning(f"Error updating picture in Firebase Auth: {fae}")
+
+        try:
+            conn = get_db_connection()
+            conn.execute('UPDATE users SET picture = ? WHERE id = ?', (public_url, user_id))
+            conn.commit()
+            conn.close()
+        except Exception as se:
+            logger.warning(f"Error updating picture in SQLite: {se}")
+
+        session['user_picture'] = public_url
+
+        return jsonify({
+            'success': True,
+            'message': 'Profile photo updated successfully!',
+            'picture': public_url,
+            'user': {
+                'id': user_id,
+                'uid': user_id,
+                'name': session.get('user_name', 'User'),
+                'email': session.get('user_email', ''),
+                'picture': public_url
+            }
+        })
+    except Exception as e:
+        logger.exception("Error uploading profile photo")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/user/email', methods=['PUT'])
+@firebase_auth_required
+def api_update_user_email():
+    """Update current user's email address in Auth, Firestore, SQLite, and session"""
+    try:
+        user_id = request.user['uid']
+        data = request.json or {}
+        new_email = data.get('email', '').strip().lower()
+        current_password = data.get('current_password', '')
+
+        if not new_email or '@' not in new_email or '.' not in new_email:
+            return jsonify({'success': False, 'error': 'A valid email address is required.'}), 400
+
+        # Check if email is identical to current
+        if new_email == session.get('user_email', '').lower():
+            return jsonify({'success': False, 'error': 'New email is identical to your current email.'}), 400
+
+        # Check if email already used by someone else in SQLite
+        conn = get_db_connection()
+        existing = conn.execute('SELECT id, password_hash FROM users WHERE email = ? AND id != ?', (new_email, user_id)).fetchone()
+        if existing:
+            conn.close()
+            return jsonify({'success': False, 'error': 'This email address is already in use by another account.'}), 400
+
+        # If user has a local password hash, verify current_password
+        user_row = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+        if user_row and user_row['password_hash'] and user_row['password_hash'] != 'FIREBASE_AUTH':
+            if not current_password:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Current password is required to change your email.'}), 400
+            if not check_password_hash(user_row['password_hash'], current_password):
+                conn.close()
+                return jsonify({'success': False, 'error': 'Incorrect current password.'}), 403
+
+        # Update Firebase Auth if initialized
+        if firebase_initialized:
+            try:
+                firebase_auth.update_user(user_id, email=new_email)
+            except Exception as fae:
+                err_str = str(fae)
+                if 'EMAIL_EXISTS' in err_str or 'email already exists' in err_str.lower():
+                    conn.close()
+                    return jsonify({'success': False, 'error': 'This email address is already registered in Firebase.'}), 400
+                logger.warning(f"Firebase Auth update email notice: {fae}")
+
+        # Update Firestore
+        if db:
+            try:
+                db.collection('users').document(user_id).set({
+                    'email': new_email,
+                    'updatedAt': firestore.SERVER_TIMESTAMP
+                }, merge=True)
+            except Exception as fe:
+                logger.warning(f"Error updating email in Firestore: {fe}")
+
+        # Update SQLite
+        conn.execute('UPDATE users SET email = ? WHERE id = ?', (new_email, user_id))
+        conn.commit()
+        conn.close()
+
+        session['user_email'] = new_email
+
+        return jsonify({
+            'success': True,
+            'message': 'Email address updated successfully!',
+            'email': new_email
+        })
+    except Exception as e:
+        logger.exception("Error updating email")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/user/password', methods=['POST'])
+@firebase_auth_required
+def api_update_user_password():
+    """Update current user's password in Auth and SQLite"""
+    try:
+        user_id = request.user['uid']
+        data = request.json or {}
+        current_password = data.get('current_password', '')
+        new_password = data.get('new_password', '')
+
+        if not new_password or len(new_password) < 6:
+            return jsonify({'success': False, 'error': 'New password must be at least 6 characters long.'}), 400
+
+        conn = get_db_connection()
+        user_row = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+
+        # If user has a local password hash, verify current password
+        if user_row and user_row['password_hash'] and user_row['password_hash'] != 'FIREBASE_AUTH':
+            if not current_password:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Current password is required to change password.'}), 400
+            if not check_password_hash(user_row['password_hash'], current_password):
+                conn.close()
+                return jsonify({'success': False, 'error': 'Incorrect current password.'}), 403
+
+        # Update SQLite password hash
+        new_hash = generate_password_hash(new_password)
+        conn.execute('UPDATE users SET password_hash = ? WHERE id = ?', (new_hash, user_id))
+        conn.commit()
+        conn.close()
+
+        # Update Firebase Auth if initialized
+        if firebase_initialized:
+            try:
+                firebase_auth.update_user(user_id, password=new_password)
+            except Exception as fae:
+                logger.warning(f"Firebase Auth update password warning: {fae}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Password updated successfully!'
+        })
+    except Exception as e:
+        logger.exception("Error updating password")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/user/account', methods=['DELETE', 'POST'])
+@firebase_auth_required
+def api_delete_user_account():
+    """Permanently delete user account and cascade deletion across Auth, Firestore, SQLite, Storage, and Disk"""
+    try:
+        user_id = request.user['uid']
+        data = request.json or {}
+        confirmation = str(data.get('confirmation', '')).strip()
+
+        # Confirm user intent (either 'DELETE' or user's email)
+        user_email = session.get('user_email', '')
+        if confirmation.upper() != 'DELETE' and (not user_email or confirmation.lower() != user_email.lower()):
+            return jsonify({
+                'success': False,
+                'error': 'Please type DELETE or your email address to confirm permanent account deletion.'
+            }), 400
+
+        logger.info(f"Starting permanent account deletion for user: {user_id} ({user_email})")
+        gathered_project_ids = set()
+        gathered_build_ids = set()
+
+        # 1. Gather all projects and builds from Firestore
+        if db:
+            try:
+                # Query user projects
+                pdocs = db.collection('projects').where('userId', '==', user_id).stream()
+                for pdoc in pdocs:
+                    gathered_project_ids.add(pdoc.id)
+                    pdata = pdoc.to_dict() or {}
+                    pbuilds = pdata.get('builds') or {}
+                    for plat, binfo in pbuilds.items():
+                        if isinstance(binfo, dict) and binfo.get('buildId'):
+                            gathered_build_ids.add(binfo.get('buildId'))
+                    # Delete project doc
+                    try:
+                        pdoc.reference.delete()
+                    except Exception as pdel_err:
+                        logger.warning(f"Error deleting Firestore project {pdoc.id}: {pdel_err}")
+
+                # Query user builds
+                bdocs = db.collection('builds').where('userId', '==', user_id).stream()
+                for bdoc in bdocs:
+                    gathered_build_ids.add(bdoc.id)
+                    try:
+                        bdoc.reference.delete()
+                    except Exception as bdel_err:
+                        logger.warning(f"Error deleting Firestore build {bdoc.id}: {bdel_err}")
+
+                # Also delete any builds matching gathered project IDs
+                for pid in gathered_project_ids:
+                    try:
+                        pbdocs = db.collection('builds').where('projectId', '==', pid).stream()
+                        for pb in pbdocs:
+                            gathered_build_ids.add(pb.id)
+                            try:
+                                pb.reference.delete()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+                # Delete user doc from Firestore
+                try:
+                    db.collection('users').document(user_id).delete()
+                    logger.info(f"Deleted Firestore user doc: {user_id}")
+                except Exception as udel_err:
+                    logger.warning(f"Error deleting Firestore user doc {user_id}: {udel_err}")
+            except Exception as fe:
+                logger.warning(f"Firestore cascading delete error: {fe}")
+
+        # 2. Gather from and delete in SQLite
+        try:
+            conn = get_db_connection()
+            # Find projects
+            p_rows = conn.execute('SELECT id FROM projects WHERE user_id = ?', (user_id,)).fetchall()
+            for prow in p_rows:
+                gathered_project_ids.add(prow['id'])
+
+            # Find builds
+            b_rows = conn.execute('SELECT id FROM builds WHERE user_id = ?', (user_id,)).fetchall()
+            for brow in b_rows:
+                gathered_build_ids.add(brow['id'])
+
+            # Delete records from SQLite
+            conn.execute('DELETE FROM builds WHERE user_id = ?', (user_id,))
+            for pid in gathered_project_ids:
+                conn.execute('DELETE FROM builds WHERE project_id = ?', (pid,))
+            conn.execute('DELETE FROM projects WHERE user_id = ?', (user_id,))
+            conn.execute('DELETE FROM users WHERE id = ?', (user_id,))
+            conn.commit()
+            conn.close()
+            logger.info(f"Deleted SQLite records for user: {user_id}")
+        except Exception as se:
+            logger.warning(f"SQLite delete error: {se}")
+
+        # 3. Delete all files from Firebase Cloud Storage
+        try:
+            bucket = get_storage_bucket()
+            if bucket:
+                prefixes = [
+                    f"users/{user_id}/",
+                    f"builds/{user_id}/",
+                    f"projects/{user_id}/"
+                ]
+                for pid in gathered_project_ids:
+                    prefixes.append(f"projects/{pid}/")
+                    prefixes.append(f"builds/{pid}/")
+                for bid in gathered_build_ids:
+                    prefixes.append(f"builds/{bid}/")
+
+                for prefix in prefixes:
+                    try:
+                        for blob in bucket.list_blobs(prefix=prefix):
+                            try:
+                                blob.delete()
+                                logger.info(f"Deleted Storage blob: {blob.name}")
+                            except Exception as berr:
+                                logger.warning(f"Failed deleting blob {blob.name}: {berr}")
+                    except Exception as perr:
+                        logger.warning(f"Error listing blobs with prefix {prefix}: {perr}")
+        except Exception as ste:
+            logger.warning(f"Storage cleanup error: {ste}")
+
+        # 4. Delete local disk artifacts for gathered build IDs
+        for bid in gathered_build_ids:
+            try:
+                bdir = os.path.join(app.config.get('BUILD_FOLDER', ''), bid)
+                if os.path.exists(bdir):
+                    shutil.rmtree(bdir, ignore_errors=True)
+                    logger.info(f"Deleted local build folder: {bdir}")
+            except Exception as disk_err:
+                logger.warning(f"Error deleting local build folder {bid}: {disk_err}")
+
+        # Clean local avatar files if any
+        try:
+            avatar_dir = os.path.join(BASE_DIR, 'static', 'uploads', 'avatars')
+            if os.path.exists(avatar_dir):
+                for fname in os.listdir(avatar_dir):
+                    if fname.startswith(f"{user_id}_"):
+                        try:
+                            os.remove(os.path.join(avatar_dir, fname))
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        # 5. Delete user from Firebase Auth
+        if firebase_initialized:
+            try:
+                firebase_auth.delete_user(user_id)
+                logger.info(f"Deleted Firebase Auth user: {user_id}")
+            except Exception as fae:
+                logger.warning(f"Firebase Auth delete_user warning: {fae}")
+
+        # 6. Clear in-memory state and session
+        for bid in gathered_build_ids:
+            build_progress.pop(bid, None)
+
+        session.clear()
+
+        return jsonify({
+            'success': True,
+            'message': 'Account and all associated records in Authentication, Database, and Storage were permanently deleted.',
+            'redirect': '/'
+        })
+    except Exception as e:
+        logger.exception("Error deleting account")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/firebase-config', methods=['GET'])

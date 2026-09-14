@@ -342,6 +342,119 @@
             }
             return () => {};
         }
+
+        /**
+         * Update user profile name and/or picture
+         */
+        async updateProfile(updates) {
+            const res = await fetch('/api/user/profile', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Failed to update profile.');
+            }
+            if (this.auth && this.auth.currentUser) {
+                try {
+                    const fbUpdates = {};
+                    if (updates.name) fbUpdates.displayName = updates.name;
+                    if (updates.picture) fbUpdates.photoURL = updates.picture;
+                    await this.auth.currentUser.updateProfile(fbUpdates);
+                } catch (e) {
+                    console.debug('[Firebase] Client profile update warning:', e);
+                }
+            }
+            return data;
+        }
+
+        /**
+         * Upload user profile photo
+         */
+        async uploadProfilePhoto(file) {
+            const formData = new FormData();
+            formData.append('photo', file);
+
+            const res = await fetch('/api/user/photo', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Failed to upload profile photo.');
+            }
+            if (this.auth && this.auth.currentUser && data.picture) {
+                try {
+                    await this.auth.currentUser.updateProfile({ photoURL: data.picture });
+                } catch (e) {
+                    console.debug('[Firebase] Client photoURL update warning:', e);
+                }
+            }
+            return data;
+        }
+
+        /**
+         * Update user email address
+         */
+        async updateEmail(newEmail, currentPassword) {
+            const res = await fetch('/api/user/email', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: newEmail, current_password: currentPassword })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Failed to update email address.');
+            }
+            if (this.auth && this.auth.currentUser) {
+                try {
+                    await this.auth.currentUser.getIdToken(true);
+                } catch (e) {
+                    console.debug('[Firebase] Token refresh notice:', e);
+                }
+            }
+            return data;
+        }
+
+        /**
+         * Update user password
+         */
+        async updatePassword(currentPassword, newPassword) {
+            const res = await fetch('/api/user/password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Failed to update password.');
+            }
+            return data;
+        }
+
+        /**
+         * Permanently delete user account across Auth, Database, and Storage
+         */
+        async deleteAccount(confirmation) {
+            const res = await fetch('/api/user/account', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirmation })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Failed to delete account.');
+            }
+            if (this.auth && this.auth.currentUser) {
+                try {
+                    await this.auth.currentUser.delete();
+                } catch (e) {
+                    console.debug('[Firebase] Client delete user notice:', e);
+                }
+            }
+            return data;
+        }
     }
 
     // Export singleton instance to window
