@@ -47,6 +47,22 @@ service firebase.storage {
       allow delete: if isSignedIn() && isOwner(userId);
     }
 
+    // Splash screen images
+    // Path: /projects/{userId}/splash/{filename}
+    match /projects/{userId}/splash/{filename} {
+      allow read: if true;
+      allow write: if isSignedIn() && isOwner(userId) && isValidImage();
+      allow delete: if isSignedIn() && isOwner(userId);
+    }
+
+    // Error screen images
+    // Path: /projects/{userId}/error/{filename}
+    match /projects/{userId}/error/{filename} {
+      allow read: if true;
+      allow write: if isSignedIn() && isOwner(userId) && isValidImage();
+      allow delete: if isSignedIn() && isOwner(userId);
+    }
+
     // Project assets folder (splash screen, error screen images)
     // Path: /projects/{userId}/assets/{filename}
     match /projects/{userId}/assets/{filename} {

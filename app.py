@@ -572,11 +572,13 @@ def init_sqlite_db():
                 updated_at TEXT NOT NULL
             )
         ''')
-        # Ensure builds_json column exists if projects table was previously created without it
+        # Ensure builds_json and error_url columns exist if projects table was previously created without them
         try:
             cols = [col[1] for col in cursor.execute('PRAGMA table_info(projects)').fetchall()]
             if 'builds_json' not in cols:
                 cursor.execute('ALTER TABLE projects ADD COLUMN builds_json TEXT')
+            if 'error_url' not in cols:
+                cursor.execute('ALTER TABLE projects ADD COLUMN error_url TEXT')
         except Exception as col_err:
             logger.debug(f"Column check notice: {col_err}")
 
@@ -1778,7 +1780,10 @@ def run_build(build_id, config):
             f'static const int SPLASH_DURATION_SECONDS = {splash_duration};',
             content
         )
-        has_custom_splash = bool(config.get("splash_image_path") and os.path.exists(config.get("splash_image_path", "")))
+        has_custom_splash = bool(
+            (config.get("splash_image_path") and os.path.exists(config.get("splash_image_path", ""))) or
+            config.get("splash_image_url") or config.get("splashUrl") or config.get("splashImageUrl")
+        )
         content = re.sub(
             r'static const bool HAS_CUSTOM_SPLASH_IMAGE = \w+;',
             f'static const bool HAS_CUSTOM_SPLASH_IMAGE = {bool_to_dart(has_custom_splash)};',
@@ -1797,10 +1802,10 @@ def run_build(build_id, config):
             f"static const String ERROR_TITLE = '{error_title_str}';",
             content
         )
-        error_message_str = str(config.get("error_message", "Please check your connection and try again")).replace("'", "\\'")
+        error_msg_str = str(config.get("error_message", "Please check your connection and try again")).replace("'", "\\'")
         content = re.sub(
             r'static const String ERROR_MESSAGE = [^;]+;',
-            f"static const String ERROR_MESSAGE = '{error_message_str}';",
+            f"static const String ERROR_MESSAGE = '{error_msg_str}';",
             content
         )
         error_button_str = str(config.get("error_button_text", "Retry")).replace("'", "\\'")
@@ -1821,7 +1826,10 @@ def run_build(build_id, config):
             f"static const String ERROR_TEXT_COLOR = '{error_text_color}';",
             content
         )
-        has_custom_error = bool(config.get("error_image_path") and os.path.exists(config.get("error_image_path", "")))
+        has_custom_error = bool(
+            (config.get("error_image_path") and os.path.exists(config.get("error_image_path", ""))) or
+            config.get("error_image_url") or config.get("errorUrl") or config.get("errorImageUrl")
+        )
         content = re.sub(
             r'static const bool HAS_CUSTOM_ERROR_IMAGE = \w+;',
             f'static const bool HAS_CUSTOM_ERROR_IMAGE = {bool_to_dart(has_custom_error)};',
@@ -1876,6 +1884,18 @@ def run_build(build_id, config):
 
         # Setup app icon if provided
         icon_path = config.get('icon_path')
+        if (not icon_path or not os.path.exists(icon_path)) and (config.get('icon_url') or config.get('iconUrl')):
+            remote_icon_url = config.get('icon_url') or config.get('iconUrl')
+            try:
+                r_icon = requests.get(remote_icon_url, timeout=10)
+                if r_icon.status_code == 200:
+                    local_icon = os.path.join(app.config['UPLOAD_FOLDER'], f"icon_{build_id}.png")
+                    with open(local_icon, 'wb') as f:
+                        f.write(r_icon.content)
+                    icon_path = local_icon
+            except Exception as dl_icon_err:
+                logger.warning(f"Could not download remote icon for build {build_id}: {dl_icon_err}")
+
         if icon_path and os.path.exists(icon_path):
             check_build_cancelled(build_id)
             set_build_progress(build_id, status='icons', progress=18, message='Generating app icons...')
@@ -1887,10 +1907,28 @@ def run_build(build_id, config):
         splash_image_path = config.get('splash_image_path')
         if splash_image_path and os.path.exists(splash_image_path):
             shutil.copy(splash_image_path, os.path.join(assets_dir, 'splash.png'))
+        elif config.get('splash_image_url') or config.get('splashUrl') or config.get('splashImageUrl'):
+            splash_remote = config.get('splash_image_url') or config.get('splashUrl') or config.get('splashImageUrl')
+            try:
+                r_splash = requests.get(splash_remote, timeout=10)
+                if r_splash.status_code == 200:
+                    with open(os.path.join(assets_dir, 'splash.png'), 'wb') as f:
+                        f.write(r_splash.content)
+            except Exception as dl_splash_err:
+                logger.warning(f"Could not download remote splash image for build {build_id}: {dl_splash_err}")
 
         error_image_path = config.get('error_image_path')
         if error_image_path and os.path.exists(error_image_path):
             shutil.copy(error_image_path, os.path.join(assets_dir, 'error.png'))
+        elif config.get('error_image_url') or config.get('errorUrl') or config.get('errorImageUrl'):
+            error_remote = config.get('error_image_url') or config.get('errorUrl') or config.get('errorImageUrl')
+            try:
+                r_err = requests.get(error_remote, timeout=10)
+                if r_err.status_code == 200:
+                    with open(os.path.join(assets_dir, 'error.png'), 'wb') as f:
+                        f.write(r_err.content)
+            except Exception as dl_err_img:
+                logger.warning(f"Could not download remote error image for build {build_id}: {dl_err_img}")
 
         # Update Android config (for keystore)
         if 'android' in config['platforms'] or 'android_aab' in config['platforms']:
@@ -4219,18 +4257,58 @@ def save_project():
         if icon_path and os.path.exists(icon_path):
             ext = os.path.splitext(icon_path)[1]
             shutil.copy(icon_path, os.path.join(assets_dir, f'icon{ext}'))
+        elif data.get('icon_url'):
+            try:
+                i_url = data.get('icon_url')
+                i_resp = requests.get(i_url, timeout=15)
+                if i_resp.status_code == 200:
+                    ext = '.png'
+                    if 'image/jpeg' in i_resp.headers.get('Content-Type', '') or '.jpg' in i_url or '.jpeg' in i_url:
+                        ext = '.jpg'
+                    with open(os.path.join(assets_dir, f'icon{ext}'), 'wb') as f:
+                        f.write(i_resp.content)
+            except Exception as e:
+                logger.warning(f"Could not download remote icon for save_project: {e}")
 
         # Copy splash image if provided
         splash_image_path = data.get('splash_image_path')
         if splash_image_path and os.path.exists(splash_image_path):
             ext = os.path.splitext(splash_image_path)[1]
             shutil.copy(splash_image_path, os.path.join(assets_dir, f'splash_image{ext}'))
+        elif data.get('splash_image_url') or data.get('splash_url'):
+            try:
+                s_url = data.get('splash_image_url') or data.get('splash_url')
+                s_resp = requests.get(s_url, timeout=15)
+                if s_resp.status_code == 200:
+                    ext = '.png'
+                    if 'image/jpeg' in s_resp.headers.get('Content-Type', '') or '.jpg' in s_url or '.jpeg' in s_url:
+                        ext = '.jpg'
+                    elif 'image/webp' in s_resp.headers.get('Content-Type', '') or '.webp' in s_url:
+                        ext = '.webp'
+                    with open(os.path.join(assets_dir, f'splash_image{ext}'), 'wb') as f:
+                        f.write(s_resp.content)
+            except Exception as e:
+                logger.warning(f"Could not download remote splash image for save_project: {e}")
 
         # Copy error image if provided
         error_image_path = data.get('error_image_path')
         if error_image_path and os.path.exists(error_image_path):
             ext = os.path.splitext(error_image_path)[1]
             shutil.copy(error_image_path, os.path.join(assets_dir, f'error_image{ext}'))
+        elif data.get('error_image_url') or data.get('error_url'):
+            try:
+                e_url = data.get('error_image_url') or data.get('error_url')
+                e_resp = requests.get(e_url, timeout=15)
+                if e_resp.status_code == 200:
+                    ext = '.png'
+                    if 'image/jpeg' in e_resp.headers.get('Content-Type', '') or '.jpg' in e_url or '.jpeg' in e_url:
+                        ext = '.jpg'
+                    elif 'image/webp' in e_resp.headers.get('Content-Type', '') or '.webp' in e_url:
+                        ext = '.webp'
+                    with open(os.path.join(assets_dir, f'error_image{ext}'), 'wb') as f:
+                        f.write(e_resp.content)
+            except Exception as e:
+                logger.warning(f"Could not download remote error image for save_project: {e}")
 
         # Copy keystore if provided
         keystore_path = data.get('keystore_path')
@@ -4418,22 +4496,28 @@ def open_project():
 
         # Copy splash image to uploads if exists
         for ext in ['.png', '.jpg', '.jpeg', '.webp']:
-            splash_img_path = os.path.join(assets_dir, f'splash_image{ext}')
-            if os.path.exists(splash_img_path):
-                new_splash_name = f"splash_{uuid.uuid4()}{ext}"
-                new_splash_path = os.path.join(app.config['UPLOAD_FOLDER'], new_splash_name)
-                shutil.copy(splash_img_path, new_splash_path)
-                response_data['splash_image_path'] = new_splash_path
+            for s_name in [f'splash_image{ext}', f'splash{ext}']:
+                splash_img_path = os.path.join(assets_dir, s_name)
+                if os.path.exists(splash_img_path):
+                    new_splash_name = f"splash_{uuid.uuid4()}{ext}"
+                    new_splash_path = os.path.join(app.config['UPLOAD_FOLDER'], new_splash_name)
+                    shutil.copy(splash_img_path, new_splash_path)
+                    response_data['splash_image_path'] = new_splash_path
+                    break
+            if 'splash_image_path' in response_data:
                 break
 
         # Copy error image to uploads if exists
         for ext in ['.png', '.jpg', '.jpeg', '.webp']:
-            error_img_path = os.path.join(assets_dir, f'error_image{ext}')
-            if os.path.exists(error_img_path):
-                new_error_name = f"error_{uuid.uuid4()}{ext}"
-                new_error_path = os.path.join(app.config['UPLOAD_FOLDER'], new_error_name)
-                shutil.copy(error_img_path, new_error_path)
-                response_data['error_image_path'] = new_error_path
+            for e_name in [f'error_image{ext}', f'error{ext}']:
+                error_img_path = os.path.join(assets_dir, e_name)
+                if os.path.exists(error_img_path):
+                    new_error_name = f"error_{uuid.uuid4()}{ext}"
+                    new_error_path = os.path.join(app.config['UPLOAD_FOLDER'], new_error_name)
+                    shutil.copy(error_img_path, new_error_path)
+                    response_data['error_image_path'] = new_error_path
+                    break
+            if 'error_image_path' in response_data:
                 break
 
         return jsonify({'success': True, 'project': response_data})
@@ -4612,6 +4696,8 @@ def get_projects():
                 except Exception:
                     builds_dict = {}
 
+                p_settings = json.loads(r['settings_json']) if r['settings_json'] else {}
+                p_err_url = r['error_url'] if 'error_url' in r.keys() and r['error_url'] else p_settings.get('errorImageUrl', '')
                 projects.append({
                     'id': r['id'],
                     'userId': r['user_id'],
@@ -4623,7 +4709,8 @@ def get_projects():
                     'packageName': r['package_name'],
                     'iconUrl': r['icon_url'],
                     'splashUrl': r['splash_url'],
-                    'settings': json.loads(r['settings_json']) if r['settings_json'] else {},
+                    'errorUrl': p_err_url,
+                    'settings': p_settings,
                     'keystoreData': json.loads(r['keystore_json']) if r['keystore_json'] else {},
                     'appleData': json.loads(r['apple_json']) if r['apple_json'] else {},
                     'builds': builds_dict,
@@ -4658,6 +4745,7 @@ def create_project():
         package_name = data.get('packageName', '')
         icon_url = data.get('iconUrl', '')
         splash_url = data.get('splashUrl', '')
+        error_url = data.get('errorUrl', '')
         builds_data = data.get('builds', {})
         settings_data = data.get('settings', {
             'allowZoom': True,
@@ -4695,11 +4783,15 @@ def create_project():
                 'packageName': package_name,
                 'iconUrl': icon_url,
                 'splashUrl': splash_url,
+                'errorUrl': error_url,
                 'settings': settings_data,
                 'builds': builds_data,
                 'createdAt': firestore.SERVER_TIMESTAMP,
                 'updatedAt': firestore.SERVER_TIMESTAMP
             }
+            for sp in ['iconStoragePath', 'splashStoragePath', 'errorStoragePath', 'keystoreStoragePath', 'appleCertStoragePath', 'appleProfileStoragePath']:
+                if sp in data:
+                    project_data[sp] = data[sp]
             if 'keystoreData' in data:
                 project_data['keystoreData'] = data['keystoreData']
             if 'appleData' in data:
@@ -4712,10 +4804,16 @@ def create_project():
         # Sync to SQLite for backup / offline support
         try:
             conn = get_db_connection()
-            conn.execute('''
-                INSERT OR REPLACE INTO projects (id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, builds_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (project_id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, builds_json, now, now))
+            try:
+                conn.execute('''
+                    INSERT OR REPLACE INTO projects (id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, error_url, settings_json, keystore_json, apple_json, builds_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (project_id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, error_url, settings_json, keystore_json, apple_json, builds_json, now, now))
+            except Exception:
+                conn.execute('''
+                    INSERT OR REPLACE INTO projects (id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, builds_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (project_id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, builds_json, now, now))
             conn.commit()
             conn.close()
         except Exception as se:
@@ -4771,6 +4869,8 @@ def get_project(project_id):
             except Exception:
                 builds_dict = {}
 
+            p_settings = json.loads(r['settings_json']) if r['settings_json'] else {}
+            p_err_url = r['error_url'] if 'error_url' in r.keys() and r['error_url'] else p_settings.get('errorImageUrl', '')
             project = {
                 'id': r['id'],
                 'userId': r['user_id'],
@@ -4782,9 +4882,11 @@ def get_project(project_id):
                 'packageName': r['package_name'],
                 'iconUrl': r['icon_url'],
                 'splashUrl': r['splash_url'],
-                'settings': json.loads(r['settings_json']) if r['settings_json'] else {},
+                'errorUrl': p_err_url,
+                'settings': p_settings,
                 'keystoreData': json.loads(r['keystore_json']) if r['keystore_json'] else {},
                 'appleData': json.loads(r['apple_json']) if r['apple_json'] else {},
+                'publishingData': p_settings.get('publishingData', {}),
                 'builds': builds_dict,
                 'createdAt': r['created_at'],
                 'updatedAt': r['updated_at']
@@ -4806,8 +4908,8 @@ def update_project(project_id):
             return jsonify({'error': 'No project data provided'}), 400
 
         allowed_fields = ['name', 'webUrl', 'description', 'appVersion', 'buildNumber',
-                          'packageName', 'iconUrl', 'splashUrl', 'settings', 'keystoreData', 'appleData', 'publishingData',
-                          'builds', 'iconStoragePath', 'keystoreStoragePath', 'appleCertStoragePath', 'appleProfileStoragePath']
+                          'packageName', 'iconUrl', 'splashUrl', 'errorUrl', 'settings', 'keystoreData', 'appleData', 'publishingData',
+                          'builds', 'iconStoragePath', 'splashStoragePath', 'errorStoragePath', 'keystoreStoragePath', 'appleCertStoragePath', 'appleProfileStoragePath']
 
         now = datetime.utcnow().isoformat()
 
@@ -4852,6 +4954,7 @@ def update_project(project_id):
                 package_name = data.get('packageName', r['package_name'])
                 icon_url = data.get('iconUrl', r['icon_url'])
                 splash_url = data.get('splashUrl', r['splash_url'])
+                error_url = data.get('errorUrl', r['error_url'] if 'error_url' in r.keys() else '')
                 settings_json = json.dumps(data['settings']) if 'settings' in data else r['settings_json']
                 keystore_json = json.dumps(data['keystoreData']) if 'keystoreData' in data else r['keystore_json']
                 apple_json = json.dumps(data['appleData']) if 'appleData' in data else r['apple_json']
@@ -4868,12 +4971,20 @@ def update_project(project_id):
                             existing_sqlite_builds[plat] = b_info
                 builds_json = json.dumps(existing_sqlite_builds)
 
-                conn.execute('''
-                    UPDATE projects SET name=?, web_url=?, description=?, app_version=?, build_number=?,
-                                       package_name=?, icon_url=?, splash_url=?, settings_json=?, keystore_json=?,
-                                       apple_json=?, builds_json=?, updated_at=?
-                    WHERE id=?
-                ''', (name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, builds_json, now, project_id))
+                try:
+                    conn.execute('''
+                        UPDATE projects SET name=?, web_url=?, description=?, app_version=?, build_number=?,
+                                           package_name=?, icon_url=?, splash_url=?, error_url=?, settings_json=?, keystore_json=?,
+                                           apple_json=?, builds_json=?, updated_at=?
+                        WHERE id=?
+                    ''', (name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, error_url, settings_json, keystore_json, apple_json, builds_json, now, project_id))
+                except Exception:
+                    conn.execute('''
+                        UPDATE projects SET name=?, web_url=?, description=?, app_version=?, build_number=?,
+                                           package_name=?, icon_url=?, splash_url=?, settings_json=?, keystore_json=?,
+                                           apple_json=?, builds_json=?, updated_at=?
+                        WHERE id=?
+                    ''', (name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, builds_json, now, project_id))
                 conn.commit()
             conn.close()
         except Exception as se:
@@ -5120,6 +5231,34 @@ def upload_project_assets(project_id):
                 update_data['appleProfileStoragePath'] = profile_path
                 response_data['appleProfileStoragePath'] = profile_path
 
+        # Handle splash screen image upload
+        splash_file = request.files.get('splash') or request.files.get('splash_image')
+        if splash_file and splash_file.filename:
+            ext = os.path.splitext(splash_file.filename)[1].lower()
+            if ext in ['.png', '.jpg', '.jpeg', '.webp']:
+                splash_path = f"projects/{user_id}/{project_id}/splash{ext}"
+                blob = bucket.blob(splash_path)
+                blob.upload_from_file(splash_file, content_type=splash_file.content_type)
+                blob.make_public()
+                update_data['splashStoragePath'] = splash_path
+                update_data['splashUrl'] = blob.public_url
+                response_data['splashUrl'] = blob.public_url
+                response_data['splashStoragePath'] = splash_path
+
+        # Handle error screen image upload
+        error_file = request.files.get('error') or request.files.get('error_image')
+        if error_file and error_file.filename:
+            ext = os.path.splitext(error_file.filename)[1].lower()
+            if ext in ['.png', '.jpg', '.jpeg', '.webp']:
+                error_path = f"projects/{user_id}/{project_id}/error{ext}"
+                blob = bucket.blob(error_path)
+                blob.upload_from_file(error_file, content_type=error_file.content_type)
+                blob.make_public()
+                update_data['errorStoragePath'] = error_path
+                update_data['errorUrl'] = blob.public_url
+                response_data['errorUrl'] = blob.public_url
+                response_data['errorStoragePath'] = error_path
+
         # Update project with new storage paths
         if len(update_data) > 1:  # More than just updatedAt
             doc_ref.update(update_data)
@@ -5132,28 +5271,54 @@ def upload_project_assets(project_id):
 @app.route('/api/projects/<project_id>/download', methods=['GET'])
 @firebase_auth_required
 def download_project_swab(project_id):
-    """Download project as .swab file with assets from Firebase Storage"""
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
+    """Download project as .iewebnative / .swab file with all assets and settings"""
     try:
         user_id = request.user['uid']
+        project = None
 
-        doc_ref = db.collection('projects').document(project_id)
-        doc = doc_ref.get()
+        if db:
+            doc_ref = db.collection('projects').document(project_id)
+            doc = doc_ref.get()
+            if doc.exists:
+                project = doc.to_dict()
+                if project.get('userId') != user_id:
+                    return jsonify({'error': 'Access denied'}), 403
+                project['id'] = doc.id
 
-        if not doc.exists:
-            return jsonify({'error': 'Project not found'}), 404
+        if not project:
+            conn = get_db_connection()
+            r = conn.execute('SELECT * FROM projects WHERE id = ?', (project_id,)).fetchone()
+            conn.close()
+            if not r:
+                return jsonify({'error': 'Project not found'}), 404
+            if r['user_id'] != user_id:
+                return jsonify({'error': 'Access denied'}), 403
+            p_settings = json.loads(r['settings_json']) if r['settings_json'] else {}
+            p_err_url = r['error_url'] if 'error_url' in r.keys() and r['error_url'] else p_settings.get('errorImageUrl', '')
+            project = {
+                'id': r['id'],
+                'userId': r['user_id'],
+                'name': r['name'],
+                'webUrl': r['web_url'],
+                'description': r['description'],
+                'appVersion': r['app_version'],
+                'buildNumber': r['build_number'],
+                'packageName': r['package_name'],
+                'iconUrl': r['icon_url'],
+                'splashUrl': r['splash_url'],
+                'errorUrl': p_err_url,
+                'settings': p_settings,
+                'keystoreData': json.loads(r['keystore_json']) if r['keystore_json'] else {},
+                'appleData': json.loads(r['apple_json']) if r['apple_json'] else {},
+                'publishingData': p_settings.get('publishingData', {})
+            }
 
-        project = doc.to_dict()
-        if project.get('userId') != user_id:
-            return jsonify({'error': 'Access denied'}), 403
-
-        # Create .swab file from project data
         temp_dir = tempfile.mkdtemp()
 
         try:
-            # Prepare project data for .swab file
+            settings = project.get('settings', {})
+            pub_data = project.get('publishingData', {})
+
             project_data = {
                 'app_name': project.get('name', 'Untitled'),
                 'app_description': project.get('description', ''),
@@ -5161,11 +5326,7 @@ def download_project_swab(project_id):
                 'build_number': project.get('buildNumber', 1),
                 'package_name': project.get('packageName', ''),
                 'web_url': project.get('webUrl', ''),
-            }
-
-            # Add settings
-            settings = project.get('settings', {})
-            project_data.update({
+                # WebView settings
                 'allow_zoom': settings.get('allowZoom', False),
                 'enable_javascript': settings.get('enableJavascript', False),
                 'enable_dom_storage': settings.get('enableDomStorage', False),
@@ -5175,16 +5336,47 @@ def download_project_swab(project_id):
                 'enable_file_access': settings.get('enableFileAccess', False),
                 'enable_cache': settings.get('enableCache', False),
                 'enable_media_autoplay': settings.get('enableMediaAutoplay', False),
-            })
+                'enable_camera': settings.get('enableCamera', False),
+                'enable_microphone': settings.get('enableMicrophone', False),
+                'enable_ssl_pinning': settings.get('enableSslPinning', False),
+                'ssl_pins': settings.get('sslPins', ''),
+                'enable_biometrics': settings.get('enableBiometrics', False),
+                'enable_app_lock': settings.get('enableAppLock', False),
+                'app_lock_pin': settings.get('appLockPin', ''),
+                'enable_secure_storage': settings.get('enableSecureStorage', False),
+                # Store publishing info
+                'enable_google_play_publish': settings.get('enableGooglePlayPublish', pub_data.get('enableGooglePlayPublish', False)),
+                'play_track': settings.get('playTrack', pub_data.get('playTrack', 'internal')),
+                'play_status': settings.get('playStatus', pub_data.get('playStatus', 'draft')),
+                'enable_app_store_publish': settings.get('enableAppStorePublish', pub_data.get('enableAppStorePublish', False)),
+                'app_store_key_id': settings.get('appStoreKeyId', pub_data.get('appStoreKeyId', '')),
+                'app_store_issuer_id': settings.get('appStoreIssuerId', pub_data.get('appStoreIssuerId', '')),
+                # Splash screen settings
+                'enable_splash_screen': settings.get('enableSplashScreen', False),
+                'splash_title': settings.get('splashTitle', ''),
+                'splash_subtitle': settings.get('splashSubtitle', ''),
+                'splash_bg_color': settings.get('splashBgColor', '#FFFFFF'),
+                'splash_text_color': settings.get('splashTextColor', '#1E293B'),
+                'splash_duration': settings.get('splashDuration', 2),
+                # Error / offline page settings
+                'enable_error_page': settings.get('enableErrorPage', False),
+                'error_title': settings.get('errorTitle', 'No Internet Connection'),
+                'error_message': settings.get('errorMessage', 'Please check your connection and try again'),
+                'error_button_text': settings.get('errorButtonText', 'Retry'),
+                'error_bg_color': settings.get('errorBgColor', '#FFFFFF'),
+                'error_text_color': settings.get('errorTextColor', '#334155'),
+                # Full settings dictionary
+                'settings': settings
+            }
 
-            # Add keystore credentials if available
+            # Keystore credentials
             keystore_data = project.get('keystoreData', {})
             if keystore_data:
                 project_data['keystore_password'] = keystore_data.get('keystorePassword', '')
                 project_data['key_alias'] = keystore_data.get('keyAlias', '')
                 project_data['key_password'] = keystore_data.get('keyPassword', '')
 
-            # Add Apple signing credentials if available
+            # Apple signing credentials
             apple_data = project.get('appleData', {})
             if apple_data:
                 project_data['apple_certificate_password'] = apple_data.get('certificatePassword', '')
@@ -5199,50 +5391,113 @@ def download_project_swab(project_id):
             assets_dir = os.path.join(temp_dir, 'assets')
             os.makedirs(assets_dir, exist_ok=True)
 
-            # Download assets from Firebase Storage if available
             bucket = get_storage_bucket()
-            if bucket:
-                # Download icon
-                icon_storage_path = project.get('iconStoragePath')
-                if icon_storage_path:
-                    try:
-                        ext = os.path.splitext(icon_storage_path)[1]
-                        blob = bucket.blob(icon_storage_path)
-                        icon_local_path = os.path.join(assets_dir, f'icon{ext}')
-                        blob.download_to_filename(icon_local_path)
-                    except Exception as e:
-                        print(f"Failed to download icon: {e}")
 
-                # Download keystore
-                keystore_storage_path = project.get('keystoreStoragePath')
-                if keystore_storage_path:
-                    try:
-                        blob = bucket.blob(keystore_storage_path)
-                        keystore_local_path = os.path.join(assets_dir, 'keystore.jks')
-                        blob.download_to_filename(keystore_local_path)
-                    except Exception as e:
-                        print(f"Failed to download keystore: {e}")
+            # 1. Download icon
+            icon_downloaded = False
+            icon_storage_path = project.get('iconStoragePath')
+            if bucket and icon_storage_path:
+                try:
+                    ext = os.path.splitext(icon_storage_path)[1]
+                    blob = bucket.blob(icon_storage_path)
+                    icon_local_path = os.path.join(assets_dir, f'icon{ext}')
+                    blob.download_to_filename(icon_local_path)
+                    icon_downloaded = True
+                except Exception as e:
+                    logger.warning(f"Failed to download icon from storage: {e}")
+            if not icon_downloaded and project.get('iconUrl'):
+                try:
+                    i_resp = requests.get(project['iconUrl'], timeout=15)
+                    if i_resp.status_code == 200:
+                        ext = '.png'
+                        if 'image/jpeg' in i_resp.headers.get('Content-Type', '') or '.jpg' in project['iconUrl'] or '.jpeg' in project['iconUrl']:
+                            ext = '.jpg'
+                        with open(os.path.join(assets_dir, f'icon{ext}'), 'wb') as f:
+                            f.write(i_resp.content)
+                except Exception as e:
+                    logger.warning(f"Failed to download icon from URL: {e}")
 
-                # Download Apple certificate
-                apple_cert_storage_path = project.get('appleCertStoragePath')
-                if apple_cert_storage_path:
-                    try:
-                        ext = os.path.splitext(apple_cert_storage_path)[1]
-                        blob = bucket.blob(apple_cert_storage_path)
-                        cert_local_path = os.path.join(assets_dir, f'certificate{ext}')
-                        blob.download_to_filename(cert_local_path)
-                    except Exception as e:
-                        print(f"Failed to download Apple certificate: {e}")
+            # 2. Download splash screen image
+            splash_downloaded = False
+            splash_storage_path = project.get('splashStoragePath')
+            if bucket and splash_storage_path:
+                try:
+                    ext = os.path.splitext(splash_storage_path)[1]
+                    blob = bucket.blob(splash_storage_path)
+                    splash_local_path = os.path.join(assets_dir, f'splash_image{ext}')
+                    blob.download_to_filename(splash_local_path)
+                    splash_downloaded = True
+                except Exception as e:
+                    logger.warning(f"Failed to download splash image from storage: {e}")
+            splash_url = project.get('splashUrl') or settings.get('splashImageUrl') or project.get('splash_url')
+            if not splash_downloaded and splash_url:
+                try:
+                    s_resp = requests.get(splash_url, timeout=15)
+                    if s_resp.status_code == 200:
+                        ext = '.png'
+                        if 'image/jpeg' in s_resp.headers.get('Content-Type', '') or '.jpg' in splash_url or '.jpeg' in splash_url:
+                            ext = '.jpg'
+                        elif 'image/webp' in s_resp.headers.get('Content-Type', '') or '.webp' in splash_url:
+                            ext = '.webp'
+                        with open(os.path.join(assets_dir, f'splash_image{ext}'), 'wb') as f:
+                            f.write(s_resp.content)
+                except Exception as e:
+                    logger.warning(f"Failed to download splash image from URL: {e}")
 
-                # Download Apple provisioning profile
-                apple_profile_storage_path = project.get('appleProfileStoragePath')
-                if apple_profile_storage_path:
-                    try:
-                        blob = bucket.blob(apple_profile_storage_path)
-                        profile_local_path = os.path.join(assets_dir, 'profile.mobileprovision')
-                        blob.download_to_filename(profile_local_path)
-                    except Exception as e:
-                        print(f"Failed to download provisioning profile: {e}")
+            # 3. Download error screen image
+            error_downloaded = False
+            error_storage_path = project.get('errorStoragePath')
+            if bucket and error_storage_path:
+                try:
+                    ext = os.path.splitext(error_storage_path)[1]
+                    blob = bucket.blob(error_storage_path)
+                    error_local_path = os.path.join(assets_dir, f'error_image{ext}')
+                    blob.download_to_filename(error_local_path)
+                    error_downloaded = True
+                except Exception as e:
+                    logger.warning(f"Failed to download error image from storage: {e}")
+            error_url = project.get('errorUrl') or settings.get('errorImageUrl') or project.get('error_url')
+            if not error_downloaded and error_url:
+                try:
+                    e_resp = requests.get(error_url, timeout=15)
+                    if e_resp.status_code == 200:
+                        ext = '.png'
+                        if 'image/jpeg' in e_resp.headers.get('Content-Type', '') or '.jpg' in error_url or '.jpeg' in error_url:
+                            ext = '.jpg'
+                        elif 'image/webp' in e_resp.headers.get('Content-Type', '') or '.webp' in error_url:
+                            ext = '.webp'
+                        with open(os.path.join(assets_dir, f'error_image{ext}'), 'wb') as f:
+                            f.write(e_resp.content)
+                except Exception as e:
+                    logger.warning(f"Failed to download error image from URL: {e}")
+
+            # 4. Download keystore
+            keystore_storage_path = project.get('keystoreStoragePath')
+            if bucket and keystore_storage_path:
+                try:
+                    blob = bucket.blob(keystore_storage_path)
+                    blob.download_to_filename(os.path.join(assets_dir, 'keystore.jks'))
+                except Exception as e:
+                    logger.warning(f"Failed to download keystore: {e}")
+
+            # 5. Download Apple certificate
+            apple_cert_storage_path = project.get('appleCertStoragePath')
+            if bucket and apple_cert_storage_path:
+                try:
+                    ext = os.path.splitext(apple_cert_storage_path)[1]
+                    blob = bucket.blob(apple_cert_storage_path)
+                    blob.download_to_filename(os.path.join(assets_dir, f'certificate{ext}'))
+                except Exception as e:
+                    logger.warning(f"Failed to download Apple certificate: {e}")
+
+            # 6. Download Apple provisioning profile
+            apple_profile_storage_path = project.get('appleProfileStoragePath')
+            if bucket and apple_profile_storage_path:
+                try:
+                    blob = bucket.blob(apple_profile_storage_path)
+                    blob.download_to_filename(os.path.join(assets_dir, 'profile.mobileprovision'))
+                except Exception as e:
+                    logger.warning(f"Failed to download provisioning profile: {e}")
 
             # Create the zip file
             zip_path = os.path.join(temp_dir, 'project.zip')
@@ -5276,19 +5531,16 @@ def download_project_swab(project_id):
                 mimetype='application/octet-stream'
             )
         finally:
-            # Cleanup will happen after response is sent
             pass
 
     except Exception as e:
+        logger.exception("Failed to download project")
         return jsonify({'error': f'Failed to download project: {str(e)}'}), 500
 
 @app.route('/api/projects/import', methods=['POST'])
 @firebase_auth_required
 def import_project_swab():
-    """Import a .iewebnative or .swab file as a new project"""
-    if not db:
-        return jsonify({'error': 'Database not available'}), 503
-
+    """Import a .iewebnative or .swab file as a new project with all settings and assets"""
     if 'project' not in request.files:
         return jsonify({'error': 'No project file provided'}), 400
 
@@ -5333,32 +5585,67 @@ def import_project_swab():
         with open(project_json_path, 'r') as f:
             project_data = json.load(f)
 
-        # Create new project in Firestore
-        firestore_data = {
-            'userId': user_id,
-            'name': project_data.get('app_name', 'Imported Project'),
-            'webUrl': project_data.get('web_url', ''),
-            'description': project_data.get('app_description', ''),
-            'appVersion': project_data.get('app_version', '1.0.0'),
-            'buildNumber': project_data.get('build_number', 1),
-            'packageName': project_data.get('package_name', ''),
-            'iconUrl': '',
-            'settings': {
-                'allowZoom': project_data.get('allow_zoom', False),
-                'enableJavascript': project_data.get('enable_javascript', False),
-                'enableDomStorage': project_data.get('enable_dom_storage', False),
-                'enableGeolocation': project_data.get('enable_geolocation', False),
-                'enablePullRefresh': project_data.get('enable_pull_refresh', False),
-                'showNavigation': project_data.get('show_navigation', False),
-                'enableFileAccess': project_data.get('enable_file_access', False),
-                'enableCache': project_data.get('enable_cache', False),
-                'enableMediaAutoplay': project_data.get('enable_media_autoplay', False)
-            },
-            'createdAt': firestore.SERVER_TIMESTAMP,
-            'updatedAt': firestore.SERVER_TIMESTAMP
+        raw_settings = project_data.get('settings', {})
+        settings_data = {
+            'allowZoom': raw_settings.get('allowZoom', project_data.get('allow_zoom', False)),
+            'enableJavascript': raw_settings.get('enableJavascript', project_data.get('enable_javascript', False)),
+            'enableDomStorage': raw_settings.get('enableDomStorage', project_data.get('enable_dom_storage', False)),
+            'enableGeolocation': raw_settings.get('enableGeolocation', project_data.get('enable_geolocation', False)),
+            'enablePullRefresh': raw_settings.get('enablePullRefresh', project_data.get('enable_pull_refresh', False)),
+            'showNavigation': raw_settings.get('showNavigation', project_data.get('show_navigation', False)),
+            'enableFileAccess': raw_settings.get('enableFileAccess', project_data.get('enable_file_access', False)),
+            'enableCache': raw_settings.get('enableCache', project_data.get('enable_cache', False)),
+            'enableMediaAutoplay': raw_settings.get('enableMediaAutoplay', project_data.get('enable_media_autoplay', False)),
+            'enableCamera': raw_settings.get('enableCamera', project_data.get('enable_camera', False)),
+            'enableMicrophone': raw_settings.get('enableMicrophone', project_data.get('enable_microphone', False)),
+            'enableSslPinning': raw_settings.get('enableSslPinning', project_data.get('enable_ssl_pinning', False)),
+            'sslPins': raw_settings.get('sslPins', project_data.get('ssl_pins', '')),
+            'enableBiometrics': raw_settings.get('enableBiometrics', project_data.get('enable_biometrics', False)),
+            'enableAppLock': raw_settings.get('enableAppLock', project_data.get('enable_app_lock', False)),
+            'appLockPin': raw_settings.get('appLockPin', project_data.get('app_lock_pin', '')),
+            'enableSecureStorage': raw_settings.get('enableSecureStorage', project_data.get('enable_secure_storage', False)),
+            'enableGooglePlayPublish': raw_settings.get('enableGooglePlayPublish', project_data.get('enable_google_play_publish', False)),
+            'playTrack': raw_settings.get('playTrack', project_data.get('play_track', 'internal')),
+            'playStatus': raw_settings.get('playStatus', project_data.get('play_status', 'draft')),
+            'enableAppStorePublish': raw_settings.get('enableAppStorePublish', project_data.get('enable_app_store_publish', False)),
+            'appStoreKeyId': raw_settings.get('appStoreKeyId', project_data.get('app_store_key_id', '')),
+            'appStoreIssuerId': raw_settings.get('appStoreIssuerId', project_data.get('app_store_issuer_id', '')),
+            'enableSplashScreen': raw_settings.get('enableSplashScreen', project_data.get('enable_splash_screen', False)),
+            'splashTitle': raw_settings.get('splashTitle', project_data.get('splash_title', '')),
+            'splashSubtitle': raw_settings.get('splashSubtitle', project_data.get('splash_subtitle', '')),
+            'splashBgColor': raw_settings.get('splashBgColor', project_data.get('splash_bg_color', '#FFFFFF')),
+            'splashTextColor': raw_settings.get('splashTextColor', project_data.get('splash_text_color', '#1E293B')),
+            'splashDuration': raw_settings.get('splashDuration', project_data.get('splash_duration', 2)),
+            'enableErrorPage': raw_settings.get('enableErrorPage', project_data.get('enable_error_page', False)),
+            'errorTitle': raw_settings.get('errorTitle', project_data.get('error_title', 'No Internet Connection')),
+            'errorMessage': raw_settings.get('errorMessage', project_data.get('error_message', 'Please check your connection and try again')),
+            'errorButtonText': raw_settings.get('errorButtonText', project_data.get('error_button_text', 'Retry')),
+            'errorBgColor': raw_settings.get('errorBgColor', project_data.get('error_bg_color', '#FFFFFF')),
+            'errorTextColor': raw_settings.get('errorTextColor', project_data.get('error_text_color', '#334155')),
         }
 
-        # Add keystore credentials if available
+        proj_name = project_data.get('app_name', 'Imported Project')
+        proj_desc = project_data.get('app_description', '')
+        proj_ver = project_data.get('app_version', '1.0.0')
+        proj_build_num = int(project_data.get('build_number', 1))
+        proj_pkg = project_data.get('package_name', '')
+        proj_web_url = project_data.get('web_url', '')
+
+        firestore_data = {
+            'userId': user_id,
+            'name': proj_name,
+            'webUrl': proj_web_url,
+            'description': proj_desc,
+            'appVersion': proj_ver,
+            'buildNumber': proj_build_num,
+            'packageName': proj_pkg,
+            'iconUrl': '',
+            'splashUrl': '',
+            'errorUrl': '',
+            'settings': settings_data,
+            'builds': {}
+        }
+
         if project_data.get('keystore_password') or project_data.get('key_alias'):
             firestore_data['keystoreData'] = {
                 'keystorePassword': project_data.get('keystore_password', ''),
@@ -5366,80 +5653,174 @@ def import_project_swab():
                 'keyPassword': project_data.get('key_password', '')
             }
 
-        # Add Apple signing credentials if available
         if project_data.get('apple_certificate_password') or project_data.get('team_id'):
             firestore_data['appleData'] = {
                 'certificatePassword': project_data.get('apple_certificate_password', ''),
                 'teamId': project_data.get('team_id', '')
             }
 
-        doc_ref = db.collection('projects').add(firestore_data)
-        project_id = doc_ref[1].id
+        if db:
+            firestore_data['createdAt'] = firestore.SERVER_TIMESTAMP
+            firestore_data['updatedAt'] = firestore.SERVER_TIMESTAMP
+            doc_ref = db.collection('projects').add(firestore_data)
+            project_id = doc_ref[1].id
+        else:
+            project_id = str(uuid.uuid4())
 
-        # Upload assets from .swab to Firebase Storage
+        # Upload or link assets from .swab to Firebase Storage or local uploads
         assets_dir = os.path.join(extract_dir, 'assets')
         bucket = get_storage_bucket()
+        update_data = {}
 
-        if bucket and os.path.exists(assets_dir):
-            update_data = {}
-
-            # Upload icon if exists
-            for ext in ['.png', '.jpg', '.jpeg']:
+        if os.path.exists(assets_dir):
+            # 1. Icon
+            for ext in ['.png', '.jpg', '.jpeg', '.webp']:
                 icon_path = os.path.join(assets_dir, f'icon{ext}')
                 if os.path.exists(icon_path):
-                    try:
-                        storage_path = f"projects/{user_id}/{project_id}/icon{ext}"
-                        blob = bucket.blob(storage_path)
-                        blob.upload_from_filename(icon_path)
-                        blob.make_public()
-                        update_data['iconStoragePath'] = storage_path
-                        update_data['iconUrl'] = blob.public_url
-                    except Exception as e:
-                        print(f"Failed to upload icon: {e}")
+                    if bucket:
+                        try:
+                            storage_path = f"projects/{user_id}/icons/{int(time.time() * 1000)}_icon{ext}"
+                            blob = bucket.blob(storage_path)
+                            blob.upload_from_filename(icon_path)
+                            blob.make_public()
+                            update_data['iconStoragePath'] = storage_path
+                            update_data['iconUrl'] = blob.public_url
+                            firestore_data['iconUrl'] = blob.public_url
+                        except Exception as e:
+                            logger.warning(f"Failed to upload icon to storage: {e}")
+                    else:
+                        new_name = f"{uuid.uuid4()}{ext}"
+                        shutil.copy(icon_path, os.path.join(app.config['UPLOAD_FOLDER'], new_name))
+                        update_data['iconUrl'] = f"/uploads/{new_name}"
+                        firestore_data['iconUrl'] = f"/uploads/{new_name}"
                     break
 
-            # Upload keystore if exists
+            # 2. Splash screen image
+            for ext in ['.png', '.jpg', '.jpeg', '.webp']:
+                for s_cand in [f'splash_image{ext}', f'splash{ext}']:
+                    splash_path = os.path.join(assets_dir, s_cand)
+                    if os.path.exists(splash_path):
+                        if bucket:
+                            try:
+                                storage_path = f"projects/{user_id}/splash/{int(time.time() * 1000)}_splash{ext}"
+                                blob = bucket.blob(storage_path)
+                                blob.upload_from_filename(splash_path)
+                                blob.make_public()
+                                update_data['splashStoragePath'] = storage_path
+                                update_data['splashUrl'] = blob.public_url
+                                firestore_data['splashUrl'] = blob.public_url
+                                settings_data['splashImageUrl'] = blob.public_url
+                            except Exception as e:
+                                logger.warning(f"Failed to upload splash image to storage: {e}")
+                        else:
+                            new_name = f"splash_{uuid.uuid4()}{ext}"
+                            shutil.copy(splash_path, os.path.join(app.config['UPLOAD_FOLDER'], new_name))
+                            update_data['splashUrl'] = f"/uploads/{new_name}"
+                            firestore_data['splashUrl'] = f"/uploads/{new_name}"
+                            settings_data['splashImageUrl'] = f"/uploads/{new_name}"
+                        break
+                if update_data.get('splashUrl'):
+                    break
+
+            # 3. Error screen image
+            for ext in ['.png', '.jpg', '.jpeg', '.webp']:
+                for e_cand in [f'error_image{ext}', f'error{ext}']:
+                    error_path = os.path.join(assets_dir, e_cand)
+                    if os.path.exists(error_path):
+                        if bucket:
+                            try:
+                                storage_path = f"projects/{user_id}/error/{int(time.time() * 1000)}_error{ext}"
+                                blob = bucket.blob(storage_path)
+                                blob.upload_from_filename(error_path)
+                                blob.make_public()
+                                update_data['errorStoragePath'] = storage_path
+                                update_data['errorUrl'] = blob.public_url
+                                firestore_data['errorUrl'] = blob.public_url
+                                settings_data['errorImageUrl'] = blob.public_url
+                            except Exception as e:
+                                logger.warning(f"Failed to upload error image to storage: {e}")
+                        else:
+                            new_name = f"error_{uuid.uuid4()}{ext}"
+                            shutil.copy(error_path, os.path.join(app.config['UPLOAD_FOLDER'], new_name))
+                            update_data['errorUrl'] = f"/uploads/{new_name}"
+                            firestore_data['errorUrl'] = f"/uploads/{new_name}"
+                            settings_data['errorImageUrl'] = f"/uploads/{new_name}"
+                        break
+                if update_data.get('errorUrl'):
+                    break
+
+            # 4. Keystore
             keystore_path = os.path.join(assets_dir, 'keystore.jks')
             if os.path.exists(keystore_path):
-                try:
-                    storage_path = f"projects/{user_id}/{project_id}/keystore.jks"
-                    blob = bucket.blob(storage_path)
-                    blob.upload_from_filename(keystore_path)
-                    update_data['keystoreStoragePath'] = storage_path
-                except Exception as e:
-                    print(f"Failed to upload keystore: {e}")
+                if bucket:
+                    try:
+                        storage_path = f"projects/{user_id}/keystores/{int(time.time() * 1000)}_keystore.jks"
+                        blob = bucket.blob(storage_path)
+                        blob.upload_from_filename(keystore_path)
+                        update_data['keystoreStoragePath'] = storage_path
+                    except Exception as e:
+                        logger.warning(f"Failed to upload keystore to storage: {e}")
+                else:
+                    new_name = f"{uuid.uuid4()}.jks"
+                    shutil.copy(keystore_path, os.path.join(app.config['UPLOAD_FOLDER'], new_name))
 
-            # Upload Apple certificate if exists
+            # 5. Apple certificate
             for ext in ['.p12', '.pfx']:
                 cert_path = os.path.join(assets_dir, f'certificate{ext}')
                 if os.path.exists(cert_path):
-                    try:
-                        storage_path = f"projects/{user_id}/{project_id}/certificate{ext}"
-                        blob = bucket.blob(storage_path)
-                        blob.upload_from_filename(cert_path)
-                        update_data['appleCertStoragePath'] = storage_path
-                    except Exception as e:
-                        print(f"Failed to upload Apple certificate: {e}")
+                    if bucket:
+                        try:
+                            storage_path = f"projects/{user_id}/certificates/{int(time.time() * 1000)}_certificate{ext}"
+                            blob = bucket.blob(storage_path)
+                            blob.upload_from_filename(cert_path)
+                            update_data['appleCertStoragePath'] = storage_path
+                        except Exception as e:
+                            logger.warning(f"Failed to upload certificate to storage: {e}")
                     break
 
-            # Upload Apple provisioning profile if exists
+            # 6. Apple provisioning profile
             profile_path = os.path.join(assets_dir, 'profile.mobileprovision')
             if os.path.exists(profile_path):
-                try:
-                    storage_path = f"projects/{user_id}/{project_id}/profile.mobileprovision"
-                    blob = bucket.blob(storage_path)
-                    blob.upload_from_filename(profile_path)
-                    update_data['appleProfileStoragePath'] = storage_path
-                except Exception as e:
-                    print(f"Failed to upload provisioning profile: {e}")
+                if bucket:
+                    try:
+                        storage_path = f"projects/{user_id}/profiles/{int(time.time() * 1000)}_profile.mobileprovision"
+                        blob = bucket.blob(storage_path)
+                        blob.upload_from_filename(profile_path)
+                        update_data['appleProfileStoragePath'] = storage_path
+                    except Exception as e:
+                        logger.warning(f"Failed to upload profile to storage: {e}")
 
-            # Update project with storage paths
-            if update_data:
-                db.collection('projects').document(project_id).update(update_data)
+        # Update Firestore
+        if db:
+            update_data['settings'] = settings_data
+            db.collection('projects').document(project_id).update(update_data)
+
+        # Sync to SQLite
+        try:
+            now_str = datetime.utcnow().isoformat()
+            conn = get_db_connection()
+            s_icon = update_data.get('iconUrl') or firestore_data.get('iconUrl', '')
+            s_splash = update_data.get('splashUrl') or firestore_data.get('splashUrl', '')
+            s_error = update_data.get('errorUrl') or firestore_data.get('errorUrl', '')
+            try:
+                conn.execute('''
+                    INSERT OR REPLACE INTO projects (id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, error_url, settings_json, keystore_json, apple_json, builds_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (project_id, user_id, proj_name, proj_web_url, proj_desc, proj_ver, proj_build_num, proj_pkg, s_icon, s_splash, s_error, json.dumps(settings_data), json.dumps(firestore_data.get('keystoreData', {})), json.dumps(firestore_data.get('appleData', {})), json.dumps({}), now_str, now_str))
+            except Exception:
+                conn.execute('''
+                    INSERT OR REPLACE INTO projects (id, user_id, name, web_url, description, app_version, build_number, package_name, icon_url, splash_url, settings_json, keystore_json, apple_json, builds_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (project_id, user_id, proj_name, proj_web_url, proj_desc, proj_ver, proj_build_num, proj_pkg, s_icon, s_splash, json.dumps(settings_data), json.dumps(firestore_data.get('keystoreData', {})), json.dumps(firestore_data.get('appleData', {})), json.dumps({}), now_str, now_str))
+            conn.commit()
+            conn.close()
+        except Exception as se:
+            logger.warning(f"Failed to sync imported project to SQLite: {se}")
 
         return jsonify({'success': True, 'projectId': project_id})
 
     except Exception as e:
+        logger.exception("Failed to import project")
         return jsonify({'error': f'Failed to import project: {str(e)}'}), 500
 
     finally:

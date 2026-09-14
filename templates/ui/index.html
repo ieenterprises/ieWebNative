@@ -949,9 +949,14 @@
 
         // Track uploaded file URLs for cloud save
         let cloudIconUrl = null;
+        let cloudSplashUrl = null;
+        let cloudErrorUrl = null;
         let cloudKeystoreUrl = null;
         let cloudAppleCertUrl = null;
         let cloudAppleProfileUrl = null;
+        window.cloudIconUrl = null;
+        window.cloudSplashUrl = null;
+        window.cloudErrorUrl = null;
 
         // Get project ID from URL params
         const urlParams = new URLSearchParams(window.location.search);
@@ -1021,6 +1026,7 @@
                 document.getElementById('show-navigation').checked = settings.showNavigation === true;
                 document.getElementById('enable-file-access').checked = settings.enableFileAccess === true;
                 document.getElementById('enable-cache').checked = settings.enableCache === true;
+                document.getElementById('enable-media-autoplay').checked = settings.enableMediaAutoplay === true;
                 document.getElementById('enable-camera').checked = settings.enableCamera === true;
                 document.getElementById('enable-microphone').checked = settings.enableMicrophone === true;
                 document.getElementById('enable-ssl-pinning').checked = settings.enableSslPinning === true;
@@ -1036,6 +1042,7 @@
                 // Load icon URL if available
                 if (project.iconUrl) {
                     cloudIconUrl = project.iconUrl;
+                    window.cloudIconUrl = cloudIconUrl;
                     const iconPreview = document.getElementById('icon-preview');
                     if (iconPreview) {
                         iconPreview.innerHTML = `<img src="${project.iconUrl}" alt="App Icon">`;
@@ -1240,6 +1247,50 @@
                     if (elHex) elHex.value = projSettings.errorTextColor;
                 }
 
+                // Restore Splash Screen Image if available
+                const splashImgUrl = project.splashUrl || projSettings.splashImageUrl || project.splash_url || null;
+                if (splashImgUrl) {
+                    cloudSplashUrl = splashImgUrl;
+                    window.cloudSplashUrl = splashImgUrl;
+                    const splashPreview = document.getElementById('splash-image-preview');
+                    if (splashPreview) {
+                        splashPreview.innerHTML = `<img src="${splashImgUrl}" alt="Splash Image" style="width: 100%; height: 100%; object-fit: contain;">`;
+                        splashPreview.classList.add('has-icon');
+                    }
+                    const splashLabel = document.getElementById('splash-image-upload-label');
+                    if (splashLabel) {
+                        splashLabel.innerHTML = `
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                            <span>Change Splash Image</span>
+                        `;
+                    }
+                }
+
+                // Restore Error Screen Image if available
+                const errorImgUrl = project.errorUrl || projSettings.errorImageUrl || project.error_url || null;
+                if (errorImgUrl) {
+                    cloudErrorUrl = errorImgUrl;
+                    window.cloudErrorUrl = errorImgUrl;
+                    const errorPreview = document.getElementById('error-image-preview');
+                    if (errorPreview) {
+                        errorPreview.innerHTML = `<img src="${errorImgUrl}" alt="Error Image" style="width: 100%; height: 100%; object-fit: contain;">`;
+                        errorPreview.classList.add('has-icon');
+                    }
+                    const errorLabel = document.getElementById('error-image-upload-label');
+                    if (errorLabel) {
+                        errorLabel.innerHTML = `
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                            <span>Change Error Image</span>
+                        `;
+                    }
+                }
+
                 // Trigger preview if URL is set
                 if (project.webUrl) {
                     const urlInput = document.getElementById('web-url');
@@ -1351,6 +1402,27 @@
                     const ext = iconFile.name.split('.').pop().toLowerCase();
                     const iconPath = `projects/${userId}/icons/${timestamp}_icon.${ext}`;
                     cloudIconUrl = await uploadFileToStorage(iconFile, iconPath);
+                    window.cloudIconUrl = cloudIconUrl;
+                }
+
+                // Upload splash image to Firebase Storage if selected
+                const splashFileInput = document.getElementById('splash-image-file');
+                if (splashFileInput && splashFileInput.files && splashFileInput.files.length > 0) {
+                    const splashFile = splashFileInput.files[0];
+                    const ext = splashFile.name.split('.').pop().toLowerCase();
+                    const splashPath = `projects/${userId}/splash/${timestamp}_splash.${ext}`;
+                    cloudSplashUrl = await uploadFileToStorage(splashFile, splashPath);
+                    window.cloudSplashUrl = cloudSplashUrl;
+                }
+
+                // Upload error image to Firebase Storage if selected
+                const errorFileInput = document.getElementById('error-image-file');
+                if (errorFileInput && errorFileInput.files && errorFileInput.files.length > 0) {
+                    const errorFile = errorFileInput.files[0];
+                    const ext = errorFile.name.split('.').pop().toLowerCase();
+                    const errorPath = `projects/${userId}/error/${timestamp}_error.${ext}`;
+                    cloudErrorUrl = await uploadFileToStorage(errorFile, errorPath);
+                    window.cloudErrorUrl = cloudErrorUrl;
                 }
 
                 // Upload keystore to Firebase Storage if selected
@@ -1425,9 +1497,21 @@
                     }
                 };
 
-                // Add icon URL if uploaded
+                // Add icon URL if available
                 if (cloudIconUrl) {
                     projectData.iconUrl = cloudIconUrl;
+                }
+
+                // Add splash URL if available
+                if (cloudSplashUrl) {
+                    projectData.splashUrl = cloudSplashUrl;
+                    projectData.settings.splashImageUrl = cloudSplashUrl;
+                }
+
+                // Add error URL if available
+                if (cloudErrorUrl) {
+                    projectData.errorUrl = cloudErrorUrl;
+                    projectData.settings.errorImageUrl = cloudErrorUrl;
                 }
 
                 // Add keystore data if available

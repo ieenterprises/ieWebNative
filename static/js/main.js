@@ -551,6 +551,9 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (currentSplashImagePath) {
             formData.splash_image_path = currentSplashImagePath;
         }
+        if (window.cloudSplashUrl) {
+            formData.splash_image_url = window.cloudSplashUrl;
+        }
 
         // Upload custom error image if provided
         if (errorImageFile && errorImageFile.files && errorImageFile.files.length > 0) {
@@ -573,6 +576,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         } else if (currentErrorImagePath) {
             formData.error_image_path = currentErrorImagePath;
+        }
+        if (window.cloudErrorUrl) {
+            formData.error_image_url = window.cloudErrorUrl;
+        }
+        if (window.cloudIconUrl) {
+            formData.icon_url = window.cloudIconUrl;
         }
 
         // Add Splash Screen & Error Page configuration
@@ -1957,15 +1966,18 @@ document.addEventListener('DOMContentLoaded', function() {
             error_button_text: document.getElementById('error-button-text')?.value || 'Retry',
             error_bg_color: document.getElementById('error-bg-color')?.value || '#FFFFFF',
             error_text_color: document.getElementById('error-text-color')?.value || '#334155',
-            // Asset paths
+            // Asset paths & URLs
             icon_path: currentIconPath,
+            icon_url: window.cloudIconUrl || null,
             keystore_path: currentKeystorePath,
             apple_certificate_path: currentAppleCertificatePath,
             apple_provisioning_profile_path: currentAppleProfilePath,
             play_service_account_path: currentPlayKeyPath,
             app_store_key_path: currentAppStoreKeyPath,
             splash_image_path: currentSplashImagePath,
-            error_image_path: currentErrorImagePath
+            splash_image_url: window.cloudSplashUrl || null,
+            error_image_path: currentErrorImagePath,
+            error_image_url: window.cloudErrorUrl || null
         };
 
         try {
@@ -2061,6 +2073,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Load project data into form
             const project = result.project;
+
+            // Reset cloud URLs when loading local project file
+            window.cloudIconUrl = null;
+            window.cloudSplashUrl = null;
+            window.cloudErrorUrl = null;
 
             document.getElementById('app-name').value = project.app_name || '';
             document.getElementById('app-description').value = project.app_description || '';
