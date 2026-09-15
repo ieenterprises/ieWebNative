@@ -416,7 +416,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function updatePreview(url) {
+    let currentPreviewCheckAbort = null;
+    let previewRequestId = 0;
+
+    async function updatePreview(url) {
         if (url && isValidUrl(url)) {
             const normalized = normalizeUrl(url);
             placeholderContent.style.display = 'none';
@@ -426,8 +429,47 @@ document.addEventListener('DOMContentLoaded', function() {
             const activeDeviceBtn = document.querySelector('.device-btn.active');
             const device = activeDeviceBtn ? (activeDeviceBtn.dataset.device || 'mobile') : 'mobile';
 
-            previewIframe.src = '/api/preview-proxy?url=' + encodeURIComponent(normalized) + '&device=' + encodeURIComponent(device);
+            const thisRequestId = ++previewRequestId;
+
+            if (currentPreviewCheckAbort) {
+                currentPreviewCheckAbort.abort();
+            }
+            currentPreviewCheckAbort = new AbortController();
+
+            try {
+                const resp = await fetch('/api/preview-check?url=' + encodeURIComponent(normalized), {
+                    signal: currentPreviewCheckAbort.signal
+                });
+                const data = await resp.json();
+
+                if (thisRequestId !== previewRequestId) return;
+
+                if (data.can_embed) {
+                    // Direct embed gives 100% native SPA fidelity, Next.js App Router support, cookies & storage
+                    const embedUrl = data.final_url || normalized;
+                    previewIframe.src = embedUrl;
+
+                    // Fallback to proxy if iframe fails to load
+                    previewIframe.onerror = function() {
+                        console.warn('Direct preview embed blocked, falling back to proxy');
+                        previewIframe.src = '/api/preview-proxy?url=' + encodeURIComponent(normalized) + '&device=' + encodeURIComponent(device);
+                    };
+                } else {
+                    // Frame-restricted site (X-Frame-Options or CSP): route through enhanced SPA proxy
+                    previewIframe.src = '/api/preview-proxy?url=' + encodeURIComponent(normalized) + '&device=' + encodeURIComponent(device);
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                if (thisRequestId !== previewRequestId) return;
+                // Fallback to proxy
+                previewIframe.src = '/api/preview-proxy?url=' + encodeURIComponent(normalized) + '&device=' + encodeURIComponent(device);
+            }
         } else {
+            previewRequestId++;
+            if (currentPreviewCheckAbort) {
+                currentPreviewCheckAbort.abort();
+                currentPreviewCheckAbort = null;
+            }
             placeholderContent.style.display = 'flex';
             previewIframe.style.display = 'none';
             if (previewLoading) previewLoading.style.display = 'none';

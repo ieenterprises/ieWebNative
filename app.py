@@ -3745,6 +3745,83 @@ def serve_upload(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], safe_name)
 
 
+_preview_check_cache = {}
+_preview_check_cache_lock = threading.Lock()
+
+@app.route('/api/preview-check', methods=['GET'])
+def preview_check():
+    """Quickly check if a website allows direct iframe embedding or requires proxying"""
+    target_url = request.args.get('url', '').strip()
+    if not target_url:
+        return jsonify({'can_embed': False, 'error': 'URL is required'}), 400
+
+    if not re.match(r'^https?://', target_url, re.IGNORECASE):
+        target_url = 'https://' + target_url
+
+    parsed = urlparse(target_url)
+    if not parsed.scheme or not parsed.netloc:
+        return jsonify({'can_embed': False, 'error': 'Invalid URL format'}), 400
+
+    # In-memory cache check (TTL: 300 seconds)
+    cache_key = target_url.lower().rstrip('/')
+    now = time.time()
+    with _preview_check_cache_lock:
+        if cache_key in _preview_check_cache:
+            entry = _preview_check_cache[cache_key]
+            if now - entry['timestamp'] < 300:
+                return jsonify(entry['data'])
+
+    session_req = requests.Session()
+    if parsed.hostname in ('localhost', '127.0.0.1'):
+        session_req.trust_env = False
+
+    req_headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    }
+
+    try:
+        try:
+            resp = session_req.head(target_url, headers=req_headers, timeout=6, allow_redirects=True)
+            if resp.status_code in (405, 501):
+                resp = session_req.get(target_url, headers=req_headers, timeout=6, stream=True, allow_redirects=True)
+        except Exception:
+            resp = session_req.get(target_url, headers=req_headers, timeout=6, stream=True, allow_redirects=True)
+
+        xfo = (resp.headers.get('X-Frame-Options') or '').strip().lower()
+        csp = (resp.headers.get('Content-Security-Policy') or '').lower()
+
+        can_embed = True
+        if 'deny' in xfo or 'sameorigin' in xfo:
+            can_embed = False
+        elif 'frame-ancestors' in csp:
+            if "'none'" in csp or "'self'" in csp:
+                can_embed = False
+
+        result = {
+            'can_embed': can_embed,
+            'url': target_url,
+            'final_url': resp.url,
+            'status': resp.status_code
+        }
+    except Exception as e:
+        logger.debug(f"preview-check could not reach {target_url}: {e}")
+        result = {
+            'can_embed': False,
+            'url': target_url,
+            'final_url': target_url,
+            'error': str(e)
+        }
+
+    with _preview_check_cache_lock:
+        _preview_check_cache[cache_key] = {'timestamp': now, 'data': result}
+        if len(_preview_check_cache) > 200:
+            oldest = min(_preview_check_cache.keys(), key=lambda k: _preview_check_cache[k]['timestamp'])
+            _preview_check_cache.pop(oldest, None)
+
+    return jsonify(result)
+
+
 @app.route('/api/preview-proxy', methods=['GET'])
 def preview_proxy():
     """Proxy web pages for live device frame preview, bypassing X-Frame-Options and CSP frame-ancestors restrictions"""
@@ -3792,23 +3869,68 @@ def preview_proxy():
 
         if 'text/html' in content_type:
             html = resp.text
+            final_url = resp.url
+            final_parsed = urlparse(final_url)
+            target_origin = f"{final_parsed.scheme}://{final_parsed.netloc}"
+            target_path = final_parsed.path or '/'
+            if final_parsed.query:
+                target_path += f"?{final_parsed.query}"
 
             # Remove meta tags that enforce CSP or X-Frame-Options in the client DOM
             html = re.sub(r'<meta[^>]*http-equiv=["\']?Content-Security-Policy["\']?[^>]*>', '', html, flags=re.IGNORECASE)
             html = re.sub(r'<meta[^>]*http-equiv=["\']?X-Frame-Options["\']?[^>]*>', '', html, flags=re.IGNORECASE)
 
-            final_url = resp.url
+            # Rewrite root-relative src and href to target origin so static assets, stylesheets, and scripts load
+            html = re.sub(r'''(?i)\b(src|href)=["']/(?!/)([^"']*)["']''', rf'\1="{target_origin}/\2"', html)
+
             base_tag = f'<base href="{final_url}">'
             helper_script = f"""
             <script>
-                try {{ window.top = window.self; window.parent = window.self; }} catch(e) {{}}
-                document.addEventListener('click', function(e) {{
-                    var a = e.target.closest('a');
-                    if (a && a.href && (a.href.startsWith('http://') || a.href.startsWith('https://')) && a.target !== '_blank') {{
-                        e.preventDefault();
-                        window.location.href = '/api/preview-proxy?url=' + encodeURIComponent(a.href) + '&device={device}';
+                (function() {{
+                    try {{ window.top = window.self; window.parent = window.self; }} catch(e) {{}}
+                    var targetOrigin = '{target_origin}';
+                    var targetPath = '{target_path}';
+                    try {{
+                        if (window.location.pathname.indexOf('/api/preview-proxy') !== -1) {{
+                            window.history.replaceState(null, '', targetPath);
+                        }}
+                    }} catch(e) {{}}
+
+                    // Intercept fetch for root-relative API calls or chunks
+                    if (window.fetch) {{
+                        var origFetch = window.fetch;
+                        window.fetch = function(input, init) {{
+                            if (typeof input === 'string') {{
+                                if (input.startsWith('/') && !input.startsWith('//')) {{
+                                    input = targetOrigin + input;
+                                }}
+                            }} else if (input && input.url && input.url.startsWith('/') && !input.url.startsWith('//')) {{
+                                input = new Request(targetOrigin + input.url, input);
+                            }}
+                            return origFetch.call(this, input, init);
+                        }};
                     }}
-                }}, true);
+
+                    // Intercept XMLHttpRequest for root-relative requests
+                    if (window.XMLHttpRequest) {{
+                        var origOpen = XMLHttpRequest.prototype.open;
+                        XMLHttpRequest.prototype.open = function(method, url) {{
+                            if (typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')) {{
+                                url = targetOrigin + url;
+                            }}
+                            return origOpen.apply(this, [method, url].concat(Array.prototype.slice.call(arguments, 2)));
+                        }};
+                    }}
+
+                    // Intercept clicks on links
+                    document.addEventListener('click', function(e) {{
+                        var a = e.target.closest('a');
+                        if (a && a.href && (a.href.startsWith('http://') || a.href.startsWith('https://')) && a.target !== '_blank') {{
+                            e.preventDefault();
+                            window.location.href = '/api/preview-proxy?url=' + encodeURIComponent(a.href) + '&device={device}';
+                        }}
+                    }}, true);
+                }})();
             </script>
             """
 
@@ -3905,6 +4027,28 @@ def preview_proxy():
         response.headers.pop('Content-Security-Policy', None)
         response.headers['Access-Control-Allow-Origin'] = '*'
         return response
+
+
+@app.route('/_next/<path:subpath>', methods=['GET'])
+def proxy_next_asset(subpath):
+    """Fallback handler for Next.js chunks if requested relatively from a proxied page"""
+    referer = request.headers.get('Referer', '')
+    if referer and 'url=' in referer:
+        try:
+            m = re.search(r'url=([^&]+)', referer)
+            if m:
+                import urllib.parse
+                target_url = urllib.parse.unquote(m.group(1))
+                parsed = urlparse(target_url)
+                asset_url = f"{parsed.scheme}://{parsed.netloc}/_next/{subpath}"
+                resp = requests.get(asset_url, timeout=10)
+                res = Response(resp.content, status=resp.status_code, mimetype=resp.headers.get('Content-Type'))
+                res.headers['Access-Control-Allow-Origin'] = '*'
+                return res
+        except Exception as e:
+            logger.debug(f"Error forwarding _next asset: {e}")
+    return jsonify({'error': 'Not found'}), 404
+
 
 @app.route('/api/build', methods=['POST'])
 def start_build():
