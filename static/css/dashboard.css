@@ -1237,18 +1237,28 @@
 .project-build-chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    font-size: 12px;
-    font-weight: 600;
     border-radius: 6px;
-    text-decoration: none;
     transition: all 0.2s ease;
-    cursor: pointer;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+    padding: 0;
+    line-height: 1;
 }
 
-.project-build-chip i {
+.chip-download-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    color: inherit;
+    transition: all 0.15s ease;
+    cursor: pointer;
+}
+
+.chip-download-action i {
     font-size: 12px;
 }
 
@@ -1259,14 +1269,50 @@
     transition: transform 0.2s ease;
 }
 
-.project-build-chip:hover .chip-download-icon {
+.chip-download-action:hover .chip-download-icon {
     transform: translateY(1px);
     opacity: 1;
+}
+
+.chip-download-action:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.chip-delete-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-left: 1px solid rgba(0, 0, 0, 0.12);
+    color: inherit;
+    opacity: 0.55;
+    padding: 5px 8px 5px 7px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.chip-delete-btn:hover {
+    opacity: 1;
+    color: #ffffff !important;
+    background: #ef4444 !important;
 }
 
 .project-build-chip:hover {
     transform: translateY(-1px);
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="moon"] .chip-delete-btn,
+[data-theme="dark"] .chip-delete-btn {
+    border-left-color: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="moon"] .chip-delete-btn:hover,
+[data-theme="dark"] .chip-delete-btn:hover {
+    color: #ffffff !important;
+    background: #dc2626 !important;
 }
 
 /* Platform-specific chip colors */

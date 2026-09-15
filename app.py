@@ -5817,6 +5817,289 @@ def get_project_builds(project_id):
         logger.exception("Error fetching project builds")
         return jsonify({'error': f'Failed to fetch project builds: {str(e)}'}), 500
 
+@app.route('/api/projects/<project_id>/builds/<platform>', methods=['DELETE'])
+@firebase_auth_required
+def delete_project_build(project_id, platform):
+    """
+    Delete a specific platform build (e.g. apk/android, ipa/ios, windows, etc.)
+    from a project without affecting other platform builds.
+    Permanently deletes the compiled artifact from Firebase Storage and disk.
+    """
+    try:
+        user_id = request.user['uid']
+        platform_norm = platform.lower().strip()
+
+        # Mapping platform aliases
+        aliases = {
+            'apk': 'android',
+            'aab': 'android_aab',
+            'ipa': 'ios',
+            'xcode': 'ios_xcode',
+        }
+        all_candidate_platforms = {platform_norm}
+        if platform_norm in aliases:
+            all_candidate_platforms.add(aliases[platform_norm])
+        for k, v in aliases.items():
+            if v == platform_norm:
+                all_candidate_platforms.add(k)
+
+        target_build_ids = set()
+        matched_plat_keys = set()
+        deleted_filenames = set()
+        storage_paths = set()
+
+        # 1. Check Project ownership & collect artifact info
+        if db:
+            p_ref = db.collection('projects').document(project_id)
+            p_snap = p_ref.get()
+            if not p_snap.exists:
+                return jsonify({'error': 'Project not found'}), 404
+            p_data = p_snap.to_dict() or {}
+            if p_data.get('userId') != user_id:
+                return jsonify({'error': 'Access denied'}), 403
+
+            proj_builds = p_data.get('builds') or {}
+            for cand in all_candidate_platforms:
+                if cand in proj_builds:
+                    matched_plat_keys.add(cand)
+                    b_info = proj_builds[cand]
+                    if isinstance(b_info, dict):
+                        if b_info.get('buildId'):
+                            target_build_ids.add(b_info.get('buildId'))
+                        if b_info.get('fileName'):
+                            deleted_filenames.add(b_info.get('fileName'))
+                        if b_info.get('storagePath'):
+                            storage_paths.add(b_info.get('storagePath'))
+
+            # Also check Firestore builds collection for any matching build docs
+            try:
+                b_docs = db.collection('builds').where('projectId', '==', project_id).stream()
+                for bdoc in b_docs:
+                    b_dict = bdoc.to_dict() or {}
+                    b_arts = b_dict.get('artifacts', {}) or {}
+                    b_outs = b_dict.get('outputs', {}) or {}
+                    for cand in all_candidate_platforms:
+                        if cand in b_arts or cand in b_outs or b_dict.get('platform') == cand:
+                            target_build_ids.add(bdoc.id)
+                            art_entry = b_arts.get(cand) or {}
+                            if isinstance(art_entry, dict):
+                                if art_entry.get('fileName'):
+                                    deleted_filenames.add(art_entry['fileName'])
+                                if art_entry.get('storagePath'):
+                                    storage_paths.add(art_entry['storagePath'])
+            except Exception as be:
+                logger.warning(f"Error querying builds for single build delete: {be}")
+
+            # Remove only the target platform key(s) from project's builds
+            for pk in matched_plat_keys:
+                proj_builds.pop(pk, None)
+
+            p_ref.update({
+                'builds': proj_builds,
+                'updatedAt': firestore.SERVER_TIMESTAMP
+            })
+
+            # Update Firestore build docs: remove target platform from artifacts and outputs
+            for bid in target_build_ids:
+                try:
+                    b_ref = db.collection('builds').document(bid)
+                    b_snap = b_ref.get()
+                    if b_snap.exists:
+                        b_dict = b_snap.to_dict() or {}
+                        b_arts = b_dict.get('artifacts', {}) or {}
+                        b_outs = b_dict.get('outputs', {}) or {}
+                        b_plats = b_dict.get('platforms', []) or []
+                        for cand in all_candidate_platforms:
+                            b_arts.pop(cand, None)
+                            b_outs.pop(cand, None)
+                            if cand in b_plats:
+                                b_plats.remove(cand)
+
+                        if not b_arts and not b_outs:
+                            b_ref.delete()
+                            logger.info(f"Deleted Firestore build doc {bid} (no remaining platforms)")
+                        else:
+                            b_ref.update({
+                                'artifacts': b_arts,
+                                'outputs': b_outs,
+                                'platforms': b_plats
+                            })
+                            logger.info(f"Updated Firestore build doc {bid} (removed {platform_norm})")
+                except Exception as b_up_err:
+                    logger.warning(f"Error updating build doc {bid}: {b_up_err}")
+
+        # Always synchronize SQLite projects and builds
+        try:
+            conn = get_db_connection()
+            p_row = conn.execute('SELECT * FROM projects WHERE id = ?', (project_id,)).fetchone()
+            if p_row:
+                if not db and p_row['user_id'] != user_id:
+                    conn.close()
+                    return jsonify({'error': 'Access denied'}), 403
+
+                sqlite_proj_builds = {}
+                if p_row['builds_json']:
+                    try:
+                        sqlite_proj_builds = json.loads(p_row['builds_json'])
+                    except Exception:
+                        sqlite_proj_builds = {}
+
+                for cand in all_candidate_platforms:
+                    if cand in sqlite_proj_builds:
+                        matched_plat_keys.add(cand)
+                        b_info = sqlite_proj_builds[cand]
+                        if isinstance(b_info, dict):
+                            if b_info.get('buildId'):
+                                target_build_ids.add(b_info.get('buildId'))
+                            if b_info.get('fileName'):
+                                deleted_filenames.add(b_info.get('fileName'))
+                            if b_info.get('storagePath'):
+                                storage_paths.add(b_info.get('storagePath'))
+
+                # Check SQLite builds table
+                b_rows = conn.execute('SELECT * FROM builds WHERE project_id = ?', (project_id,)).fetchall()
+                for brow in b_rows:
+                    bid = brow['id']
+                    b_arts = json.loads(brow['artifacts_json']) if brow['artifacts_json'] else {}
+                    b_outs = json.loads(brow['outputs_json']) if brow['outputs_json'] else {}
+                    has_cand = any(c in b_arts or c in b_outs or brow['platform'] == c for c in all_candidate_platforms)
+                    if has_cand:
+                        target_build_ids.add(bid)
+                        for c in all_candidate_platforms:
+                            if c in b_arts and isinstance(b_arts[c], dict):
+                                if b_arts[c].get('fileName'):
+                                    deleted_filenames.add(b_arts[c]['fileName'])
+                                if b_arts[c].get('storagePath'):
+                                    storage_paths.add(b_arts[c]['storagePath'])
+                            b_arts.pop(c, None)
+                            b_outs.pop(c, None)
+                        if not b_arts and not b_outs:
+                            conn.execute('DELETE FROM builds WHERE id = ?', (bid,))
+                            logger.info(f"Deleted SQLite build row {bid} (no remaining platforms)")
+                        else:
+                            conn.execute('UPDATE builds SET artifacts_json = ?, outputs_json = ? WHERE id = ?', (json.dumps(b_arts), json.dumps(b_outs), bid))
+                            logger.info(f"Updated SQLite build row {bid} (removed {platform_norm})")
+
+                # Remove from project's builds_json
+                for pk in matched_plat_keys:
+                    sqlite_proj_builds.pop(pk, None)
+
+                now_iso = datetime.utcnow().isoformat() + 'Z'
+                conn.execute('UPDATE projects SET builds_json = ?, updated_at = ? WHERE id = ?', (json.dumps(sqlite_proj_builds), now_iso, project_id))
+                conn.commit()
+            elif not db:
+                conn.close()
+                return jsonify({'error': 'Project not found'}), 404
+            conn.close()
+        except Exception as se:
+            logger.warning(f"Error syncing build deletion to SQLite: {se}")
+
+        # 2. Delete local build artifact files on disk for this platform
+        for bid in target_build_ids:
+            try:
+                bdir = os.path.join(app.config['BUILD_FOLDER'], bid)
+                if os.path.exists(bdir):
+                    for root, dirs, files in os.walk(bdir):
+                        for f in files:
+                            fl = f.lower()
+                            matches = f in deleted_filenames
+                            if 'android' in all_candidate_platforms or 'apk' in all_candidate_platforms:
+                                if fl.endswith('.apk'):
+                                    matches = True
+                            if 'android_aab' in all_candidate_platforms or 'aab' in all_candidate_platforms:
+                                if fl.endswith('.aab'):
+                                    matches = True
+                            if 'ios' in all_candidate_platforms or 'ipa' in all_candidate_platforms:
+                                if fl.endswith('.ipa'):
+                                    matches = True
+                            if 'ios_xcode' in all_candidate_platforms or 'xcode' in all_candidate_platforms:
+                                if 'xcode' in fl or fl.endswith('.xcarchive'):
+                                    matches = True
+                            if 'windows' in all_candidate_platforms:
+                                if 'windows' in fl and fl.endswith('.zip'):
+                                    matches = True
+                            if 'macos' in all_candidate_platforms:
+                                if 'macos' in fl and (fl.endswith('.dmg') or fl.endswith('.zip')):
+                                    matches = True
+                            if 'linux' in all_candidate_platforms:
+                                if 'linux' in fl and fl.endswith('.tar.gz'):
+                                    matches = True
+
+                            if matches:
+                                try:
+                                    os.remove(os.path.join(root, f))
+                                    logger.info(f"Deleted disk build artifact: {f} from {bid}")
+                                except Exception as fe:
+                                    logger.warning(f"Error removing build artifact file {f}: {fe}")
+
+                    # If build folder has no remaining build artifacts, remove the folder
+                    rem_artifacts = [
+                        f for root, dirs, files in os.walk(bdir)
+                        for f in files if f.endswith(('.apk', '.aab', '.ipa', '.dmg', '.tar.gz')) or ('windows' in f.lower() and f.endswith('.zip'))
+                    ]
+                    if not rem_artifacts:
+                        shutil.rmtree(bdir, ignore_errors=True)
+                        logger.info(f"Removed now-empty build directory: {bdir}")
+            except Exception as disk_err:
+                logger.warning(f"Error cleaning build files on disk for {bid}: {disk_err}")
+
+        # 3. Delete files from Firebase Cloud Storage for this platform
+        try:
+            bucket = get_storage_bucket()
+            if bucket and user_id:
+                # Direct storage paths
+                for sp in storage_paths:
+                    try:
+                        blob = bucket.blob(sp)
+                        if blob.exists():
+                            blob.delete()
+                            logger.info(f"Deleted Firebase Storage blob: {sp}")
+                    except Exception as sp_err:
+                        logger.warning(f"Error deleting storage blob {sp}: {sp_err}")
+
+                # Candidate platform prefix in project builds folder
+                for cand in all_candidate_platforms:
+                    prefix = f"builds/{user_id}/{project_id}/{cand}_"
+                    for blob in bucket.list_blobs(prefix=prefix):
+                        try:
+                            blob.delete()
+                            logger.info(f"Deleted Firebase Storage blob by prefix: {blob.name}")
+                        except Exception as b_err:
+                            logger.warning(f"Error deleting blob {blob.name}: {b_err}")
+
+                # Matching filename
+                for fname in deleted_filenames:
+                    prefix = f"builds/{user_id}/{project_id}/"
+                    for blob in bucket.list_blobs(prefix=prefix):
+                        if fname in blob.name:
+                            try:
+                                blob.delete()
+                                logger.info(f"Deleted Firebase Storage blob by filename match: {blob.name}")
+                            except Exception as b_err:
+                                logger.warning(f"Error deleting blob {blob.name}: {b_err}")
+        except Exception as storage_err:
+            logger.warning(f"Error cleaning up Firebase Storage for platform {platform}: {storage_err}")
+
+        # 4. Clean in-memory build progress
+        for bid in target_build_ids:
+            if bid in build_progress:
+                bp = build_progress[bid]
+                for cand in all_candidate_platforms:
+                    if 'artifacts' in bp:
+                        bp['artifacts'].pop(cand, None)
+                    if 'outputs' in bp:
+                        bp['outputs'].pop(cand, None)
+
+        logger.info(f"Successfully deleted build {platform} for project {project_id}")
+        return jsonify({
+            'success': True,
+            'message': f'Build for {platform} successfully deleted',
+            'remainingBuilds': proj_builds
+        })
+    except Exception as e:
+        logger.exception("Failed to delete project build")
+        return jsonify({'error': f'Failed to delete build: {str(e)}'}), 500
+
 @app.route('/api/projects/<project_id>', methods=['DELETE'])
 @firebase_auth_required
 def delete_project(project_id):
@@ -6651,6 +6934,132 @@ def get_builds():
     except Exception as e:
         logger.exception("Error fetching builds")
         return jsonify({'error': f'Failed to fetch builds: {str(e)}'}), 500
+
+@app.route('/api/builds/<build_id>', methods=['DELETE'])
+@firebase_auth_required
+def delete_build_by_id(build_id):
+    """
+    Delete a specific build record and all associated artifacts from disk, storage, and database.
+    Also removes the build entry from its parent project.
+    """
+    try:
+        user_id = request.user['uid']
+        project_id = None
+        platforms = []
+        deleted_filenames = set()
+        storage_paths = set()
+
+        # 1. Firestore
+        if db:
+            b_ref = db.collection('builds').document(build_id)
+            b_snap = b_ref.get()
+            if not b_snap.exists:
+                return jsonify({'error': 'Build not found'}), 404
+            b_data = b_snap.to_dict() or {}
+            if b_data.get('userId') != user_id:
+                return jsonify({'error': 'Access denied'}), 403
+
+            project_id = b_data.get('projectId')
+            b_arts = b_data.get('artifacts', {}) or {}
+            for plat, art in b_arts.items():
+                platforms.append(plat)
+                if isinstance(art, dict):
+                    if art.get('fileName'):
+                        deleted_filenames.add(art['fileName'])
+                    if art.get('storagePath'):
+                        storage_paths.add(art['storagePath'])
+
+            b_ref.delete()
+
+            # Remove from project
+            if project_id:
+                try:
+                    p_ref = db.collection('projects').document(project_id)
+                    p_snap = p_ref.get()
+                    if p_snap.exists:
+                        p_data = p_snap.to_dict() or {}
+                        p_builds = p_data.get('builds', {}) or {}
+                        for plat in platforms:
+                            p_builds.pop(plat, None)
+                        p_ref.update({'builds': p_builds, 'updatedAt': firestore.SERVER_TIMESTAMP})
+                except Exception as pe:
+                    logger.warning(f"Error removing build from project doc: {pe}")
+        else:
+            # SQLite
+            conn = get_db_connection()
+            b_row = conn.execute('SELECT * FROM builds WHERE id = ?', (build_id,)).fetchone()
+            if not b_row:
+                conn.close()
+                return jsonify({'error': 'Build not found'}), 404
+            if b_row['user_id'] != user_id:
+                conn.close()
+                return jsonify({'error': 'Access denied'}), 403
+
+            project_id = b_row['project_id']
+            b_arts = json.loads(b_row['artifacts_json']) if b_row['artifacts_json'] else {}
+            for plat, art in b_arts.items():
+                platforms.append(plat)
+                if isinstance(art, dict):
+                    if art.get('fileName'):
+                        deleted_filenames.add(art['fileName'])
+                    if art.get('storagePath'):
+                        storage_paths.add(art['storagePath'])
+
+            conn.execute('DELETE FROM builds WHERE id = ?', (build_id,))
+
+            if project_id:
+                try:
+                    p_row = conn.execute('SELECT builds_json FROM projects WHERE id = ?', (project_id,)).fetchone()
+                    if p_row and p_row['builds_json']:
+                        p_builds = json.loads(p_row['builds_json'])
+                        for plat in platforms:
+                            p_builds.pop(plat, None)
+                        now_iso = datetime.utcnow().isoformat() + 'Z'
+                        conn.execute('UPDATE projects SET builds_json = ?, updated_at = ? WHERE id = ?', (json.dumps(p_builds), now_iso, project_id))
+                except Exception as pe:
+                    logger.warning(f"Error removing build from SQLite project: {pe}")
+
+            conn.commit()
+            conn.close()
+
+        # 2. Disk cleanup
+        try:
+            bdir = os.path.join(app.config['BUILD_FOLDER'], build_id)
+            if os.path.exists(bdir):
+                shutil.rmtree(bdir, ignore_errors=True)
+                logger.info(f"Deleted local build directory: {bdir}")
+        except Exception as de:
+            logger.warning(f"Error removing local build dir {build_id}: {de}")
+
+        # 3. Storage cleanup
+        try:
+            bucket = get_storage_bucket()
+            if bucket and user_id:
+                for sp in storage_paths:
+                    try:
+                        blob = bucket.blob(sp)
+                        if blob.exists():
+                            blob.delete()
+                    except Exception:
+                        pass
+                for fname in deleted_filenames:
+                    prefix = f"builds/{user_id}/{project_id or 'general'}/"
+                    for blob in bucket.list_blobs(prefix=prefix):
+                        if fname in blob.name:
+                            try:
+                                blob.delete()
+                            except Exception:
+                                pass
+        except Exception as se:
+            logger.warning(f"Error cleaning storage for build {build_id}: {se}")
+
+        # 4. In-memory cleanup
+        build_progress.pop(build_id, None)
+
+        return jsonify({'success': True, 'message': f'Build {build_id} successfully deleted'})
+    except Exception as e:
+        logger.exception("Failed to delete build")
+        return jsonify({'error': f'Failed to delete build: {str(e)}'}), 500
 
 if __name__ == '__main__':
     import argparse
