@@ -25,6 +25,31 @@
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 </head>
 <body class="auth-body">
+    <!-- Authentication Page Top Header -->
+    <header class="auth-header">
+        <div class="auth-header-left">
+            <a href="/" class="auth-brand" title="ieWebNative">
+                <img src="{{ url_for('static', filename='images/logo.png') }}" alt="ieWebNative" class="auth-brand-logo">
+                <span class="auth-brand-name">ieWebNative</span>
+            </a>
+            <span class="auth-header-divider"></span>
+            <a href="/" class="auth-back-link" title="Return to Home page">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                <span>Back to Home</span>
+            </a>
+        </div>
+        <div class="auth-header-right">
+            <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle Day / Moon Light Mode" aria-label="Toggle Theme">
+                <span class="theme-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                </span>
+                <span class="theme-label" style="font-size: 13px; font-weight: 600;">Day</span>
+            </button>
+        </div>
+    </header>
+
     <div class="auth-container">
         <!-- Left Side - Branding -->
         <div class="auth-branding">
@@ -62,17 +87,6 @@
 
         <!-- Right Side - Auth Forms -->
         <div class="auth-forms">
-            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 440px; margin-bottom: 16px;">
-                <a href="/" style="display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; font-weight: 600;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                    Back to Home
-                </a>
-                <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle Day / Moon Light Mode" aria-label="Toggle Theme">
-                    <span class="theme-icon">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-                    </span>
-                </button>
-            </div>
             <!-- Login Form -->
             <div class="auth-card" id="login-form">
                 <div class="auth-card-header">
