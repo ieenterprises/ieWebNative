@@ -808,8 +808,125 @@ def generate_keystore(build_dir, config):
 
     return None
 
+def resolve_asset_to_file(source_path_or_url, storage_path=None, destination_file=None):
+    """
+    Given any combination of:
+    - local file path (absolute or relative)
+    - upload URL or path (e.g. /uploads/filename.ext or uploads/filename.ext)
+    - remote HTTP/HTTPS URL
+    - base64 data URI
+    - Firebase Storage path
+    Resolve, download/copy, and save the asset to destination_file.
+    Converts and saves as RGBA PNG for maximum Flutter/runner compatibility.
+    Returns True if successfully resolved and written to destination_file, False otherwise.
+    """
+    if not destination_file:
+        return False
+
+    os.makedirs(os.path.dirname(destination_file), exist_ok=True)
+    temp_target = destination_file + '.tmp'
+
+    success = False
+
+    # 1. Base64 data URI
+    if source_path_or_url and isinstance(source_path_or_url, str) and source_path_or_url.startswith('data:image/'):
+        try:
+            comma_idx = source_path_or_url.find(',')
+            if comma_idx != -1:
+                b64_data = source_path_or_url[comma_idx + 1:]
+                raw_bytes = base64.b64decode(b64_data)
+                with open(temp_target, 'wb') as f:
+                    f.write(raw_bytes)
+                if os.path.exists(temp_target) and os.path.getsize(temp_target) > 0:
+                    success = True
+        except Exception as e:
+            logger.warning(f"Failed to decode base64 data URI: {e}")
+
+    # 2. Local file on disk (absolute or relative to BASE_DIR or UPLOAD_FOLDER)
+    if not success and source_path_or_url and isinstance(source_path_or_url, str) and not source_path_or_url.startswith(('http://', 'https://')):
+        candidates = []
+        if os.path.isabs(source_path_or_url):
+            candidates.append(source_path_or_url)
+        else:
+            candidates.append(os.path.join(BASE_DIR, source_path_or_url.lstrip('/\\')))
+
+        clean_name = os.path.basename(source_path_or_url.split('?')[0])
+        candidates.append(os.path.join(app.config.get('UPLOAD_FOLDER', os.path.join(BASE_DIR, 'uploads')), clean_name))
+
+        for cand in candidates:
+            if cand and os.path.exists(cand) and os.path.isfile(cand):
+                try:
+                    shutil.copy(cand, temp_target)
+                    if os.path.exists(temp_target) and os.path.getsize(temp_target) > 0:
+                        success = True
+                        break
+                except Exception as e:
+                    logger.warning(f"Failed to copy local candidate {cand}: {e}")
+
+    # 3. Firebase Cloud Storage download
+    if not success and storage_path:
+        bucket = get_storage_bucket()
+        if bucket:
+            try:
+                blob = bucket.blob(storage_path)
+                blob.download_to_filename(temp_target)
+                if os.path.exists(temp_target) and os.path.getsize(temp_target) > 0:
+                    success = True
+            except Exception as e:
+                logger.warning(f"Failed to download asset from storage path {storage_path}: {e}")
+
+    # 4. HTTP / HTTPS URL download
+    if not success and source_path_or_url and isinstance(source_path_or_url, str) and source_path_or_url.startswith(('http://', 'https://')):
+        parsed = urlparse(source_path_or_url)
+        if '/uploads/' in parsed.path:
+            filename = os.path.basename(parsed.path)
+            local_upload = os.path.join(app.config.get('UPLOAD_FOLDER', os.path.join(BASE_DIR, 'uploads')), filename)
+            if os.path.exists(local_upload) and os.path.isfile(local_upload):
+                try:
+                    shutil.copy(local_upload, temp_target)
+                    if os.path.exists(temp_target) and os.path.getsize(temp_target) > 0:
+                        success = True
+                except Exception:
+                    pass
+
+        if not success:
+            try:
+                r = requests.get(source_path_or_url, timeout=15)
+                if r.status_code == 200 and len(r.content) > 0:
+                    with open(temp_target, 'wb') as f:
+                        f.write(r.content)
+                    success = True
+            except Exception as e:
+                logger.warning(f"Failed to download asset from URL {source_path_or_url}: {e}")
+
+    # 5. Normalize with Pillow to PNG format at destination_file
+    if success and os.path.exists(temp_target) and os.path.getsize(temp_target) > 0:
+        try:
+            from PIL import Image
+            with Image.open(temp_target) as img:
+                img_rgba = img.convert('RGBA')
+                img_rgba.save(destination_file, 'PNG')
+            if os.path.exists(temp_target):
+                try: os.remove(temp_target)
+                except Exception: pass
+            return True
+        except Exception as pe:
+            logger.warning(f"Pillow normalization error for {destination_file}: {pe}")
+            if os.path.exists(destination_file):
+                try: os.remove(destination_file)
+                except Exception: pass
+            shutil.move(temp_target, destination_file)
+            return True
+
+    if os.path.exists(temp_target):
+        try: os.remove(temp_target)
+        except Exception: pass
+
+    return False
+
+
 def setup_app_icon(project_dir, icon_path, build_id):
-    """Setup app icon using icons_launcher package"""
+    """Setup app icon using icons_launcher package and Pillow across all native platforms"""
     if not icon_path or not os.path.exists(icon_path):
         return False
 
@@ -819,7 +936,8 @@ def setup_app_icon(project_dir, icon_path, build_id):
         os.makedirs(assets_dir, exist_ok=True)
 
         icon_dest = os.path.join(assets_dir, 'icon.png')
-        shutil.copy(icon_path, icon_dest)
+        if os.path.abspath(icon_path) != os.path.abspath(icon_dest):
+            shutil.copy(icon_path, icon_dest)
 
         # Create icons_launcher.yaml configuration
         icons_config = f"""icons_launcher:
@@ -839,12 +957,12 @@ def setup_app_icon(project_dir, icon_path, build_id):
       enable: true
 """
         config_path = os.path.join(project_dir, 'icons_launcher.yaml')
-        with open(config_path, 'w') as f:
+        with open(config_path, 'w', encoding='utf-8') as f:
             f.write(icons_config)
 
         # Add icons_launcher to dev_dependencies in pubspec.yaml
         pubspec_path = os.path.join(project_dir, 'pubspec.yaml')
-        with open(pubspec_path, 'r') as f:
+        with open(pubspec_path, 'r', encoding='utf-8') as f:
             pubspec_content = f.read()
 
         # Add icons_launcher if not present
@@ -853,35 +971,79 @@ def setup_app_icon(project_dir, icon_path, build_id):
                 'dev_dependencies:',
                 'dev_dependencies:\n  icons_launcher: ^3.0.0'
             )
-            with open(pubspec_path, 'w') as f:
+            with open(pubspec_path, 'w', encoding='utf-8') as f:
                 f.write(pubspec_content)
 
-        # Try local Pillow generation first (instant, works without Flutter SDK)
+        # Try local Pillow generation across all native platforms (instant, works without Flutter SDK)
         try:
             from PIL import Image
-            img = Image.open(icon_path).convert('RGBA')
-            sizes = {
-                'mipmap-mdpi': (48, 48),
-                'mipmap-hdpi': (72, 72),
-                'mipmap-xhdpi': (96, 96),
-                'mipmap-xxhdpi': (144, 144),
-                'mipmap-xxxhdpi': (192, 192)
-            }
-            res_dir = os.path.join(project_dir, 'android', 'app', 'src', 'main', 'res')
-            for folder, size in sizes.items():
-                target_dir = os.path.join(res_dir, folder)
-                os.makedirs(target_dir, exist_ok=True)
-                resized = img.resize(size, Image.Resampling.LANCZOS)
-                resized.save(os.path.join(target_dir, 'ic_launcher.png'), 'PNG')
+            with Image.open(icon_path) as raw_img:
+                img = raw_img.convert('RGBA')
 
-            # Windows icon (.ico)
-            win_res_dir = os.path.join(project_dir, 'windows', 'runner', 'resources')
-            if os.path.exists(win_res_dir):
-                win_ico_path = os.path.join(win_res_dir, 'app_icon.ico')
-                img.save(win_ico_path, format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-                logger.info("Successfully generated Windows app_icon.ico using Pillow")
+                # 1. Android mipmaps
+                sizes = {
+                    'mipmap-mdpi': (48, 48),
+                    'mipmap-hdpi': (72, 72),
+                    'mipmap-xhdpi': (96, 96),
+                    'mipmap-xxhdpi': (144, 144),
+                    'mipmap-xxxhdpi': (192, 192)
+                }
+                res_dir = os.path.join(project_dir, 'android', 'app', 'src', 'main', 'res')
+                if os.path.exists(res_dir):
+                    for folder, size in sizes.items():
+                        target_dir = os.path.join(res_dir, folder)
+                        os.makedirs(target_dir, exist_ok=True)
+                        resized = img.resize(size, Image.Resampling.LANCZOS)
+                        resized.save(os.path.join(target_dir, 'ic_launcher.png'), 'PNG')
 
-            logger.info("Successfully generated Android and Windows icons using Pillow")
+                # 2. Windows icon (.ico with all standard resolutions: 16, 32, 48, 64, 128, 256)
+                win_res_dir = os.path.join(project_dir, 'windows', 'runner', 'resources')
+                if os.path.exists(win_res_dir):
+                    win_ico_path = os.path.join(win_res_dir, 'app_icon.ico')
+                    img.save(win_ico_path, format='ICO', sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+                    logger.info("Successfully generated Windows app_icon.ico with multi-size resolutions using Pillow")
+
+                # 3. macOS AppIcon
+                mac_res_dir = os.path.join(project_dir, 'macos', 'Runner', 'Assets.xcassets', 'AppIcon.appiconset')
+                if os.path.exists(mac_res_dir):
+                    mac_sizes = {
+                        'app_icon_16.png': (16, 16),
+                        'app_icon_32.png': (32, 32),
+                        'app_icon_64.png': (64, 64),
+                        'app_icon_128.png': (128, 128),
+                        'app_icon_256.png': (256, 256),
+                        'app_icon_512.png': (512, 512),
+                        'app_icon_1024.png': (1024, 1024)
+                    }
+                    for fname, sz in mac_sizes.items():
+                        img.resize(sz, Image.Resampling.LANCZOS).save(os.path.join(mac_res_dir, fname), 'PNG')
+                    logger.info("Successfully generated macOS AppIcon using Pillow")
+
+                # 4. iOS AppIcon
+                ios_res_dir = os.path.join(project_dir, 'ios', 'Runner', 'Assets.xcassets', 'AppIcon.appiconset')
+                if os.path.exists(ios_res_dir):
+                    ios_sizes = {
+                        'Icon-App-20x20@1x.png': (20, 20),
+                        'Icon-App-20x20@2x.png': (40, 40),
+                        'Icon-App-20x20@3x.png': (60, 60),
+                        'Icon-App-29x29@1x.png': (29, 29),
+                        'Icon-App-29x29@2x.png': (58, 58),
+                        'Icon-App-29x29@3x.png': (87, 87),
+                        'Icon-App-40x40@1x.png': (40, 40),
+                        'Icon-App-40x40@2x.png': (80, 80),
+                        'Icon-App-40x40@3x.png': (120, 120),
+                        'Icon-App-60x60@2x.png': (120, 120),
+                        'Icon-App-60x60@3x.png': (180, 180),
+                        'Icon-App-76x76@1x.png': (76, 76),
+                        'Icon-App-76x76@2x.png': (152, 152),
+                        'Icon-App-83.5x83.5@2x.png': (167, 167),
+                        'Icon-App-1024x1024@1x.png': (1024, 1024)
+                    }
+                    for fname, sz in ios_sizes.items():
+                        img.resize(sz, Image.Resampling.LANCZOS).save(os.path.join(ios_res_dir, fname), 'PNG')
+                    logger.info("Successfully generated iOS AppIcon using Pillow")
+
+            logger.info("Successfully generated native icons across Android, Windows, macOS, and iOS using Pillow")
         except Exception as pe:
             logger.info(f"Pillow icon generation skipped or failed: {pe}")
 
@@ -1646,6 +1808,76 @@ def run_build(build_id, config):
         project_dir = os.path.join(build_dir, 'project')
         shutil.copytree(app.config['FLUTTER_TEMPLATE'], project_dir)
 
+        # Pre-resolve project assets (icon, splash, error) before writing configs
+        assets_dir = os.path.join(project_dir, 'assets')
+        os.makedirs(assets_dir, exist_ok=True)
+
+        # 1. Resolve and setup App Icon
+        icon_resolved = False
+        target_icon = os.path.join(assets_dir, 'icon.png')
+        icon_sources = [config.get('icon_path'), config.get('icon_url'), config.get('iconUrl')]
+        for src_path in icon_sources:
+            if src_path:
+                if resolve_asset_to_file(src_path, config.get('iconStoragePath') or config.get('icon_storage_path'), target_icon):
+                    icon_resolved = True
+                    break
+        if not icon_resolved and (config.get('iconStoragePath') or config.get('icon_storage_path')):
+            icon_resolved = resolve_asset_to_file(None, config.get('iconStoragePath') or config.get('icon_storage_path'), target_icon)
+
+        if icon_resolved and os.path.exists(target_icon):
+            check_build_cancelled(build_id)
+            set_build_progress(build_id, status='icons', progress=8, message='Configuring app icons...')
+            setup_app_icon(project_dir, target_icon, build_id)
+
+        # 2. Resolve Splash Screen Image
+        splash_resolved = False
+        target_splash = os.path.join(assets_dir, 'splash.png')
+        splash_sources = [
+            config.get('splash_image_path'),
+            config.get('splash_image_url'),
+            config.get('splashUrl'),
+            config.get('splash_url'),
+            config.get('splashImageUrl')
+        ]
+        for s_src in splash_sources:
+            if s_src:
+                if resolve_asset_to_file(s_src, config.get('splashStoragePath') or config.get('splash_storage_path'), target_splash):
+                    splash_resolved = True
+                    break
+        if not splash_resolved and (config.get('splashStoragePath') or config.get('splash_storage_path')):
+            splash_resolved = resolve_asset_to_file(None, config.get('splashStoragePath') or config.get('splash_storage_path'), target_splash)
+
+        # Fallback: if splash screen is enabled but no custom splash image, use app icon
+        if not splash_resolved and config.get('enable_splash_screen') and icon_resolved and os.path.exists(target_icon):
+            try:
+                shutil.copy(target_icon, target_splash)
+                splash_resolved = True
+            except Exception as e:
+                logger.warning(f"Could not copy app icon to splash image: {e}")
+
+        # 3. Resolve Error Screen Image
+        error_resolved = False
+        target_error = os.path.join(assets_dir, 'error.png')
+        error_sources = [
+            config.get('error_image_path'),
+            config.get('error_image_url'),
+            config.get('errorUrl'),
+            config.get('error_url'),
+            config.get('errorImageUrl')
+        ]
+        for e_src in error_sources:
+            if e_src:
+                if resolve_asset_to_file(e_src, config.get('errorStoragePath') or config.get('error_storage_path'), target_error):
+                    error_resolved = True
+                    break
+        if not error_resolved and (config.get('errorStoragePath') or config.get('error_storage_path')):
+            error_resolved = resolve_asset_to_file(None, config.get('errorStoragePath') or config.get('error_storage_path'), target_error)
+
+        has_custom_splash = os.path.exists(target_splash) and os.path.getsize(target_splash) > 0
+        has_custom_error = os.path.exists(target_error) and os.path.getsize(target_error) > 0
+        enable_splash = bool(config.get('enable_splash_screen', False) or has_custom_splash)
+        enable_error = bool(config.get('enable_error_page', False) or has_custom_error)
+
         check_build_cancelled(build_id)
         set_build_progress(build_id, status='configuring', progress=10, message='Configuring app...')
 
@@ -1752,7 +1984,7 @@ def run_build(build_id, config):
         # Splash Screen Configuration
         content = re.sub(
             r'static const bool ENABLE_SPLASH_SCREEN = \w+;',
-            f'static const bool ENABLE_SPLASH_SCREEN = {bool_to_dart(config.get("enable_splash_screen", False))};',
+            f'static const bool ENABLE_SPLASH_SCREEN = {bool_to_dart(enable_splash)};',
             content
         )
         splash_title_str = str(config.get("splash_title", config.get("app_name", ""))).replace("'", "\\'")
@@ -1788,10 +2020,6 @@ def run_build(build_id, config):
             f'static const int SPLASH_DURATION_SECONDS = {splash_duration};',
             content
         )
-        has_custom_splash = bool(
-            (config.get("splash_image_path") and os.path.exists(config.get("splash_image_path", ""))) or
-            config.get("splash_image_url") or config.get("splashUrl") or config.get("splashImageUrl")
-        )
         content = re.sub(
             r'static const bool HAS_CUSTOM_SPLASH_IMAGE = \w+;',
             f'static const bool HAS_CUSTOM_SPLASH_IMAGE = {bool_to_dart(has_custom_splash)};',
@@ -1801,7 +2029,7 @@ def run_build(build_id, config):
         # Error / Offline Page Configuration
         content = re.sub(
             r'static const bool ENABLE_ERROR_PAGE = \w+;',
-            f'static const bool ENABLE_ERROR_PAGE = {bool_to_dart(config.get("enable_error_page", False))};',
+            f'static const bool ENABLE_ERROR_PAGE = {bool_to_dart(enable_error)};',
             content
         )
         error_title_str = str(config.get("error_title", "No Internet Connection")).replace("'", "\\'")
@@ -1833,10 +2061,6 @@ def run_build(build_id, config):
             r'static const String ERROR_TEXT_COLOR = [^;]+;',
             f"static const String ERROR_TEXT_COLOR = '{error_text_color}';",
             content
-        )
-        has_custom_error = bool(
-            (config.get("error_image_path") and os.path.exists(config.get("error_image_path", ""))) or
-            config.get("error_image_url") or config.get("errorUrl") or config.get("errorImageUrl")
         )
         content = re.sub(
             r'static const bool HAS_CUSTOM_ERROR_IMAGE = \w+;',
@@ -1890,53 +2114,7 @@ def run_build(build_id, config):
         set_build_progress(build_id, status='renaming', progress=15, message='Setting app name and bundle ID...')
         rename_app(project_dir, config['app_name'], config['package_name'])
 
-        # Setup app icon if provided
-        icon_path = config.get('icon_path')
-        if (not icon_path or not os.path.exists(icon_path)) and (config.get('icon_url') or config.get('iconUrl')):
-            remote_icon_url = config.get('icon_url') or config.get('iconUrl')
-            try:
-                r_icon = requests.get(remote_icon_url, timeout=10)
-                if r_icon.status_code == 200:
-                    local_icon = os.path.join(app.config['UPLOAD_FOLDER'], f"icon_{build_id}.png")
-                    with open(local_icon, 'wb') as f:
-                        f.write(r_icon.content)
-                    icon_path = local_icon
-            except Exception as dl_icon_err:
-                logger.warning(f"Could not download remote icon for build {build_id}: {dl_icon_err}")
-
-        if icon_path and os.path.exists(icon_path):
-            check_build_cancelled(build_id)
-            set_build_progress(build_id, status='icons', progress=18, message='Generating app icons...')
-            setup_app_icon(project_dir, icon_path, build_id)
-
-        # Setup splash and error assets if provided
-        assets_dir = os.path.join(project_dir, 'assets')
-        os.makedirs(assets_dir, exist_ok=True)
-        splash_image_path = config.get('splash_image_path')
-        if splash_image_path and os.path.exists(splash_image_path):
-            shutil.copy(splash_image_path, os.path.join(assets_dir, 'splash.png'))
-        elif config.get('splash_image_url') or config.get('splashUrl') or config.get('splashImageUrl'):
-            splash_remote = config.get('splash_image_url') or config.get('splashUrl') or config.get('splashImageUrl')
-            try:
-                r_splash = requests.get(splash_remote, timeout=10)
-                if r_splash.status_code == 200:
-                    with open(os.path.join(assets_dir, 'splash.png'), 'wb') as f:
-                        f.write(r_splash.content)
-            except Exception as dl_splash_err:
-                logger.warning(f"Could not download remote splash image for build {build_id}: {dl_splash_err}")
-
-        error_image_path = config.get('error_image_path')
-        if error_image_path and os.path.exists(error_image_path):
-            shutil.copy(error_image_path, os.path.join(assets_dir, 'error.png'))
-        elif config.get('error_image_url') or config.get('errorUrl') or config.get('errorImageUrl'):
-            error_remote = config.get('error_image_url') or config.get('errorUrl') or config.get('errorImageUrl')
-            try:
-                r_err = requests.get(error_remote, timeout=10)
-                if r_err.status_code == 200:
-                    with open(os.path.join(assets_dir, 'error.png'), 'wb') as f:
-                        f.write(r_err.content)
-            except Exception as dl_err_img:
-                logger.warning(f"Could not download remote error image for build {build_id}: {dl_err_img}")
+        # Platform-specific configurations
 
         # Update Android config (for keystore)
         if 'android' in config['platforms'] or 'android_aab' in config['platforms']:
@@ -2336,6 +2514,21 @@ def update_windows_config(project_dir, config):
                 f.write(cpp_content)
         except Exception as e:
             logger.warning(f"Failed to update Windows main.cpp: {e}")
+
+    # Update product name and description in Runner.rc
+    rc_path = os.path.join(project_dir, 'windows', 'runner', 'Runner.rc')
+    if os.path.exists(rc_path):
+        try:
+            with open(rc_path, 'r', encoding='utf-8') as f:
+                rc_content = f.read()
+            escaped_app = config['app_name'].replace('\\', '\\\\').replace('"', '\\"')
+            rc_content = rc_content.replace('VALUE "FileDescription", "webview_app"', f'VALUE "FileDescription", "{escaped_app}"')
+            rc_content = rc_content.replace('VALUE "ProductName", "webview_app"', f'VALUE "ProductName", "{escaped_app}"')
+            rc_content = rc_content.replace('VALUE "InternalName", "webview_app"', f'VALUE "InternalName", "{safe_bin_name}"')
+            with open(rc_path, 'w', encoding='utf-8') as f:
+                f.write(rc_content)
+        except Exception as e:
+            logger.warning(f"Failed to update Windows Runner.rc: {e}")
 
 def update_linux_config(project_dir, config):
     """Update Linux configuration"""
@@ -3868,6 +4061,8 @@ def start_build():
             'app_store_issuer_id': data.get('app_store_issuer_id'),
 
             'icon_path': data.get('icon_path'),
+            'icon_url': data.get('icon_url') or data.get('iconUrl'),
+            'icon_storage_path': data.get('icon_storage_path') or data.get('iconStoragePath'),
             'enable_splash_screen': data.get('enable_splash_screen', False),
             'splash_title': data.get('splash_title', data.get('app_name', '')),
             'splash_subtitle': data.get('splash_subtitle', ''),
@@ -3875,6 +4070,8 @@ def start_build():
             'splash_text_color': data.get('splash_text_color', '#1E293B'),
             'splash_duration': data.get('splash_duration', 2),
             'splash_image_path': data.get('splash_image_path'),
+            'splash_image_url': data.get('splash_image_url') or data.get('splash_url') or data.get('splashUrl') or data.get('splashImageUrl'),
+            'splash_storage_path': data.get('splash_storage_path') or data.get('splashStoragePath'),
 
             'error_title': data.get('error_title', 'No Internet Connection'),
             'enable_error_page': data.get('enable_error_page', False),
@@ -3883,6 +4080,8 @@ def start_build():
             'error_bg_color': data.get('error_bg_color', '#FFFFFF'),
             'error_text_color': data.get('error_text_color', '#334155'),
             'error_image_path': data.get('error_image_path'),
+            'error_image_url': data.get('error_image_url') or data.get('error_url') or data.get('errorUrl') or data.get('errorImageUrl'),
+            'error_storage_path': data.get('error_storage_path') or data.get('errorStoragePath'),
             'webhook_url': data.get('webhook_url')
         }
 
@@ -3907,44 +4106,127 @@ def start_build():
         icon_path = data.get('icon_path', '')
         now_str = datetime.utcnow().isoformat()
 
+        # 1. Backfill any missing assets or settings from saved project document FIRST
+        saved_proj_data = {}
+        if project_id:
+            if db:
+                try:
+                    p_doc = db.collection('projects').document(project_id).get()
+                    if p_doc.exists:
+                        fs_dict = p_doc.to_dict() or {}
+                        saved_proj_data.update(fs_dict)
+                except Exception as e:
+                    logger.warning(f"Could not load project {project_id} from Firestore for build backfill: {e}")
+            try:
+                conn = get_db_connection()
+                p_row = conn.execute('SELECT * FROM projects WHERE id = ?', (project_id,)).fetchone()
+                conn.close()
+                if p_row:
+                    sql_data = dict(p_row)
+                    if 'settings_json' in sql_data and sql_data['settings_json']:
+                        try:
+                            sql_data['settings'] = json.loads(sql_data['settings_json'])
+                        except Exception:
+                            pass
+                    # Merge sqlite fields when missing or empty in Firestore
+                    for k, v in sql_data.items():
+                        if v and not saved_proj_data.get(k):
+                            saved_proj_data[k] = v
+                    if 'settings' in sql_data and isinstance(sql_data['settings'], dict):
+                        merged_s = saved_proj_data.get('settings') or {}
+                        for sk, sv in sql_data['settings'].items():
+                            if sv and not merged_s.get(sk):
+                                merged_s[sk] = sv
+                        saved_proj_data['settings'] = merged_s
+            except Exception as e:
+                logger.warning(f"Could not load project {project_id} from SQLite for build backfill: {e}")
+
+        if saved_proj_data:
+            p_settings = saved_proj_data.get('settings') or {}
+            # Icon backfill
+            if not config.get('icon_url') and not config.get('icon_path'):
+                config['icon_url'] = saved_proj_data.get('iconUrl') or saved_proj_data.get('icon_url')
+            if not config.get('icon_storage_path'):
+                config['icon_storage_path'] = saved_proj_data.get('iconStoragePath')
+
+            # Splash backfill
+            if not config.get('splash_image_url') and not config.get('splash_image_path'):
+                config['splash_image_url'] = saved_proj_data.get('splashUrl') or p_settings.get('splashImageUrl') or saved_proj_data.get('splash_url')
+            if not config.get('splash_storage_path'):
+                config['splash_storage_path'] = saved_proj_data.get('splashStoragePath')
+            if not config.get('enable_splash_screen'):
+                config['enable_splash_screen'] = p_settings.get('enableSplashScreen', bool(config.get('splash_image_url') or config.get('splash_image_path')))
+            if not config.get('splash_title') and p_settings.get('splashTitle'):
+                config['splash_title'] = p_settings['splashTitle']
+            if not config.get('splash_subtitle') and p_settings.get('splashSubtitle'):
+                config['splash_subtitle'] = p_settings['splashSubtitle']
+            if p_settings.get('splashBgColor'):
+                config['splash_bg_color'] = p_settings['splashBgColor']
+            if p_settings.get('splashTextColor'):
+                config['splash_text_color'] = p_settings['splashTextColor']
+            if p_settings.get('splashDuration'):
+                config['splash_duration'] = p_settings['splashDuration']
+
+            # Error backfill
+            if not config.get('error_image_url') and not config.get('error_image_path'):
+                config['error_image_url'] = saved_proj_data.get('errorUrl') or p_settings.get('errorImageUrl') or saved_proj_data.get('error_url')
+            if not config.get('error_storage_path'):
+                config['error_storage_path'] = saved_proj_data.get('errorStoragePath')
+            if not config.get('enable_error_page'):
+                config['enable_error_page'] = p_settings.get('enableErrorPage', bool(config.get('error_image_url') or config.get('error_image_path')))
+            if not config.get('error_title') and p_settings.get('errorTitle'):
+                config['error_title'] = p_settings['errorTitle']
+            if not config.get('error_message') and p_settings.get('errorMessage'):
+                config['error_message'] = p_settings['errorMessage']
+            if not config.get('error_button_text') and p_settings.get('errorButtonText'):
+                config['error_button_text'] = p_settings['errorButtonText']
+            if p_settings.get('errorBgColor'):
+                config['error_bg_color'] = p_settings['errorBgColor']
+            if p_settings.get('errorTextColor'):
+                config['error_text_color'] = p_settings['errorTextColor']
+
+        # Construct settings_dict preserving saved project values
+        existing_s = (saved_proj_data.get('settings') if saved_proj_data else {}) or {}
         settings_dict = {
-            'allowZoom': data.get('allow_zoom', False),
-            'enableJavascript': data.get('enable_javascript', False),
-            'enableDomStorage': data.get('enable_dom_storage', False),
-            'enableGeolocation': data.get('enable_geolocation', False),
-            'enablePullRefresh': data.get('enable_pull_refresh', False),
-            'showNavigation': data.get('show_navigation', False),
-            'enableFileAccess': data.get('enable_file_access', False),
-            'enableCache': data.get('enable_cache', False),
-            'enableMediaAutoplay': data.get('enable_media_autoplay', False),
-            'enableCamera': data.get('enable_camera', False),
-            'enableMicrophone': data.get('enable_microphone', False),
-            'enableSslPinning': data.get('enable_ssl_pinning', False),
-            'sslPins': data.get('ssl_pins', ''),
-            'enableBiometrics': data.get('enable_biometric_auth', data.get('enable_biometrics', False)),
-            'enableAppLock': data.get('enable_app_lock', False),
-            'appLockPin': data.get('app_lock_pin', ''),
-            'enableSecureStorage': data.get('enable_secure_storage', False),
-            'enableGooglePlayPublish': data.get('enable_google_play_publish', False),
-            'playTrack': data.get('play_track', 'internal'),
-            'playStatus': data.get('play_status', 'draft'),
-            'enableAppStorePublish': data.get('enable_app_store_publish', False),
-            'appStoreKeyId': data.get('app_store_key_id', ''),
-            'appStoreIssuerId': data.get('app_store_issuer_id', ''),
-            'enableSplashScreen': data.get('enable_splash_screen', False),
-            'splashTitle': data.get('splash_title', ''),
-            'splashSubtitle': data.get('splash_subtitle', ''),
-            'splashBgColor': data.get('splash_bg_color', '#FFFFFF'),
-            'splashTextColor': data.get('splash_text_color', '#1E293B'),
-            'splashDuration': data.get('splash_duration', 2),
-            'splashImagePath': data.get('splash_image_path', ''),
-            'enableErrorPage': data.get('enable_error_page', False),
-            'errorTitle': data.get('error_title', 'No Internet Connection'),
-            'errorMessage': data.get('error_message', 'Please check your connection and try again'),
-            'errorButtonText': data.get('error_button_text', 'Retry'),
-            'errorBgColor': data.get('error_bg_color', '#FFFFFF'),
-            'errorTextColor': data.get('error_text_color', '#334155'),
-            'errorImagePath': data.get('error_image_path', '')
+            'allowZoom': data.get('allow_zoom', existing_s.get('allowZoom', False)),
+            'enableJavascript': data.get('enable_javascript', existing_s.get('enableJavascript', False)),
+            'enableDomStorage': data.get('enable_dom_storage', existing_s.get('enableDomStorage', False)),
+            'enableGeolocation': data.get('enable_geolocation', existing_s.get('enableGeolocation', False)),
+            'enablePullRefresh': data.get('enable_pull_refresh', existing_s.get('enablePullRefresh', False)),
+            'showNavigation': data.get('show_navigation', existing_s.get('showNavigation', False)),
+            'enableFileAccess': data.get('enable_file_access', existing_s.get('enableFileAccess', False)),
+            'enableCache': data.get('enable_cache', existing_s.get('enableCache', False)),
+            'enableMediaAutoplay': data.get('enable_media_autoplay', existing_s.get('enableMediaAutoplay', False)),
+            'enableCamera': data.get('enable_camera', existing_s.get('enableCamera', False)),
+            'enableMicrophone': data.get('enable_microphone', existing_s.get('enableMicrophone', False)),
+            'enableSslPinning': data.get('enable_ssl_pinning', existing_s.get('enableSslPinning', False)),
+            'sslPins': data.get('ssl_pins', existing_s.get('sslPins', '')),
+            'enableBiometrics': data.get('enable_biometric_auth', data.get('enable_biometrics', existing_s.get('enableBiometrics', False))),
+            'enableAppLock': data.get('enable_app_lock', existing_s.get('enableAppLock', False)),
+            'appLockPin': data.get('app_lock_pin', existing_s.get('appLockPin', '')),
+            'enableSecureStorage': data.get('enable_secure_storage', existing_s.get('enableSecureStorage', False)),
+            'enableGooglePlayPublish': data.get('enable_google_play_publish', existing_s.get('enableGooglePlayPublish', False)),
+            'playTrack': data.get('play_track', existing_s.get('playTrack', 'internal')),
+            'playStatus': data.get('play_status', existing_s.get('playStatus', 'draft')),
+            'enableAppStorePublish': data.get('enable_app_store_publish', existing_s.get('enableAppStorePublish', False)),
+            'appStoreKeyId': data.get('app_store_key_id', existing_s.get('appStoreKeyId', '')),
+            'appStoreIssuerId': data.get('app_store_issuer_id', existing_s.get('appStoreIssuerId', '')),
+            'enableSplashScreen': config.get('enable_splash_screen', existing_s.get('enableSplashScreen', False)),
+            'splashTitle': config.get('splash_title', existing_s.get('splashTitle', '')),
+            'splashSubtitle': config.get('splash_subtitle', existing_s.get('splashSubtitle', '')),
+            'splashBgColor': config.get('splash_bg_color', existing_s.get('splashBgColor', '#FFFFFF')),
+            'splashTextColor': config.get('splash_text_color', existing_s.get('splashTextColor', '#1E293B')),
+            'splashDuration': config.get('splash_duration', existing_s.get('splashDuration', 2)),
+            'splashImagePath': config.get('splash_image_path', existing_s.get('splashImagePath', '')),
+            'splashImageUrl': config.get('splash_image_url', existing_s.get('splashImageUrl', '')),
+            'enableErrorPage': config.get('enable_error_page', existing_s.get('enableErrorPage', False)),
+            'errorTitle': config.get('error_title', existing_s.get('errorTitle', 'No Internet Connection')),
+            'errorMessage': config.get('error_message', existing_s.get('errorMessage', 'Please check your connection and try again')),
+            'errorButtonText': config.get('error_button_text', existing_s.get('errorButtonText', 'Retry')),
+            'errorBgColor': config.get('error_bg_color', existing_s.get('errorBgColor', '#FFFFFF')),
+            'errorTextColor': config.get('error_text_color', existing_s.get('errorTextColor', '#334155')),
+            'errorImagePath': config.get('error_image_path', existing_s.get('errorImagePath', '')),
+            'errorImageUrl': config.get('error_image_url', existing_s.get('errorImageUrl', ''))
         }
         settings_json = json.dumps(settings_dict)
 
@@ -4003,7 +4285,9 @@ def start_build():
                                 'appVersion': app_ver,
                                 'buildNumber': build_num,
                                 'packageName': pkg_name,
-                                'iconUrl': icon_path,
+                                'iconUrl': config.get('icon_url') or icon_path,
+                                'splashUrl': config.get('splash_image_url'),
+                                'errorUrl': config.get('error_image_url'),
                                 'settings': settings_dict,
                                 'builds': {},
                                 'createdAt': firestore.SERVER_TIMESTAMP,
@@ -4028,9 +4312,9 @@ def start_build():
                         INSERT INTO projects (
                             id, user_id, name, web_url, description,
                             app_version, build_number, package_name,
-                            icon_url, settings_json, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (project_id, auth_user_id, app_name, web_url, app_desc, app_ver, build_num, pkg_name, icon_path, settings_json, now_str, now_str))
+                            icon_url, splash_url, error_url, settings_json, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (project_id, auth_user_id, app_name, web_url, app_desc, app_ver, build_num, pkg_name, config.get('icon_url') or icon_path, config.get('splash_image_url'), config.get('error_image_url'), settings_json, now_str, now_str))
                 conn.commit()
                 conn.close()
             except Exception as auto_save_err:
@@ -4054,7 +4338,8 @@ def start_build():
             'platforms': config.get('platforms', [selected_plat]),
             'user_id': auth_user_id,
             'start_time': datetime.now().isoformat(),
-            'cancel_requested': False
+            'cancel_requested': False,
+            'config': config
         }
 
         # Run build

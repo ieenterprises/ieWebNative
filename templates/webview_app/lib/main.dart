@@ -513,7 +513,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                     setState(() {
                       isLoading = false;
                       isOffline = false;
-                      if (_showSplash) _showSplash = false;
                     });
                     if (ENABLE_SECURE_STORAGE) {
                       await controller.evaluateJavascript(

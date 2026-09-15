@@ -296,6 +296,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         <span>Change Splash Image</span>
                     `;
                 }
+                if (enableSplashScreen && !enableSplashScreen.checked) {
+                    enableSplashScreen.checked = true;
+                    if (splashScreenDetails) splashScreenDetails.style.display = 'block';
+                }
             }
         });
     }
@@ -319,6 +323,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         </svg>
                         <span>Change Error Image</span>
                     `;
+                }
+                if (enableErrorPage && !enableErrorPage.checked) {
+                    enableErrorPage.checked = true;
+                    if (errorPageDetails) errorPageDetails.style.display = 'block';
                 }
             }
         });
@@ -527,6 +535,11 @@ document.addEventListener('DOMContentLoaded', function() {
             } catch (error) {
                 console.error('Icon upload error:', error);
             }
+        } else if (currentIconPath) {
+            formData.icon_path = currentIconPath;
+        }
+        if (window.cloudIconUrl) {
+            formData.icon_url = window.cloudIconUrl;
         }
 
         // Upload custom splash image if provided
@@ -580,19 +593,24 @@ document.addEventListener('DOMContentLoaded', function() {
         if (window.cloudErrorUrl) {
             formData.error_image_url = window.cloudErrorUrl;
         }
-        if (window.cloudIconUrl) {
-            formData.icon_url = window.cloudIconUrl;
-        }
 
         // Add Splash Screen & Error Page configuration
-        formData.enable_splash_screen = document.getElementById('enable-splash-screen')?.checked ?? false;
+        let isSplashEnabled = document.getElementById('enable-splash-screen')?.checked ?? false;
+        if (!isSplashEnabled && (formData.splash_image_path || formData.splash_image_url || currentSplashImagePath || window.cloudSplashUrl)) {
+            isSplashEnabled = true;
+        }
+        formData.enable_splash_screen = isSplashEnabled;
         formData.splash_title = document.getElementById('splash-title')?.value || '';
         formData.splash_subtitle = document.getElementById('splash-subtitle')?.value || '';
         formData.splash_bg_color = document.getElementById('splash-bg-color')?.value || '#FFFFFF';
         formData.splash_text_color = document.getElementById('splash-text-color')?.value || '#1E293B';
         formData.splash_duration = parseInt(document.getElementById('splash-duration')?.value || '2', 10);
 
-        formData.enable_error_page = document.getElementById('enable-error-page')?.checked ?? false;
+        let isErrorEnabled = document.getElementById('enable-error-page')?.checked ?? false;
+        if (!isErrorEnabled && (formData.error_image_path || formData.error_image_url || currentErrorImagePath || window.cloudErrorUrl)) {
+            isErrorEnabled = true;
+        }
+        formData.enable_error_page = isErrorEnabled;
         formData.error_title = document.getElementById('error-title')?.value || 'No Internet Connection';
         formData.error_message = document.getElementById('error-message')?.value || 'Please check your connection and try again';
         formData.error_button_text = document.getElementById('error-button-text')?.value || 'Retry';
@@ -2149,8 +2167,20 @@ document.addEventListener('DOMContentLoaded', function() {
             // Handle icon
             if (project.icon_path) {
                 currentIconPath = project.icon_path;
-                // Show icon preview by loading from uploads
-                iconPreview.innerHTML = `<img src="/uploads/${project.icon_path.split('/').pop()}" alt="App Icon" onerror="this.parentElement.innerHTML='<svg width=\\'48\\' height=\\'48\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><rect x=\\'3\\' y=\\'3\\' width=\\'18\\' height=\\'18\\' rx=\\'4\\' ry=\\'4\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><polyline points=\\'21 15 16 10 5 21\\'/></svg>'">`;
+                const iconFilename = project.icon_path.split(/[\\/]/).pop();
+                iconPreview.innerHTML = `<img src="/uploads/${iconFilename}" alt="App Icon" onerror="this.parentElement.innerHTML='<svg width=\\'48\\' height=\\'48\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><rect x=\\'3\\' y=\\'3\\' width=\\'18\\' height=\\'18\\' rx=\\'4\\' ry=\\'4\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><polyline points=\\'21 15 16 10 5 21\\'/></svg>'">`;
+                iconPreview.classList.add('has-icon');
+                iconUploadLabel.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    <span>Change Icon</span>
+                `;
+            } else if (project.icon_url || project.iconUrl) {
+                const iUrl = project.icon_url || project.iconUrl;
+                window.cloudIconUrl = iUrl;
+                iconPreview.innerHTML = `<img src="${iUrl}" alt="App Icon">`;
                 iconPreview.classList.add('has-icon');
                 iconUploadLabel.innerHTML = `
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2350,6 +2380,22 @@ document.addEventListener('DOMContentLoaded', function() {
                         <span>Splash Image Loaded</span>
                     `;
                 }
+            } else if (project.splash_image_url || project.splashUrl) {
+                const sUrl = project.splash_image_url || project.splashUrl;
+                window.cloudSplashUrl = sUrl;
+                if (splashImagePreview) {
+                    splashImagePreview.innerHTML = `<img src="${sUrl}" alt="Splash Image" style="width: 100%; height: 100%; object-fit: contain;">`;
+                    splashImagePreview.classList.add('has-icon');
+                }
+                if (splashImageUploadLabel) {
+                    splashImageUploadLabel.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <span>Splash Image Loaded</span>
+                    `;
+                }
             }
 
             // Handle Error Page settings
@@ -2389,6 +2435,22 @@ document.addEventListener('DOMContentLoaded', function() {
                 const errFilename = project.error_image_path.split(/[\\/]/).pop();
                 if (errorImagePreview) {
                     errorImagePreview.innerHTML = `<img src="/uploads/${errFilename}" alt="Error Image" style="width: 100%; height: 100%; object-fit: contain;">`;
+                    errorImagePreview.classList.add('has-icon');
+                }
+                if (errorImageUploadLabel) {
+                    errorImageUploadLabel.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <span>Error Image Loaded</span>
+                    `;
+                }
+            } else if (project.error_image_url || project.errorUrl) {
+                const eUrl = project.error_image_url || project.errorUrl;
+                window.cloudErrorUrl = eUrl;
+                if (errorImagePreview) {
+                    errorImagePreview.innerHTML = `<img src="${eUrl}" alt="Error Image" style="width: 100%; height: 100%; object-fit: contain;">`;
                     errorImagePreview.classList.add('has-icon');
                 }
                 if (errorImageUploadLabel) {
