@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -103,6 +104,10 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   bool canGoBack = false;
   bool canGoForward = false;
   bool isWebView2Missing = false;
+  int _webViewKey = 0;
+  bool _wasOffline = false;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  Timer? _watchdogTimer;
 
   bool get isMobile => !kIsWeb && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS);
 
@@ -157,6 +162,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _startWatchdog();
     if (ENABLE_SPLASH_SCREEN) {
       Future.delayed(const Duration(seconds: SPLASH_DURATION_SECONDS), () {
         if (mounted && _showSplash) {
@@ -199,12 +205,26 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _connectivitySubscription?.cancel();
+    _watchdogTimer?.cancel();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
+      try {
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+          webViewController?.resume();
+          webViewController?.resumeTimers();
+        }
+      } catch (e) {
+        debugPrint('WebView resume error: $e');
+      }
+
+      _checkAndRecoverIfFrozen();
+
       if ((ENABLE_BIOMETRIC_AUTH || ENABLE_APP_LOCK) && !_isAuthenticating) {
         setState(() {
           _isLocked = true;
@@ -215,7 +235,50 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
           _authenticateWithBiometrics();
         }
       }
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      try {
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+          webViewController?.pause();
+          webViewController?.pauseTimers();
+        }
+      } catch (e) {
+        debugPrint('WebView pause error: $e');
+      }
     }
+  }
+
+  void _recreateWebView() {
+    if (!mounted) return;
+    setState(() {
+      _webViewKey++;
+      isLoading = true;
+      progress = 0;
+    });
+  }
+
+  Future<void> _checkAndRecoverIfFrozen() async {
+    if (webViewController == null || _isLocked || _showSplash || isOffline) return;
+    try {
+      final res = await webViewController!
+          .evaluateJavascript(source: '1 + 1')
+          .timeout(const Duration(milliseconds: 2500));
+      if (res != 2 && res != '2') {
+        debugPrint('WebView ping failed with unexpected return ($res). Reviving...');
+        _recreateWebView();
+      }
+    } catch (e) {
+      debugPrint('WebView was unresponsive or timed out after wake ($e). Reviving...');
+      _recreateWebView();
+    }
+  }
+
+  void _startWatchdog() {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = Timer.periodic(const Duration(minutes: 3), (_) {
+      if (mounted && !_isLocked && !_showSplash && !isOffline) {
+        _checkAndRecoverIfFrozen();
+      }
+    });
   }
 
   Future<void> _authenticateWithBiometrics() async {
@@ -286,18 +349,26 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   Future<void> _checkConnectivity() async {
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
+      final nowOffline = connectivityResult.contains(ConnectivityResult.none);
       if (mounted) {
         setState(() {
-          isOffline = connectivityResult.contains(ConnectivityResult.none);
+          isOffline = nowOffline;
+          _wasOffline = nowOffline;
         });
       }
 
-      Connectivity().onConnectivityChanged.listen((result) {
+      _connectivitySubscription?.cancel();
+      _connectivitySubscription = Connectivity().onConnectivityChanged.listen((result) {
         if (mounted) {
+          final nowOffline = result.contains(ConnectivityResult.none);
+          final transitionedToOnline = _wasOffline && !nowOffline;
           setState(() {
-            isOffline = result.contains(ConnectivityResult.none);
+            isOffline = nowOffline;
+            _wasOffline = nowOffline;
           });
-          if (!isOffline) {
+          // ONLY reload if the app was previously offline and connection is now restored!
+          if (transitionedToOnline) {
+            debugPrint('Connection restored from offline, reloading WebView...');
             webViewController?.reload();
           }
         }
@@ -333,6 +404,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                 _buildWebView2MissingWidget()
               else
                 InAppWebView(
+                  key: ValueKey(_webViewKey),
                   webViewEnvironment: webViewEnvironment,
                   initialUrlRequest: URLRequest(url: WebUri(url)),
                   initialSettings: InAppWebViewSettings(
@@ -348,9 +420,23 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                     allowContentAccess: ENABLE_FILE_ACCESS,
                     geolocationEnabled: ENABLE_GEOLOCATION,
                     allowsInlineMediaPlayback: true,
-                    useHybridComposition: defaultTargetPlatform == TargetPlatform.android,
+                    useHybridComposition: false,
+                    useOnRenderProcessGone: true,
+                    hardwareAcceleration: true,
+                    mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                    safeBrowsingEnabled: false,
+                    disableDefaultErrorPage: true,
+                    cacheMode: ENABLE_CACHE ? CacheMode.LOAD_DEFAULT : CacheMode.LOAD_NO_CACHE,
                   ),
                   pullToRefreshController: isMobile ? pullToRefreshController : null,
+                  onRenderProcessGone: (controller, detail) async {
+                    debugPrint('WebView render process gone (didCrash: ${detail.didCrash}). Reviving...');
+                    _recreateWebView();
+                  },
+                  onWebContentProcessDidTerminate: (controller) async {
+                    debugPrint('WebView content process terminated. Reviving...');
+                    _recreateWebView();
+                  },
                   onPermissionRequest: (controller, request) async {
                     final grantedResources = <PermissionResourceType>[];
 
