@@ -1793,6 +1793,98 @@ def record_completed_build(build_id, config, final_status):
     except Exception as e:
         logger.exception(f"Error in record_completed_build: {e}")
 
+def cleanup_cancelled_build(build_id, project_id=None):
+    """
+    Completely remove any database records and disk artifacts for a cancelled build.
+    Cancelling a build means it is not needed, so it should not be stored in SQLite,
+    Firestore, or disk.
+    """
+    if not build_id:
+        return
+
+    # 1. Terminate any running subprocesses for this build
+    procs = ACTIVE_BUILD_PROCESSES.pop(build_id, [])
+    for proc in procs:
+        try:
+            proc.terminate()
+            proc.kill()
+        except Exception:
+            pass
+
+    # 2. SQLite Cleanup
+    try:
+        conn = get_db_connection()
+        # Find project_id if not supplied
+        if not project_id:
+            row = conn.execute('SELECT project_id FROM builds WHERE id = ?', (build_id,)).fetchone()
+            if row and row['project_id']:
+                project_id = row['project_id']
+
+        # Delete record from builds table
+        conn.execute('DELETE FROM builds WHERE id = ?', (build_id,))
+
+        # If project_id is known, remove any build referencing build_id or marked cancelled from project's builds_json
+        if project_id:
+            p_row = conn.execute('SELECT builds_json FROM projects WHERE id = ?', (project_id,)).fetchone()
+            if p_row and p_row['builds_json']:
+                try:
+                    p_builds = json.loads(p_row['builds_json'])
+                    keys_to_remove = [k for k, v in list(p_builds.items()) if isinstance(v, dict) and (v.get('buildId') == build_id or v.get('build_id') == build_id or v.get('status') == 'cancelled')]
+                    if keys_to_remove:
+                        for k in keys_to_remove:
+                            p_builds.pop(k, None)
+                        now_iso = datetime.now().isoformat()
+                        conn.execute('UPDATE projects SET builds_json = ?, updated_at = ? WHERE id = ?', (json.dumps(p_builds), now_iso, project_id))
+                except Exception as p_err:
+                    logger.warning(f"Error updating project builds_json on cancel: {p_err}")
+
+        conn.commit()
+        conn.close()
+        logger.info(f"Purged cancelled build {build_id} from SQLite")
+    except Exception as sqle:
+        logger.warning(f"Error purging cancelled build from SQLite: {sqle}")
+
+    # 3. Firestore Cleanup
+    if db:
+        try:
+            # If project_id not yet known, inspect the Firestore build doc before deleting
+            if not project_id:
+                try:
+                    b_doc = db.collection('builds').document(build_id).get()
+                    if b_doc.exists:
+                        project_id = (b_doc.to_dict() or {}).get('projectId')
+                except Exception:
+                    pass
+
+            # Delete the build doc
+            db.collection('builds').document(build_id).delete()
+
+            # Clean from parent project doc if present
+            if project_id:
+                p_ref = db.collection('projects').document(project_id)
+                p_snap = p_ref.get()
+                if p_snap.exists:
+                    p_data = p_snap.to_dict() or {}
+                    p_builds = p_data.get('builds') or {}
+                    keys_to_remove = [k for k, v in list(p_builds.items()) if isinstance(v, dict) and (v.get('buildId') == build_id or v.get('build_id') == build_id or v.get('status') == 'cancelled')]
+                    if keys_to_remove:
+                        for k in keys_to_remove:
+                            p_builds.pop(k, None)
+                        p_ref.update({'builds': p_builds, 'updatedAt': firestore.SERVER_TIMESTAMP})
+
+            logger.info(f"Purged cancelled build {build_id} from Firestore")
+        except Exception as fse:
+            logger.warning(f"Error purging cancelled build from Firestore: {fse}")
+
+    # 4. Disk Artifacts Cleanup
+    try:
+        build_dir = os.path.join(app.config['BUILD_FOLDER'], build_id)
+        if os.path.exists(build_dir):
+            shutil.rmtree(build_dir, ignore_errors=True)
+            logger.info(f"Purged build directory on disk for cancelled build {build_id}")
+    except Exception as de:
+        logger.warning(f"Error deleting build directory {build_id}: {de}")
+
 def run_build(build_id, config):
     """Run the Flutter build in a background thread"""
     try:
@@ -2260,6 +2352,9 @@ def run_build(build_id, config):
         if config.get('enable_app_store_publish'):
             final_status['app_store_published'] = True
 
+        if is_build_cancelled(build_id):
+            raise BuildCancelledException(f"Build {build_id} was cancelled by user.")
+
         build_progress[build_id] = final_status
         record_completed_build(build_id, config, final_status)
         # ✅ Webhook on success
@@ -2279,26 +2374,34 @@ def run_build(build_id, config):
 
     except BuildCancelledException:
         logger.info(f"Build {build_id} was cancelled by user.")
+        cleanup_cancelled_build(build_id, config.get('project_id'))
         if build_id in build_progress:
             build_progress[build_id].update({
                 'status': 'cancelled',
                 'progress': 0,
                 'message': 'Build cancelled by user.'
             })
-        if session.get('active_build_id') == build_id:
-            session.pop('active_build_id', None)
+        try:
+            if session.get('active_build_id') == build_id:
+                session.pop('active_build_id', None)
+        except Exception:
+            pass
 
     except Exception as e:
         if is_build_cancelled(build_id):
             logger.info(f"Build {build_id} was cancelled by user (caught {e}).")
+            cleanup_cancelled_build(build_id, config.get('project_id'))
             if build_id in build_progress:
                 build_progress[build_id].update({
                     'status': 'cancelled',
                     'progress': 0,
                     'message': 'Build cancelled by user.'
                 })
-            if session.get('active_build_id') == build_id:
-                session.pop('active_build_id', None)
+            try:
+                if session.get('active_build_id') == build_id:
+                    session.pop('active_build_id', None)
+            except Exception:
+                pass
         else:
             error_status = {
                 'status': 'error',
@@ -4589,11 +4692,15 @@ def cancel_build(build_id):
         session.pop('active_build_id', None)
 
     if build_id not in build_progress:
+        cleanup_cancelled_build(build_id)
         return jsonify({'success': True, 'message': 'Build not active', 'status': 'cancelled'})
 
     b = build_progress[build_id]
-    if b.get('status') in ['completed', 'failed', 'error', 'cancelled']:
+    if b.get('status') in ['completed', 'failed', 'error']:
         return jsonify({'success': True, 'message': f"Build is already {b.get('status')}", 'status': b.get('status')})
+    if b.get('status') == 'cancelled':
+        cleanup_cancelled_build(build_id, b.get('project_id'))
+        return jsonify({'success': True, 'message': 'Build is already cancelled', 'status': 'cancelled'})
 
     # Mark as cancelled immediately
     b['cancel_requested'] = True
@@ -4630,21 +4737,8 @@ def cancel_build(build_id):
         except Exception as e:
             logger.warning(f"Error cancelling GitHub Actions run: {e}")
 
-    # Update SQLite database if build row exists
-    try:
-        conn = get_db_connection()
-        conn.execute('UPDATE builds SET status = ? WHERE id = ?', ('cancelled', build_id))
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass
-
-    # Update Firestore if build doc exists
-    if db:
-        try:
-            db.collection('builds').document(build_id).set({'status': 'cancelled', 'updatedAt': firestore.SERVER_TIMESTAMP}, merge=True)
-        except Exception:
-            pass
+    # Delete any database records and disk artifacts for this cancelled build
+    cleanup_cancelled_build(build_id, b.get('project_id'))
 
     return jsonify({'success': True, 'message': 'Build cancelled successfully', 'status': 'cancelled'})
 
@@ -5605,6 +5699,8 @@ def get_projects():
                     project['updatedAt'] = project['updatedAt'].isoformat() if hasattr(project['updatedAt'], 'isoformat') else str(project['updatedAt'])
                 if not project.get('builds'):
                     project['builds'] = {}
+                elif isinstance(project.get('builds'), dict):
+                    project['builds'] = {k: v for k, v in project['builds'].items() if not (isinstance(v, dict) and v.get('status') == 'cancelled')}
                 projects.append(project)
 
             # Dynamically aggregate any completed builds from builds collection
@@ -5621,6 +5717,8 @@ def get_projects():
                 try:
                     if 'builds_json' in r.keys() and r['builds_json']:
                         builds_dict = json.loads(r['builds_json'])
+                        if isinstance(builds_dict, dict):
+                            builds_dict = {k: v for k, v in builds_dict.items() if not (isinstance(v, dict) and v.get('status') == 'cancelled')}
                 except Exception:
                     builds_dict = {}
 
@@ -5776,6 +5874,8 @@ def get_project(project_id):
                 project['updatedAt'] = project['updatedAt'].isoformat() if hasattr(project['updatedAt'], 'isoformat') else str(project['updatedAt'])
             if not project.get('builds'):
                 project['builds'] = {}
+            elif isinstance(project.get('builds'), dict):
+                project['builds'] = {k: v for k, v in project['builds'].items() if not (isinstance(v, dict) and v.get('status') == 'cancelled')}
 
             # Dynamically aggregate any completed builds from builds collection
             aggregate_builds_for_projects(user_id, [project])
@@ -5794,6 +5894,8 @@ def get_project(project_id):
             try:
                 if 'builds_json' in r.keys() and r['builds_json']:
                     builds_dict = json.loads(r['builds_json'])
+                    if isinstance(builds_dict, dict):
+                        builds_dict = {k: v for k, v in builds_dict.items() if not (isinstance(v, dict) and v.get('status') == 'cancelled')}
             except Exception:
                 builds_dict = {}
 
@@ -5935,12 +6037,23 @@ def get_project_builds(project_id):
             for doc in docs:
                 b = doc.to_dict()
                 b['id'] = doc.id
+                if b.get('status') == 'cancelled':
+                    try:
+                        db.collection('builds').document(doc.id).delete()
+                    except Exception:
+                        pass
+                    continue
                 if b.get('createdAt'):
                     b['createdAt'] = b['createdAt'].isoformat() if hasattr(b['createdAt'], 'isoformat') else str(b['createdAt'])
                 builds_list.append(b)
         else:
             conn = get_db_connection()
-            rows = conn.execute('SELECT * FROM builds WHERE project_id = ? ORDER BY created_at DESC', (project_id,)).fetchall()
+            try:
+                conn.execute('DELETE FROM builds WHERE status = "cancelled"')
+                conn.commit()
+            except Exception:
+                pass
+            rows = conn.execute('SELECT * FROM builds WHERE project_id = ? AND status != "cancelled" ORDER BY created_at DESC', (project_id,)).fetchall()
             for r in rows:
                 builds_list.append({
                     'id': r['id'],
@@ -7052,6 +7165,12 @@ def get_builds():
             for doc in docs:
                 build = doc.to_dict()
                 build['id'] = doc.id
+                if build.get('status') == 'cancelled':
+                    try:
+                        db.collection('builds').document(doc.id).delete()
+                    except Exception:
+                        pass
+                    continue
                 if build.get('createdAt'):
                     build['createdAt'] = build['createdAt'].isoformat() if hasattr(build['createdAt'], 'isoformat') else str(build['createdAt'])
                 builds.append(build)
@@ -7059,7 +7178,13 @@ def get_builds():
             builds = builds[:50]
         else:
             conn = get_db_connection()
-            rows = conn.execute('SELECT * FROM builds WHERE user_id = ? ORDER BY created_at DESC LIMIT 50', (user_id,)).fetchall()
+            # Purge any stale cancelled build records
+            try:
+                conn.execute('DELETE FROM builds WHERE status = "cancelled"')
+                conn.commit()
+            except Exception:
+                pass
+            rows = conn.execute('SELECT * FROM builds WHERE user_id = ? AND status != "cancelled" ORDER BY created_at DESC LIMIT 50', (user_id,)).fetchall()
             for r in rows:
                 builds.append({
                     'id': r['id'],
