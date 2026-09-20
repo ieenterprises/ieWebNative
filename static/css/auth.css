@@ -698,22 +698,59 @@
 
     .auth-forms {
         flex: 1;
+        width: 100%;
+        padding: 40px 20px;
+    }
+
+    .auth-back-link span {
+        display: none !important;
+    }
+
+    .auth-back-link {
+        width: 38px;
+        height: 38px;
+        padding: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: var(--radius-md);
+    }
+
+    .theme-toggle-btn .theme-label {
+        display: none !important;
+    }
+
+    .theme-toggle-btn {
+        width: 38px;
+        height: 38px;
+        padding: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: var(--radius-md);
     }
 }
 
 @media (max-width: 768px) {
     .auth-header {
         padding: 0 16px;
-        height: 58px;
+        height: 56px;
+    }
+
+    .auth-back-link,
+    .theme-toggle-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: var(--radius-sm);
     }
 
     .auth-container {
-        min-height: calc(100vh - 58px);
+        min-height: calc(100vh - 56px);
     }
 
     .auth-forms {
-        min-height: calc(100vh - 58px);
-        padding: 32px 16px;
+        min-height: calc(100vh - 56px);
+        padding: 28px 16px;
     }
 
     .auth-header-divider {
@@ -730,17 +767,22 @@
         gap: 10px;
     }
 
-    .auth-back-link {
-        padding: 6px 10px;
-        font-size: 12px;
+    .auth-forms {
+        padding: 24px 14px;
     }
 
-    .auth-forms {
-        padding: 24px 16px;
+    .auth-card {
+        width: 100%;
+        max-width: 100%;
     }
 
     .auth-card-header h2 {
         font-size: 24px;
+    }
+
+    .form-group input {
+        font-size: 16px;
+        min-height: 44px;
     }
 
     .social-login {
@@ -762,7 +804,7 @@
 
 @media (max-width: 380px) {
     .auth-forms {
-        padding: 16px 10px;
+        padding: 16px 8px;
     }
 
     .auth-card-header h2 {

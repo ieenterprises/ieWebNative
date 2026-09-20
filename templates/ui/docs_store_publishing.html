@@ -569,20 +569,31 @@
             }
         }
 
-        @media (max-width: 640px) {
+        @media (max-width: 1024px) {
+            .nav-btn span {
+                display: none !important;
+            }
+            .nav-btn {
+                width: 38px;
+                height: 38px;
+                padding: 0 !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                border-radius: 8px;
+            }
+        }
+
+        @media (max-width: 768px) {
             .navbar {
                 padding: 10px 14px;
             }
             .nav-brand-badge {
                 display: none;
             }
-            .nav-btn span {
-                display: none;
-            }
             .nav-btn {
-                padding: 8px 10px;
-                min-width: 36px;
-                justify-content: center;
+                width: 34px;
+                height: 34px;
             }
             .main-content {
                 padding: 24px 14px;
@@ -612,11 +623,11 @@
             <span class="nav-brand-badge">Documentation</span>
         </a>
         <div class="nav-actions">
-            <a href="/dashboard" class="nav-btn nav-btn-secondary">
+            <a href="/dashboard" class="nav-btn nav-btn-secondary" title="Dashboard" aria-label="Dashboard">
                 <i class="fa-solid fa-table-cells-large"></i>
                 <span>Dashboard</span>
             </a>
-            <a href="/builder" class="nav-btn nav-btn-primary">
+            <a href="/builder" class="nav-btn nav-btn-primary" title="Back to Builder" aria-label="Back to Builder">
                 <i class="fa-solid fa-arrow-left"></i>
                 <span>Back to Builder</span>
             </a>

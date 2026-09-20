@@ -723,27 +723,76 @@
             color: var(--text-muted);
         }
 
-        @media (max-width: 768px) {
+        @media (max-width: 1024px) {
             .landing-nav {
                 padding: 0 20px;
+                height: 64px;
             }
             .nav-links {
                 display: none;
             }
+            .btn-nav-outline span,
+            .btn-nav-primary span {
+                display: none !important;
+            }
+            .btn-nav-outline,
+            .btn-nav-primary {
+                width: 38px;
+                height: 38px;
+                padding: 0 !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                border-radius: var(--radius-md);
+            }
+            .theme-toggle-btn {
+                width: 38px;
+                height: 38px;
+                padding: 0 !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                border-radius: var(--radius-md);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .landing-nav {
+                padding: 0 16px;
+                height: 56px;
+            }
+            .nav-title {
+                font-size: 18px;
+            }
+            .nav-logo-img {
+                width: 32px;
+                height: 32px;
+            }
+            .btn-nav-outline,
+            .btn-nav-primary,
+            .theme-toggle-btn {
+                width: 34px;
+                height: 34px;
+                border-radius: var(--radius-sm);
+            }
             .hero-headline {
-                font-size: 38px;
+                font-size: clamp(26px, 6vw, 38px);
             }
             .section-title {
-                font-size: 30px;
+                font-size: 26px;
             }
             .cta-headline {
-                font-size: 30px;
+                font-size: 24px;
             }
             .cta-banner {
-                padding: 48px 24px;
+                padding: 36px 16px;
             }
             .landing-footer {
-                padding: 36px 20px;
+                padding: 32px 16px;
+            }
+            .hero-cta-group {
+                flex-direction: column;
+                align-items: stretch;
             }
         }
     </style>
@@ -776,21 +825,21 @@
                 </span>
             </button>
             {% if user %}
-                <a href="/dashboard" class="btn-nav-outline">
-                    <i class="fa-solid fa-layer-group"></i> Dashboard
+                <a href="/dashboard" class="btn-nav-outline" title="Dashboard" aria-label="Dashboard">
+                    <i class="fa-solid fa-layer-group"></i> <span>Dashboard</span>
                 </a>
-                <a href="/builder" class="btn-nav-primary">
-                    <i class="fa-solid fa-hammer"></i> Open Builder
+                <a href="/builder" class="btn-nav-primary" title="Open Builder" aria-label="Open Builder">
+                    <i class="fa-solid fa-hammer"></i> <span>Open Builder</span>
                 </a>
-                <a href="/api/auth/logout" class="btn-nav-outline" style="border-color: #ef4444; color: #ef4444;" title="Sign Out">
-                    <i class="fa-solid fa-right-from-bracket"></i> Sign Out
+                <a href="/api/auth/logout" class="btn-nav-outline" style="border-color: #ef4444; color: #ef4444;" title="Sign Out" aria-label="Sign Out">
+                    <i class="fa-solid fa-right-from-bracket"></i> <span>Sign Out</span>
                 </a>
             {% else %}
-                <a href="/auth" class="btn-nav-outline">
-                    <i class="fa-solid fa-right-to-bracket"></i> Sign In
+                <a href="/auth" class="btn-nav-outline" title="Sign In" aria-label="Sign In">
+                    <i class="fa-solid fa-right-to-bracket"></i> <span>Sign In</span>
                 </a>
-                <a href="/auth?mode=signup" class="btn-nav-primary">
-                    <i class="fa-solid fa-user-plus"></i> Get Started Free
+                <a href="/auth?mode=signup" class="btn-nav-primary" title="Get Started Free" aria-label="Get Started Free">
+                    <i class="fa-solid fa-user-plus"></i> <span>Get Started Free</span>
                 </a>
             {% endif %}
         </div>
@@ -812,18 +861,18 @@
 
         <div class="hero-cta-group">
             {% if user %}
-                <a href="/dashboard" class="btn-hero-primary">
-                    <i class="fa-solid fa-folder-open"></i> Go to Dashboard
+                <a href="/dashboard" class="btn-hero-primary" title="Go to Dashboard">
+                    <i class="fa-solid fa-folder-open"></i> <span>Go to Dashboard</span>
                 </a>
-                <a href="/builder" class="btn-hero-secondary">
-                    <i class="fa-solid fa-rocket"></i> Launch App Builder
+                <a href="/builder" class="btn-hero-secondary" title="Launch App Builder">
+                    <i class="fa-solid fa-rocket"></i> <span>Launch App Builder</span>
                 </a>
             {% else %}
-                <a href="/auth?mode=signup" class="btn-hero-primary">
-                    <i class="fa-solid fa-user-plus"></i> Create Free Account
+                <a href="/auth?mode=signup" class="btn-hero-primary" title="Create Free Account">
+                    <i class="fa-solid fa-user-plus"></i> <span>Create Free Account</span>
                 </a>
-                <a href="/auth" class="btn-hero-secondary">
-                    <i class="fa-solid fa-right-to-bracket"></i> Sign In to Account
+                <a href="/auth" class="btn-hero-secondary" title="Sign In to Account">
+                    <i class="fa-solid fa-right-to-bracket"></i> <span>Sign In to Account</span>
                 </a>
             {% endif %}
         </div>
@@ -1029,18 +1078,18 @@
             </p>
             <div class="cta-buttons">
                 {% if user %}
-                    <a href="/dashboard" class="btn-hero-primary" style="background: #ffffff; color: #0f172a;">
-                        <i class="fa-solid fa-folder-open" style="color: var(--primary);"></i> Go to Dashboard
+                    <a href="/dashboard" class="btn-hero-primary" style="background: #ffffff; color: #0f172a;" title="Go to Dashboard">
+                        <i class="fa-solid fa-folder-open" style="color: var(--primary);"></i> <span>Go to Dashboard</span>
                     </a>
-                    <a href="/builder" class="btn-hero-secondary" style="background: rgba(255, 255, 255, 0.12); color: #ffffff; border-color: rgba(255, 255, 255, 0.25);">
-                        <i class="fa-solid fa-rocket"></i> Launch App Builder
+                    <a href="/builder" class="btn-hero-secondary" style="background: rgba(255, 255, 255, 0.12); color: #ffffff; border-color: rgba(255, 255, 255, 0.25);" title="Launch App Builder">
+                        <i class="fa-solid fa-rocket"></i> <span>Launch App Builder</span>
                     </a>
                 {% else %}
-                    <a href="/auth?mode=signup" class="btn-hero-primary" style="background: #ffffff; color: #0f172a;">
-                        <i class="fa-solid fa-user-plus" style="color: var(--primary);"></i> Create Free Account
+                    <a href="/auth?mode=signup" class="btn-hero-primary" style="background: #ffffff; color: #0f172a;" title="Create Free Account">
+                        <i class="fa-solid fa-user-plus" style="color: var(--primary);"></i> <span>Create Free Account</span>
                     </a>
-                    <a href="/auth" class="btn-hero-secondary" style="background: rgba(255, 255, 255, 0.12); color: #ffffff; border-color: rgba(255, 255, 255, 0.25);">
-                        <i class="fa-solid fa-right-to-bracket"></i> Sign In to Account
+                    <a href="/auth" class="btn-hero-secondary" style="background: rgba(255, 255, 255, 0.12); color: #ffffff; border-color: rgba(255, 255, 255, 0.25);" title="Sign In to Account">
+                        <i class="fa-solid fa-right-to-bracket"></i> <span>Sign In to Account</span>
                     </a>
                 {% endif %}
             </div>

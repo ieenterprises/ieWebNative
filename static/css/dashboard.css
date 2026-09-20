@@ -986,11 +986,48 @@
 
 @media (max-width: 1024px) {
     .dashboard-header {
-        padding: 0 20px;
+        padding: 0 16px;
     }
 
     .header-center {
-        max-width: 320px;
+        max-width: 240px;
+    }
+
+    /* Buttons with text and icon collapse to sleek icons on Phone and Tablet (<= 1024px) */
+    .dashboard-header .header-right .btn span,
+    .dashboard-header .header-right .btn .btn-text,
+    .section-actions .btn span,
+    .section-actions .btn .btn-text,
+    .active-build-banner .btn span,
+    .active-build-banner .btn .btn-text,
+    .btn-danger-outline span,
+    .btn-danger-outline .btn-text {
+        display: none !important;
+    }
+
+    .dashboard-header .header-right {
+        gap: 8px;
+    }
+
+    .dashboard-header .header-right .btn {
+        padding: 8px 10px !important;
+        min-width: 38px;
+        height: 38px;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0 !important;
+        border-radius: 8px !important;
+    }
+
+    .section-actions .btn {
+        padding: 8px 12px !important;
+        min-width: 42px;
+        height: 42px;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0 !important;
     }
 
     .projects-grid {
@@ -1001,8 +1038,8 @@
 
 @media (max-width: 768px) {
     .dashboard-header {
-        padding: 0 16px;
-        min-height: 60px;
+        padding: 0 12px;
+        min-height: 56px;
     }
 
     .header-left .logo h1 {
@@ -1013,22 +1050,14 @@
         display: none;
     }
 
-    /* Buttons with text collapse to sleek icons on Phone/Tablet */
     .dashboard-header .header-right {
-        gap: 8px;
-    }
-
-    .dashboard-header .header-right .btn span {
-        display: none;
+        gap: 6px;
     }
 
     .dashboard-header .header-right .btn {
-        padding: 8px 10px !important;
+        padding: 6px 8px !important;
         min-width: 36px;
         height: 36px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
     }
 
     /* Active Background Build Banner Responsive */
@@ -1067,36 +1096,38 @@
     }
 
     .content-section {
-        padding: 20px 16px;
+        padding: 18px 12px;
     }
 
     .section-title-area h2 {
-        font-size: 22px;
+        font-size: 20px;
     }
 
     .section-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 14px;
-        margin-bottom: 20px;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
     }
 
     .section-actions {
-        width: 100%;
+        width: auto;
         display: flex;
         gap: 8px;
+        flex-shrink: 0;
     }
 
     .section-actions .btn {
-        flex: 1;
-        justify-content: center;
+        padding: 7px 10px !important;
+        min-width: 36px;
+        height: 36px;
         font-size: 13px;
-        padding: 10px 14px;
     }
 
     .projects-grid {
         grid-template-columns: 1fr;
-        gap: 14px;
+        gap: 12px;
     }
 
     .project-card {
