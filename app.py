@@ -582,11 +582,17 @@ def init_sqlite_db():
         except Exception as col_err:
             logger.debug(f"Column check notice: {col_err}")
 
-        # Ensure picture column exists in users table
+        # Ensure picture, role, subscription_status, subscription_expiry exist in users table
         try:
             user_cols = [col[1] for col in cursor.execute('PRAGMA table_info(users)').fetchall()]
             if 'picture' not in user_cols:
                 cursor.execute('ALTER TABLE users ADD COLUMN picture TEXT')
+            if 'role' not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+            if 'subscription_status' not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'inactive'")
+            if 'subscription_expiry' not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN subscription_expiry INTEGER DEFAULT NULL")
         except Exception as user_col_err:
             logger.debug(f"User column check notice: {user_col_err}")
 
@@ -603,6 +609,39 @@ def init_sqlite_db():
                 created_at TEXT NOT NULL
             )
         ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS subscription_requests (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                email TEXT NOT NULL,
+                months_requested INTEGER NOT NULL,
+                receipt_url TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at INTEGER NOT NULL
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value_json TEXT NOT NULL
+            )
+        ''')
+
+        # Seed default payment settings if not present
+        cursor.execute('SELECT value_json FROM settings WHERE key = ?', ('payment',))
+        if not cursor.fetchone():
+            default_payment = {
+                "pricePerMonth": 15000,
+                "bankName": "Access Bank",
+                "accountName": "ieWebNative Inc",
+                "accountNo": "0123456789",
+                "contactEmail": "billing@iewebnative.com",
+                "contactPhone": "+2348000000000"
+            }
+            cursor.execute('INSERT INTO settings (key, value_json) VALUES (?, ?)', ('payment', json.dumps(default_payment)))
+
         conn.commit()
         conn.close()
         logger.info("SQLite database initialized at %s", SQLITE_DB_PATH)
@@ -610,6 +649,173 @@ def init_sqlite_db():
         logger.error("Failed to initialize SQLite database: %s", e)
 
 init_sqlite_db()
+
+# ===== Subscription & Admin System Constants & Helpers =====
+
+ADMIN_SETUP_KEY = os.getenv('ADMIN_SETUP_KEY', 'ieResearchAdmin2026!')
+
+def get_payment_settings():
+    """Get current payment settings from Firestore or SQLite"""
+    default_settings = {
+        "pricePerMonth": 15000,
+        "bankName": "Access Bank",
+        "accountName": "ieWebNative Inc",
+        "accountNo": "0123456789",
+        "contactEmail": "billing@iewebnative.com",
+        "contactPhone": "+2348000000000"
+    }
+    if db:
+        try:
+            doc = db.collection('settings').document('payment').get()
+            if doc.exists:
+                data = doc.to_dict() or {}
+                default_settings.update(data)
+                return default_settings
+        except Exception as e:
+            logger.debug(f"Firestore payment settings read notice: {e}")
+
+    try:
+        conn = get_db_connection()
+        row = conn.execute('SELECT value_json FROM settings WHERE key = ?', ('payment',)).fetchone()
+        conn.close()
+        if row and row['value_json']:
+            data = json.loads(row['value_json'])
+            default_settings.update(data)
+    except Exception as e:
+        logger.debug(f"SQLite payment settings read notice: {e}")
+
+    return default_settings
+
+def save_payment_settings(settings_dict):
+    """Save payment settings to both SQLite and Firestore"""
+    try:
+        conn = get_db_connection()
+        conn.execute('INSERT OR REPLACE INTO settings (key, value_json) VALUES (?, ?)', ('payment', json.dumps(settings_dict)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to save payment settings to SQLite: {e}")
+
+    if db:
+        try:
+            db.collection('settings').document('payment').set(settings_dict, merge=True)
+        except Exception as e:
+            logger.error(f"Failed to save payment settings to Firestore: {e}")
+
+def get_user_subscription(user_id):
+    """
+    Get user subscription status, role, and expiry timestamp in milliseconds.
+    Returns: { 'role': 'admin'|'user', 'status': 'active'|'pending'|'inactive', 'expiry': ms or None, 'is_active': bool }
+    """
+    if not user_id:
+        return {'role': 'user', 'status': 'inactive', 'expiry': None, 'is_active': False}
+
+    role = 'user'
+    status = 'inactive'
+    expiry = None
+
+    if db:
+        try:
+            udoc = db.collection('users').document(user_id).get()
+            if udoc.exists:
+                udata = udoc.to_dict() or {}
+                role = udata.get('role', 'user')
+                status = udata.get('subscriptionStatus', 'inactive')
+                expiry = udata.get('subscriptionExpiry')
+        except Exception as e:
+            logger.debug(f"Firestore subscription check error: {e}")
+
+    try:
+        conn = get_db_connection()
+        row = conn.execute('SELECT role, subscription_status, subscription_expiry FROM users WHERE id = ?', (user_id,)).fetchone()
+        conn.close()
+        if row:
+            if not db or not role or role == 'user':
+                if row['role']:
+                    role = row['role']
+            if not db or not status or status == 'inactive':
+                if row['subscription_status']:
+                    status = row['subscription_status']
+            if not db or expiry is None:
+                if row['subscription_expiry'] is not None:
+                    expiry = row['subscription_expiry']
+    except Exception as e:
+        logger.debug(f"SQLite subscription check error: {e}")
+
+    # Admins always have active status and lifetime access
+    if role == 'admin':
+        return {
+            'role': 'admin',
+            'status': 'active',
+            'expiry': None,
+            'is_active': True
+        }
+
+    now_ms = int(time.time() * 1000)
+    is_active = False
+    if status == 'active':
+        if expiry is not None and expiry < now_ms:
+            status = 'inactive'
+            try:
+                conn = get_db_connection()
+                conn.execute('UPDATE users SET subscription_status = ? WHERE id = ?', ('inactive', user_id))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+            if db:
+                try:
+                    db.collection('users').document(user_id).update({'subscriptionStatus': 'inactive'})
+                except Exception:
+                    pass
+            is_active = False
+        else:
+            is_active = True
+    else:
+        is_active = False
+
+    return {
+        'role': role,
+        'status': status,
+        'expiry': expiry,
+        'is_active': is_active
+    }
+
+def admin_required(f):
+    """Decorator requiring authenticated user with role == 'admin'"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_user_id = session.get('user_id')
+        user_name = session.get('user_name', 'Admin')
+        user_email = session.get('user_email', '')
+
+        if not auth_user_id:
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer ') and firebase_initialized:
+                try:
+                    decoded = firebase_auth.verify_id_token(auth_header.split('Bearer ')[1].strip())
+                    auth_user_id = decoded.get('uid')
+                    user_email = decoded.get('email', '')
+                    user_name = decoded.get('name') or user_email.split('@')[0]
+                except Exception:
+                    pass
+
+        if not auth_user_id:
+            return jsonify({'success': False, 'error': 'Authentication required. Please sign in.'}), 401
+
+        sub = get_user_subscription(auth_user_id)
+        if sub.get('role') != 'admin':
+            return jsonify({'success': False, 'error': 'Administrator privileges required.'}), 403
+
+        request.user = {
+            'uid': auth_user_id,
+            'user_id': auth_user_id,
+            'name': user_name,
+            'email': user_email,
+            'role': 'admin'
+        }
+        return f(*args, **kwargs)
+    return decorated_function
 
 # ===== Webhook Helper =====
 
@@ -3036,23 +3242,53 @@ def api_signup():
         user_id = str(uuid.uuid4())
         password_hash = generate_password_hash(password)
         created_at = datetime.utcnow().isoformat()
+        role = 'user'
+        sub_status = 'inactive'
+        sub_expiry = None
 
         conn.execute(
-            'INSERT INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
-            (user_id, name, email, password_hash, created_at)
+            'INSERT INTO users (id, name, email, password_hash, created_at, role, subscription_status, subscription_expiry) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            (user_id, name, email, password_hash, created_at, role, sub_status, sub_expiry)
         )
         conn.commit()
         conn.close()
+
+        # Firestore sync if active
+        if db:
+            try:
+                db.collection('users').document(user_id).set({
+                    'uid': user_id,
+                    'name': name,
+                    'email': email,
+                    'role': role,
+                    'subscriptionStatus': sub_status,
+                    'subscriptionExpiry': sub_expiry,
+                    'createdAt': firestore.SERVER_TIMESTAMP,
+                    'updatedAt': firestore.SERVER_TIMESTAMP
+                }, merge=True)
+            except Exception as fe:
+                logger.debug(f"Firestore user creation sync notice: {fe}")
 
         session.permanent = True
         session['user_id'] = user_id
         session['user_name'] = name
         session['user_email'] = email
+        session['user_role'] = role
+        session['subscription_status'] = sub_status
+        session['subscription_expiry'] = sub_expiry
 
         return jsonify({
             'success': True,
             'message': 'Account created successfully!',
-            'user': {'id': user_id, 'uid': user_id, 'name': name, 'email': email},
+            'user': {
+                'id': user_id,
+                'uid': user_id,
+                'name': name,
+                'email': email,
+                'role': role,
+                'subscriptionStatus': sub_status,
+                'subscriptionExpiry': sub_expiry
+            },
             'redirect': '/dashboard'
         })
     except Exception as e:
@@ -3085,10 +3321,24 @@ def api_login():
         user_picture = user['picture'] if 'picture' in user.keys() and user['picture'] else ''
         session['user_picture'] = user_picture
 
+        sub = get_user_subscription(user['id'])
+        session['user_role'] = sub.get('role', 'user')
+        session['subscription_status'] = sub.get('status', 'inactive')
+        session['subscription_expiry'] = sub.get('expiry')
+
         return jsonify({
             'success': True,
             'message': 'Signed in successfully!',
-            'user': {'id': user['id'], 'uid': user['id'], 'name': user['name'], 'email': user['email'], 'picture': user_picture},
+            'user': {
+                'id': user['id'],
+                'uid': user['id'],
+                'name': user['name'],
+                'email': user['email'],
+                'picture': user_picture,
+                'role': sub.get('role', 'user'),
+                'subscriptionStatus': sub.get('status', 'inactive'),
+                'subscriptionExpiry': sub.get('expiry')
+            },
             'redirect': '/dashboard'
         })
     except Exception as e:
@@ -3144,6 +3394,14 @@ def api_me():
             except Exception as e:
                 logger.debug(f"SQLite user fetch: {e}")
 
+        sub = get_user_subscription(uid)
+        role = sub.get('role', 'user')
+        sub_status = sub.get('status', 'inactive')
+        sub_expiry = sub.get('expiry')
+        session['user_role'] = role
+        session['subscription_status'] = sub_status
+        session['subscription_expiry'] = sub_expiry
+
         return jsonify({
             'authenticated': True,
             'user': {
@@ -3151,7 +3409,10 @@ def api_me():
                 'uid': uid,
                 'name': name,
                 'email': email,
-                'picture': picture
+                'picture': picture,
+                'role': role,
+                'subscriptionStatus': sub_status,
+                'subscriptionExpiry': sub_expiry
             }
         })
     return jsonify({'authenticated': False, 'user': None})
@@ -3188,35 +3449,59 @@ def api_firebase_session():
         name = decoded_token.get('name') or (email.split('@')[0] if email else 'User')
         picture = decoded_token.get('picture', '')
 
+        # Determine existing subscription status and role
+        existing_sub = get_user_subscription(uid)
+        role = existing_sub.get('role', 'user')
+        sub_status = existing_sub.get('status', 'inactive')
+        sub_expiry = existing_sub.get('expiry')
+
         # 1. Upsert user in Firestore if active
         if db:
             try:
                 user_ref = db.collection('users').document(uid)
-                user_ref.set({
-                    'uid': uid,
-                    'name': name,
-                    'email': email,
-                    'picture': picture,
-                    'lastLogin': firestore.SERVER_TIMESTAMP,
-                    'updatedAt': firestore.SERVER_TIMESTAMP
-                }, merge=True)
+                doc = user_ref.get()
+                if not doc.exists:
+                    user_ref.set({
+                        'uid': uid,
+                        'name': name,
+                        'email': email,
+                        'picture': picture,
+                        'role': role,
+                        'subscriptionStatus': sub_status,
+                        'subscriptionExpiry': sub_expiry,
+                        'createdAt': firestore.SERVER_TIMESTAMP,
+                        'lastLogin': firestore.SERVER_TIMESTAMP,
+                        'updatedAt': firestore.SERVER_TIMESTAMP
+                    }, merge=True)
+                else:
+                    user_ref.set({
+                        'uid': uid,
+                        'name': name,
+                        'email': email,
+                        'picture': picture,
+                        'lastLogin': firestore.SERVER_TIMESTAMP,
+                        'updatedAt': firestore.SERVER_TIMESTAMP
+                    }, merge=True)
             except Exception as fe:
                 logger.warning("Could not sync user to Firestore: %s", fe)
 
         # 2. Upsert user in SQLite for local data continuity
         try:
             conn = get_db_connection()
-            existing = conn.execute('SELECT id, picture FROM users WHERE id = ? OR email = ?', (uid, email)).fetchone()
+            existing = conn.execute('SELECT id, picture, role, subscription_status, subscription_expiry FROM users WHERE id = ? OR email = ?', (uid, email)).fetchone()
             now = datetime.utcnow().isoformat()
             if existing:
                 conn.execute(
                     'UPDATE users SET name = ?, email = ?, picture = COALESCE(NULLIF(?, ""), picture) WHERE id = ?',
                     (name, email, picture, existing['id'])
                 )
+                role = existing['role'] or role
+                sub_status = existing['subscription_status'] or sub_status
+                sub_expiry = existing['subscription_expiry'] if existing['subscription_expiry'] is not None else sub_expiry
             else:
                 conn.execute(
-                    'INSERT INTO users (id, name, email, password_hash, created_at, picture) VALUES (?, ?, ?, ?, ?, ?)',
-                    (uid, name, email, 'FIREBASE_AUTH', now, picture)
+                    'INSERT INTO users (id, name, email, password_hash, created_at, picture, role, subscription_status, subscription_expiry) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (uid, name, email, 'FIREBASE_AUTH', now, picture, role, sub_status, sub_expiry)
                 )
             conn.commit()
             conn.close()
@@ -3229,6 +3514,9 @@ def api_firebase_session():
         session['user_name'] = name
         session['user_email'] = email
         session['user_picture'] = picture
+        session['user_role'] = role
+        session['subscription_status'] = sub_status
+        session['subscription_expiry'] = sub_expiry
         session['auth_provider'] = 'firebase'
 
         return jsonify({
@@ -3239,7 +3527,10 @@ def api_firebase_session():
                 'uid': uid,
                 'name': name,
                 'email': email,
-                'picture': picture
+                'picture': picture,
+                'role': role,
+                'subscriptionStatus': sub_status,
+                'subscriptionExpiry': sub_expiry
             },
             'redirect': '/dashboard'
         })
@@ -3766,6 +4057,604 @@ def api_storage_upload():
         return jsonify({'error': f'Storage upload failed: {str(e)}'}), 500
 
 
+# ==================== SUBSCRIPTION & ADMIN MANAGEMENT API ====================
+
+@app.route('/api/admin/setup', methods=['GET', 'POST'])
+def api_admin_setup():
+    """
+    Check if admin exists (GET) or bootstrap / create admin account (POST).
+    Uses Master Setup Key for emergency unlock / override.
+    """
+    if request.method == 'GET':
+        admins_count = 0
+        try:
+            conn = get_db_connection()
+            c = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()
+            admins_count = c[0] if c else 0
+            conn.close()
+        except Exception as e:
+            logger.debug(f"Admin count SQLite error: {e}")
+
+        if db and admins_count == 0:
+            try:
+                fs_admins = db.collection('users').where('role', '==', 'admin').limit(1).get()
+                admins_count = len(fs_admins)
+            except Exception as e:
+                logger.debug(f"Admin count Firestore error: {e}")
+
+        return jsonify({
+            'success': True,
+            'adminExists': admins_count > 0,
+            'adminCount': admins_count
+        })
+
+    # POST - Admin registration / bootstrap
+    try:
+        data = request.json or {}
+        name = data.get('name', 'Admin').strip() or 'Admin'
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+        master_key = data.get('masterKey', '').strip()
+
+        if not email or not password:
+            return jsonify({'success': False, 'error': 'Email and password are required.'}), 400
+
+        if len(password) < 6:
+            return jsonify({'success': False, 'error': 'Password must be at least 6 characters.'}), 400
+
+        # Check existing admins
+        admins_count = 0
+        try:
+            conn = get_db_connection()
+            c = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()
+            admins_count = c[0] if c else 0
+            conn.close()
+        except Exception:
+            pass
+
+        if db and admins_count == 0:
+            try:
+                fs_admins = db.collection('users').where('role', '==', 'admin').limit(1).get()
+                admins_count = len(fs_admins)
+            except Exception:
+                pass
+
+        # If admin already exists, validate Master Setup Key
+        if admins_count > 0:
+            if not master_key or master_key != ADMIN_SETUP_KEY:
+                return jsonify({
+                    'success': False,
+                    'error': 'Admin setup is locked. A valid Master Setup Key is required to create additional admin accounts.'
+                }), 403
+
+        # Create or promote user in SQLite
+        conn = get_db_connection()
+        existing = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        password_hash = generate_password_hash(password)
+        now_str = datetime.utcnow().isoformat()
+
+        if existing:
+            user_id = existing['id']
+            conn.execute(
+                "UPDATE users SET name = ?, password_hash = ?, role = 'admin', subscription_status = 'active', subscription_expiry = NULL WHERE id = ?",
+                (name, password_hash, user_id)
+            )
+        else:
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO users (id, name, email, password_hash, created_at, role, subscription_status, subscription_expiry) VALUES (?, ?, ?, ?, ?, 'admin', 'active', NULL)",
+                (user_id, name, email, password_hash, now_str)
+            )
+        conn.commit()
+        conn.close()
+
+        # Sync with Firestore if active
+        if db:
+            try:
+                db.collection('users').document(user_id).set({
+                    'uid': user_id,
+                    'name': name,
+                    'email': email,
+                    'role': 'admin',
+                    'subscriptionStatus': 'active',
+                    'subscriptionExpiry': None,
+                    'updatedAt': firestore.SERVER_TIMESTAMP
+                }, merge=True)
+            except Exception as fe:
+                logger.warning(f"Could not sync admin to Firestore: {fe}")
+
+        # Set session
+        session.permanent = True
+        session['user_id'] = user_id
+        session['user_name'] = name
+        session['user_email'] = email
+        session['user_role'] = 'admin'
+        session['subscription_status'] = 'active'
+        session['subscription_expiry'] = None
+
+        return jsonify({
+            'success': True,
+            'message': 'Admin account successfully configured!',
+            'user': {
+                'id': user_id,
+                'uid': user_id,
+                'name': name,
+                'email': email,
+                'role': 'admin',
+                'subscriptionStatus': 'active',
+                'subscriptionExpiry': None
+            },
+            'redirect': '/admin'
+        })
+    except Exception as e:
+        logger.exception("Error in admin setup")
+        return jsonify({'success': False, 'error': f'Admin setup failed: {str(e)}'}), 500
+
+
+@app.route('/api/delete-user', methods=['POST'])
+@admin_required
+def api_delete_user():
+    """Admin-only: Delete user account from Firebase Auth, Firestore, and SQLite"""
+    try:
+        data = request.json or {}
+        target_uid = data.get('targetUid') or data.get('userId')
+        admin_uid = request.user['uid']
+
+        if not target_uid:
+            return jsonify({'success': False, 'error': 'targetUid is required.'}), 400
+
+        if target_uid == admin_uid:
+            return jsonify({'success': False, 'error': 'You cannot delete your own admin account.'}), 400
+
+        # 1. Delete from SQLite
+        conn = get_db_connection()
+        conn.execute('DELETE FROM users WHERE id = ?', (target_uid,))
+        conn.execute('DELETE FROM projects WHERE user_id = ?', (target_uid,))
+        conn.execute('DELETE FROM builds WHERE user_id = ?', (target_uid,))
+        conn.execute('DELETE FROM subscription_requests WHERE user_id = ?', (target_uid,))
+        conn.commit()
+        conn.close()
+
+        # 2. Delete from Firestore if active
+        if db:
+            try:
+                db.collection('users').document(target_uid).delete()
+            except Exception as fe:
+                logger.warning(f"Error deleting user from Firestore: {fe}")
+
+        # 3. Delete from Firebase Auth if active
+        if firebase_initialized:
+            try:
+                firebase_auth.delete_user(target_uid)
+            except Exception as ae:
+                logger.debug(f"Firebase auth delete notice (user may only exist in SQLite): {ae}")
+
+        return jsonify({'success': True, 'message': 'User deleted successfully.'})
+    except Exception as e:
+        logger.exception("Error deleting user")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/requests', methods=['GET'])
+@admin_required
+def api_admin_get_requests():
+    """Admin-only: List all subscription payment requests"""
+    try:
+        requests_list = []
+        conn = get_db_connection()
+        rows = conn.execute('SELECT * FROM subscription_requests ORDER BY created_at DESC').fetchall()
+        conn.close()
+
+        for r in rows:
+            requests_list.append({
+                'id': r['id'],
+                'userId': r['user_id'],
+                'email': r['email'],
+                'monthsRequested': r['months_requested'],
+                'receiptUrl': r['receipt_url'],
+                'status': r['status'],
+                'createdAt': r['created_at']
+            })
+
+        return jsonify({'success': True, 'requests': requests_list})
+    except Exception as e:
+        logger.exception("Error getting subscription requests")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/requests/<request_id>/approve', methods=['POST'])
+@admin_required
+def api_admin_approve_request(request_id):
+    """Admin-only: Approve subscription request and extend user's active subscription"""
+    try:
+        conn = get_db_connection()
+        req_row = conn.execute('SELECT * FROM subscription_requests WHERE id = ?', (request_id,)).fetchone()
+        if not req_row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Subscription request not found.'}), 404
+
+        user_id = req_row['user_id']
+        months = int(req_row['months_requested'] or 1)
+        now_ms = int(time.time() * 1000)
+
+        # Calculate new expiry
+        user_row = conn.execute('SELECT subscription_expiry FROM users WHERE id = ?', (user_id,)).fetchone()
+        curr_expiry = user_row['subscription_expiry'] if user_row else None
+
+        base_ms = curr_expiry if (curr_expiry and curr_expiry > now_ms) else now_ms
+        add_ms = months * 30 * 24 * 60 * 60 * 1000
+        new_expiry = base_ms + add_ms
+
+        # Update request status
+        conn.execute("UPDATE subscription_requests SET status = 'approved' WHERE id = ?", (request_id,))
+
+        # Update user subscription in SQLite
+        conn.execute(
+            "UPDATE users SET subscription_status = 'active', subscription_expiry = ? WHERE id = ?",
+            (new_expiry, user_id)
+        )
+        conn.commit()
+        conn.close()
+
+        # Update in Firestore if active
+        if db:
+            try:
+                db.collection('subscription_requests').document(request_id).set({'status': 'approved'}, merge=True)
+                db.collection('users').document(user_id).set({
+                    'subscriptionStatus': 'active',
+                    'subscriptionExpiry': new_expiry,
+                    'updatedAt': firestore.SERVER_TIMESTAMP
+                }, merge=True)
+            except Exception as fe:
+                logger.warning(f"Error updating Firestore on approval: {fe}")
+
+        return jsonify({
+            'success': True,
+            'message': f'Subscription approved successfully! Granted {months} month(s) access.',
+            'newExpiry': new_expiry
+        })
+    except Exception as e:
+        logger.exception("Error approving subscription request")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/requests/<request_id>/reject', methods=['POST'])
+@admin_required
+def api_admin_reject_request(request_id):
+    """Admin-only: Reject subscription request"""
+    try:
+        conn = get_db_connection()
+        req_row = conn.execute('SELECT * FROM subscription_requests WHERE id = ?', (request_id,)).fetchone()
+        if not req_row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Subscription request not found.'}), 404
+
+        user_id = req_row['user_id']
+        conn.execute("UPDATE subscription_requests SET status = 'rejected' WHERE id = ?", (request_id,))
+
+        # If user has no active expiry, reset status to inactive
+        sub = get_user_subscription(user_id)
+        if not sub.get('is_active'):
+            conn.execute("UPDATE users SET subscription_status = 'inactive' WHERE id = ?", (user_id,))
+            if db:
+                try:
+                    db.collection('users').document(user_id).set({'subscriptionStatus': 'inactive'}, merge=True)
+                except Exception:
+                    pass
+
+        conn.commit()
+        conn.close()
+
+        if db:
+            try:
+                db.collection('subscription_requests').document(request_id).set({'status': 'rejected'}, merge=True)
+            except Exception as fe:
+                logger.warning(f"Error updating Firestore on rejection: {fe}")
+
+        return jsonify({'success': True, 'message': 'Subscription request rejected.'})
+    except Exception as e:
+        logger.exception("Error rejecting subscription request")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/users', methods=['GET'])
+@admin_required
+def api_admin_get_users():
+    """Admin-only: Get all registered users with subscription statuses and roles"""
+    try:
+        users_list = []
+        conn = get_db_connection()
+        rows = conn.execute('SELECT id, name, email, role, subscription_status, subscription_expiry, created_at, picture FROM users ORDER BY created_at DESC').fetchall()
+        conn.close()
+
+        now_ms = int(time.time() * 1000)
+        for r in rows:
+            role = r['role'] or 'user'
+            status = r['subscription_status'] or 'inactive'
+            expiry = r['subscription_expiry']
+
+            if role != 'admin' and status == 'active' and expiry is not None and expiry < now_ms:
+                status = 'inactive'
+
+            users_list.append({
+                'id': r['id'],
+                'uid': r['id'],
+                'name': r['name'] or 'User',
+                'email': r['email'] or '',
+                'picture': r['picture'] or '',
+                'role': role,
+                'subscriptionStatus': status,
+                'subscriptionExpiry': expiry,
+                'createdAt': r['created_at']
+            })
+
+        return jsonify({'success': True, 'users': users_list})
+    except Exception as e:
+        logger.exception("Error getting admin users list")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/users/<target_user_id>/subscription', methods=['POST'])
+@admin_required
+def api_admin_update_user_subscription(target_user_id):
+    """Admin-only: Modify user subscription (+1 Mo, +3 Mo, +1 Yr, Lifetime, Deactivate)"""
+    try:
+        data = request.json or {}
+        action = data.get('action') # 'add_1_month', 'add_3_months', 'add_1_year', 'lifetime', 'deactivate'
+
+        valid_actions = ['add_1_month', 'add_3_months', 'add_1_year', 'lifetime', 'deactivate']
+        if action not in valid_actions:
+            return jsonify({'success': False, 'error': f'Invalid action. Must be one of: {", ".join(valid_actions)}'}), 400
+
+        now_ms = int(time.time() * 1000)
+        current_sub = get_user_subscription(target_user_id)
+        curr_expiry = current_sub.get('expiry')
+        base_ms = curr_expiry if (curr_expiry and curr_expiry > now_ms) else now_ms
+
+        new_status = 'active'
+        new_expiry = None
+
+        if action == 'add_1_month':
+            new_expiry = base_ms + (30 * 24 * 60 * 60 * 1000)
+        elif action == 'add_3_months':
+            new_expiry = base_ms + (90 * 24 * 60 * 60 * 1000)
+        elif action == 'add_1_year':
+            new_expiry = base_ms + (365 * 24 * 60 * 60 * 1000)
+        elif action == 'lifetime':
+            new_expiry = None
+            new_status = 'active'
+        elif action == 'deactivate':
+            new_expiry = None
+            new_status = 'inactive'
+
+        # Update SQLite
+        conn = get_db_connection()
+        conn.execute(
+            'UPDATE users SET subscription_status = ?, subscription_expiry = ? WHERE id = ?',
+            (new_status, new_expiry, target_user_id)
+        )
+        conn.commit()
+        conn.close()
+
+        # Update Firestore
+        if db:
+            try:
+                db.collection('users').document(target_user_id).set({
+                    'subscriptionStatus': new_status,
+                    'subscriptionExpiry': new_expiry,
+                    'updatedAt': firestore.SERVER_TIMESTAMP
+                }, merge=True)
+            except Exception as fe:
+                logger.warning(f"Error updating subscription in Firestore: {fe}")
+
+        return jsonify({
+            'success': True,
+            'message': f'Subscription updated successfully ({action}).',
+            'status': new_status,
+            'expiry': new_expiry
+        })
+    except Exception as e:
+        logger.exception("Error updating user subscription")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/users/<target_user_id>/role', methods=['POST'])
+@admin_required
+def api_admin_update_user_role(target_user_id):
+    """Admin-only: Toggle user role between 'admin' and 'user'"""
+    try:
+        data = request.json or {}
+        new_role = data.get('role', '').lower().strip()
+        admin_uid = request.user['uid']
+
+        if new_role not in ['admin', 'user']:
+            return jsonify({'success': False, 'error': "Role must be 'admin' or 'user'."}), 400
+
+        if target_user_id == admin_uid and new_role != 'admin':
+            return jsonify({'success': False, 'error': 'You cannot demote yourself from admin.'}), 400
+
+        # Update SQLite
+        conn = get_db_connection()
+        if new_role == 'admin':
+            conn.execute("UPDATE users SET role = 'admin', subscription_status = 'active', subscription_expiry = NULL WHERE id = ?", (target_user_id,))
+        else:
+            conn.execute("UPDATE users SET role = 'user' WHERE id = ?", (target_user_id,))
+        conn.commit()
+        conn.close()
+
+        # Update Firestore
+        if db:
+            try:
+                update_fields = {'role': new_role, 'updatedAt': firestore.SERVER_TIMESTAMP}
+                if new_role == 'admin':
+                    update_fields['subscriptionStatus'] = 'active'
+                    update_fields['subscriptionExpiry'] = None
+                db.collection('users').document(target_user_id).set(update_fields, merge=True)
+            except Exception as fe:
+                logger.warning(f"Error updating user role in Firestore: {fe}")
+
+        return jsonify({'success': True, 'message': f'User role updated to {new_role}.', 'role': new_role})
+    except Exception as e:
+        logger.exception("Error updating user role")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/settings/payment', methods=['GET', 'POST'])
+def api_payment_settings():
+    """
+    GET: Retrieve bank details and pricing for subscription payments (Public / Authenticated).
+    POST: Update payment settings (Admin-only).
+    """
+    if request.method == 'GET':
+        settings_data = get_payment_settings()
+        return jsonify({'success': True, 'settings': settings_data})
+
+    # POST - Admin only
+    auth_user_id = session.get('user_id')
+    if not auth_user_id:
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer ') and firebase_initialized:
+            try:
+                decoded = firebase_auth.verify_id_token(auth_header.split('Bearer ')[1].strip())
+                auth_user_id = decoded.get('uid')
+            except Exception:
+                pass
+
+    if not auth_user_id:
+        return jsonify({'success': False, 'error': 'Authentication required.'}), 401
+
+    sub = get_user_subscription(auth_user_id)
+    if sub.get('role') != 'admin':
+        return jsonify({'success': False, 'error': 'Administrator privileges required.'}), 403
+
+    try:
+        data = request.json or {}
+        current_settings = get_payment_settings()
+
+        price_per_month = data.get('pricePerMonth')
+        if price_per_month is not None:
+            try:
+                current_settings['pricePerMonth'] = int(price_per_month)
+            except (ValueError, TypeError):
+                pass
+
+        if 'bankName' in data:
+            current_settings['bankName'] = str(data['bankName']).strip()
+        if 'accountName' in data:
+            current_settings['accountName'] = str(data['accountName']).strip()
+        if 'accountNo' in data:
+            current_settings['accountNo'] = str(data['accountNo']).strip()
+        if 'contactEmail' in data:
+            current_settings['contactEmail'] = str(data['contactEmail']).strip()
+        if 'contactPhone' in data:
+            current_settings['contactPhone'] = str(data['contactPhone']).strip()
+
+        save_payment_settings(current_settings)
+        return jsonify({'success': True, 'settings': current_settings, 'message': 'Payment settings updated successfully.'})
+    except Exception as e:
+        logger.exception("Error saving payment settings")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/subscribe', methods=['POST'])
+@firebase_auth_required
+def api_subscribe_submit():
+    """User submits subscription payment proof (receipt) for verification"""
+    try:
+        user_id = request.user['uid']
+        user_email = request.user.get('email') or session.get('user_email', '')
+
+        months_str = request.form.get('months', '1')
+        try:
+            months = int(months_str)
+            if months not in [1, 3, 6, 12]:
+                months = 1
+        except Exception:
+            months = 1
+
+        if 'receipt' not in request.files:
+            return jsonify({'success': False, 'error': 'Payment receipt file is required.'}), 400
+
+        receipt_file = request.files['receipt']
+        if not receipt_file or not receipt_file.filename:
+            return jsonify({'success': False, 'error': 'Please select a valid receipt image or document.'}), 400
+
+        allowed_exts = {'.png', '.jpg', '.jpeg', '.webp', '.pdf'}
+        _, ext = os.path.splitext(receipt_file.filename.lower())
+        if ext not in allowed_exts:
+            return jsonify({'success': False, 'error': 'Invalid file type. Allowed: PNG, JPG, WEBP, PDF.'}), 400
+
+        timestamp = int(time.time())
+        clean_filename = f"{user_id}_{timestamp}_{secure_filename(receipt_file.filename)}"
+        receipt_url = None
+
+        # Try uploading to Firebase Storage if available
+        bucket = get_storage_bucket()
+        if bucket:
+            try:
+                storage_blob = bucket.blob(f"receipts/{clean_filename}")
+                receipt_file.seek(0)
+                storage_blob.upload_from_file(receipt_file, content_type=receipt_file.content_type)
+                storage_blob.make_public()
+                receipt_url = storage_blob.public_url
+            except Exception as se:
+                logger.warning(f"Firebase Storage receipt upload failed: {se}")
+
+        # Local fallback if Firebase Storage not configured or failed
+        if not receipt_url:
+            receipts_dir = os.path.join(BASE_DIR, 'static', 'uploads', 'receipts')
+            os.makedirs(receipts_dir, exist_ok=True)
+            local_save_path = os.path.join(receipts_dir, clean_filename)
+            receipt_file.seek(0)
+            receipt_file.save(local_save_path)
+            receipt_url = f"/static/uploads/receipts/{clean_filename}"
+
+        # Record subscription request
+        request_id = str(uuid.uuid4())
+        created_at_ms = int(time.time() * 1000)
+
+        conn = get_db_connection()
+        conn.execute(
+            'INSERT INTO subscription_requests (id, user_id, email, months_requested, receipt_url, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (request_id, user_id, user_email, months, receipt_url, 'pending', created_at_ms)
+        )
+        conn.execute("UPDATE users SET subscription_status = 'pending' WHERE id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+
+        # Update session
+        session['subscription_status'] = 'pending'
+
+        # Record in Firestore if active
+        if db:
+            try:
+                db.collection('subscription_requests').document(request_id).set({
+                    'id': request_id,
+                    'userId': user_id,
+                    'email': user_email,
+                    'monthsRequested': months,
+                    'receiptUrl': receipt_url,
+                    'status': 'pending',
+                    'createdAt': created_at_ms
+                })
+                db.collection('users').document(user_id).set({
+                    'subscriptionStatus': 'pending',
+                    'updatedAt': firestore.SERVER_TIMESTAMP
+                }, merge=True)
+            except Exception as fe:
+                logger.warning(f"Error syncing subscription request to Firestore: {fe}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Proof of payment submitted successfully! Your account will be activated once an administrator confirms your payment.',
+            'receiptUrl': receipt_url,
+            'status': 'pending'
+        })
+    except Exception as e:
+        logger.exception("Error processing subscription submission")
+        return jsonify({'success': False, 'error': f'Failed to submit receipt: {str(e)}'}), 500
+
+
 # ==================== PAGE ROUTES ====================
 
 @app.route('/')
@@ -3773,11 +4662,16 @@ def index():
     """Landing page for ieWebNative"""
     user = None
     if 'user_id' in session:
+        user_id = session['user_id']
+        sub = get_user_subscription(user_id)
         user = {
-            'id': session['user_id'],
-            'uid': session['user_id'],
+            'id': user_id,
+            'uid': user_id,
             'name': session.get('user_name'),
-            'email': session.get('user_email')
+            'email': session.get('user_email'),
+            'role': sub.get('role', 'user'),
+            'subscriptionStatus': sub.get('status', 'inactive'),
+            'subscriptionExpiry': sub.get('expiry')
         }
     return render_template('landing.html', user=user, firebase_config=get_firebase_config())
 
@@ -3790,17 +4684,68 @@ def auth_page():
     return render_template('auth.html', firebase_config=get_firebase_config())
 
 
+@app.route('/admin/login')
+def admin_login_page():
+    """Admin login and setup bootstrap gateway"""
+    if 'user_id' in session:
+        sub = get_user_subscription(session['user_id'])
+        if sub.get('role') == 'admin':
+            return redirect(url_for('admin_page'))
+    return render_template('admin_login.html', firebase_config=get_firebase_config())
+
+
+@app.route('/admin')
+def admin_page():
+    """Admin Dashboard - requires role == 'admin'"""
+    if 'user_id' not in session:
+        return redirect(url_for('admin_login_page'))
+    user_id = session['user_id']
+    sub = get_user_subscription(user_id)
+    if sub.get('role') != 'admin':
+        return redirect(url_for('admin_login_page', error='unauthorized'))
+    return render_template('admin.html', user={
+        'id': user_id,
+        'uid': user_id,
+        'name': session.get('user_name', 'Admin'),
+        'email': session.get('user_email', ''),
+        'role': 'admin'
+    }, firebase_config=get_firebase_config())
+
+
+@app.route('/subscribe')
+def subscribe_page():
+    """User subscription & billing page"""
+    if 'user_id' not in session:
+        return redirect(url_for('auth_page'))
+    user_id = session['user_id']
+    sub = get_user_subscription(user_id)
+    return render_template('subscribe.html', user={
+        'id': user_id,
+        'uid': user_id,
+        'name': session.get('user_name', 'User'),
+        'email': session.get('user_email', ''),
+        'role': sub.get('role', 'user'),
+        'subscriptionStatus': sub.get('status', 'inactive'),
+        'subscriptionExpiry': sub.get('expiry')
+    }, firebase_config=get_firebase_config())
+
+
 @app.route('/dashboard')
 def dashboard_page():
     """Dashboard page - requires authentication"""
     if 'user_id' not in session:
         return redirect(url_for('auth_page'))
+    user_id = session['user_id']
+    sub = get_user_subscription(user_id)
     return render_template('dashboard.html', user={
-        'id': session['user_id'],
-        'uid': session['user_id'],
+        'id': user_id,
+        'uid': user_id,
         'name': session.get('user_name'),
         'email': session.get('user_email'),
-        'picture': session.get('user_picture')
+        'picture': session.get('user_picture'),
+        'role': sub.get('role', 'user'),
+        'subscriptionStatus': sub.get('status', 'inactive'),
+        'subscriptionExpiry': sub.get('expiry')
     }, firebase_config=get_firebase_config())
 
 
@@ -3809,12 +4754,17 @@ def builder_page():
     """Builder page - requires authentication"""
     if 'user_id' not in session:
         return redirect(url_for('auth_page'))
+    user_id = session['user_id']
+    sub = get_user_subscription(user_id)
     user = {
-        'id': session['user_id'],
-        'uid': session['user_id'],
+        'id': user_id,
+        'uid': user_id,
         'name': session.get('user_name'),
         'email': session.get('user_email'),
-        'picture': session.get('user_picture')
+        'picture': session.get('user_picture'),
+        'role': sub.get('role', 'user'),
+        'subscriptionStatus': sub.get('status', 'inactive'),
+        'subscriptionExpiry': sub.get('expiry')
     }
     return render_template('index.html', user=user, firebase_config=get_firebase_config())
 
@@ -4342,6 +5292,22 @@ def start_build():
                     auth_user_id = decoded.get('uid')
                 except Exception:
                     pass
+
+        # Subscription Access Gate: Only active subscribers or admins can trigger builds
+        if not auth_user_id:
+            return jsonify({
+                'success': False,
+                'error': 'Authentication required. Please sign in to compile native applications.',
+                'redirect': '/auth'
+            }), 401
+
+        sub = get_user_subscription(auth_user_id)
+        if not sub.get('is_active', False):
+            return jsonify({
+                'success': False,
+                'error': 'An active subscription is required to compile native applications. Please activate your subscription to continue.',
+                'redirect': '/subscribe'
+            }), 403
 
         project_id = data.get('project_id') or data.get('projectId')
         app_name = data.get('app_name', 'Untitled App')

@@ -103,6 +103,13 @@ service firebase.storage {
       allow delete: if isSignedIn() && isOwner(userId);
     }
 
+    // Subscription payment receipts
+    // Path: /receipts/{filename}
+    match /receipts/{filename} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.resource.size < 15 * 1024 * 1024; // 15MB max
+    }
+
     // Deny all other access by default
     match /{allPaths=**} {
       allow read, write: if false;

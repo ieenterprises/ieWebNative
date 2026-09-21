@@ -1,0 +1,452 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Subscription & Billing - ieWebNative</title>
+    <link rel="icon" type="image/png" href="/static/images/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/subscription.css">
+    <script src="/static/js/theme.js"></script>
+    <style>
+        html, body {
+            overflow-x: hidden !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="sub-page-wrapper">
+        <div class="sub-container">
+            <!-- Header -->
+            <header class="sub-header">
+                <a href="/dashboard" class="sub-brand" title="Return to Dashboard">
+                    <img src="/static/images/logo.png" alt="ieWebNative Logo">
+                    <span class="sub-brand-title">ieWebNative</span>
+                </a>
+                <div class="sub-header-actions">
+                    <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle Day / Moon Light Mode" aria-label="Toggle Theme" style="border: 1px solid var(--sub-border); background: var(--sub-card); padding: 8px 10px; border-radius: 10px; cursor: pointer; color: var(--sub-text);">
+                        <span class="theme-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                        </span>
+                    </button>
+                    <a href="/dashboard" class="btn btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; font-weight: 600; border-radius: 10px; border: 1px solid var(--sub-border); background: var(--sub-card); color: var(--sub-text);" title="Return to Dashboard" aria-label="Dashboard">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                        <span class="btn-text">Dashboard</span>
+                    </a>
+                </div>
+            </header>
+
+            <!-- Status Banner -->
+            <div id="status-card-container">
+                {% if user.role == 'admin' %}
+                <div class="sub-status-card status-active">
+                    <div class="sub-status-info">
+                        <div class="sub-status-icon-wrap">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+                        </div>
+                        <div class="sub-status-text">
+                            <h3>Administrator Account</h3>
+                            <p>You have unrestricted lifetime access to all platform features and native compilation.</p>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="badge badge-admin">Admin Access</span>
+                    </div>
+                </div>
+                {% elif user.subscriptionStatus == 'active' %}
+                <div class="sub-status-card status-active">
+                    <div class="sub-status-info">
+                        <div class="sub-status-icon-wrap">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        </div>
+                        <div class="sub-status-text">
+                            <h3>Active Subscription</h3>
+                            <p id="expiry-text">
+                                {% if user.subscriptionExpiry %}
+                                Valid until <strong id="expiry-date">calculating...</strong>
+                                {% else %}
+                                <strong>Lifetime Access</strong>
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="badge badge-active">Active</span>
+                    </div>
+                </div>
+                {% elif user.subscriptionStatus == 'pending' %}
+                <div class="sub-status-card status-pending">
+                    <div class="sub-status-info">
+                        <div class="sub-status-icon-wrap">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        </div>
+                        <div class="sub-status-text">
+                            <h3>Verification Pending</h3>
+                            <p>Your payment receipt was submitted and is pending administrator confirmation. Your account will activate shortly.</p>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="badge badge-pending">Pending Approval</span>
+                    </div>
+                </div>
+                {% else %}
+                <div class="sub-status-card status-inactive">
+                    <div class="sub-status-info">
+                        <div class="sub-status-icon-wrap">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        </div>
+                        <div class="sub-status-text">
+                            <h3>Free Tier (Inactive Subscription)</h3>
+                            <p>An active subscription is required to compile and download native Android, iOS, and Desktop apps.</p>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="badge badge-inactive">Inactive</span>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Pricing / Duration Selection -->
+            <div class="pricing-section">
+                <h2 class="section-heading">1. Select Subscription Duration</h2>
+                <p class="section-desc">Choose a billing cycle that suits your development workflow. All plans unlock unlimited native builds.</p>
+                <div class="duration-grid">
+                    <div class="duration-card selected" data-months="1">
+                        <div class="duration-title">1 Month</div>
+                        <div class="duration-price" id="price-1m">₦15,000</div>
+                        <div class="duration-sub">Billed monthly</div>
+                    </div>
+                    <div class="duration-card" data-months="3">
+                        <div class="duration-badge">Popular</div>
+                        <div class="duration-title">3 Months</div>
+                        <div class="duration-price" id="price-3m">₦45,000</div>
+                        <div class="duration-sub">Quarterly access</div>
+                    </div>
+                    <div class="duration-card" data-months="6">
+                        <div class="duration-badge">Save 10%</div>
+                        <div class="duration-title">6 Months</div>
+                        <div class="duration-price" id="price-6m">₦81,000</div>
+                        <div class="duration-sub">Semi-annual access</div>
+                    </div>
+                    <div class="duration-card" data-months="12">
+                        <div class="duration-badge">Best Value</div>
+                        <div class="duration-title">12 Months</div>
+                        <div class="duration-price" id="price-12m">₦150,000</div>
+                        <div class="duration-sub">Annual VIP access</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Billing Details & Receipt Upload Split -->
+            <div class="billing-split">
+                <!-- Left: Bank Card -->
+                <div class="bank-card">
+                    <div class="bank-card-header">
+                        <span class="bank-card-title">Direct Bank Transfer</span>
+                        <div class="bank-chip"></div>
+                    </div>
+                    <div class="bank-row">
+                        <div class="bank-label">Bank Name</div>
+                        <div class="bank-val" id="bank-name">Loading...</div>
+                    </div>
+                    <div class="bank-row">
+                        <div class="bank-label">Account Name</div>
+                        <div class="bank-val" id="account-name">Loading...</div>
+                    </div>
+                    <div class="bank-row">
+                        <div class="bank-label">Account Number</div>
+                        <div class="bank-val">
+                            <span id="account-no">Loading...</span>
+                            <button type="button" class="copy-btn" id="copy-acc-btn" title="Copy account number">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                <span id="copy-text">Copy</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="bank-total-box">
+                        <div>
+                            <div class="bank-label">Selected Duration</div>
+                            <div style="font-weight: 700;" id="selected-duration-label">1 Month</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="bank-label">Total Amount</div>
+                            <div class="total-amount-display" id="total-amount">₦15,000</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Receipt Upload Form -->
+                <div class="receipt-upload-card">
+                    <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 8px;">2. Upload Proof of Payment</h3>
+                    <p style="font-size: 0.85rem; color: var(--sub-text-muted); margin-bottom: 16px;">
+                        Transfer the exact amount to the account on the left, then upload your transaction receipt or screenshot below.
+                    </p>
+
+                    <form id="subscribe-form">
+                        <input type="file" id="receipt-input" name="receipt" accept="image/*,.pdf" style="display: none;" required>
+                        
+                        <div class="dropzone" id="dropzone">
+                            <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <div class="dropzone-text">Click to browse or drag & drop receipt</div>
+                            <div class="dropzone-sub">Supports PNG, JPG, JPEG, WEBP or PDF (Max 15MB)</div>
+                        </div>
+
+                        <div id="file-info" class="selected-file-info" style="display: none;">
+                            <span id="file-name" style="word-break: break-all;">receipt.png</span>
+                            <button type="button" class="remove-file-btn" id="remove-file-btn">Remove</button>
+                        </div>
+
+                        <div id="form-alert" style="display: none; padding: 12px; border-radius: 10px; margin-bottom: 16px; font-size: 0.88rem;"></div>
+
+                        <button type="submit" class="btn-submit-payment" id="submit-btn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                            <span id="submit-text">Submit Payment Proof</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Help Footer -->
+            <div style="text-align: center; font-size: 0.82rem; color: var(--sub-text-muted); margin-top: 20px;">
+                Need help or have questions regarding billing? Contact support at <a href="mailto:billing@iewebnative.com" id="support-email-link" style="color: var(--sub-primary); text-decoration: none; font-weight: 600;">billing@iewebnative.com</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let basePrice = 15000;
+        let selectedMonths = 1;
+        let paymentSettings = {};
+        const expiryMs = {{ user.subscriptionExpiry or 'null' }};
+
+        // Format expiration date if present
+        if (expiryMs) {
+            const d = new Date(expiryMs);
+            const el = document.getElementById('expiry-date');
+            if (el) el.textContent = d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Format Currency
+        function formatNaira(num) {
+            return '₦' + Number(num).toLocaleString();
+        }
+
+        // Calculate Plan Price with duration discounts
+        function calculatePlanPrice(months, pricePerMonth) {
+            if (months === 1) return pricePerMonth;
+            if (months === 3) return pricePerMonth * 3;
+            if (months === 6) return Math.round(pricePerMonth * 6 * 0.9); // 10% discount
+            if (months === 12) return Math.round(pricePerMonth * 12 * 0.833333); // approx 2 months free
+            return pricePerMonth * months;
+        }
+
+        // Load Payment Settings
+        async function loadPaymentSettings() {
+            try {
+                const res = await fetch('/api/settings/payment');
+                const data = await res.json();
+                if (data.success && data.settings) {
+                    paymentSettings = data.settings;
+                    basePrice = parseInt(paymentSettings.pricePerMonth) || 15000;
+
+                    document.getElementById('bank-name').textContent = paymentSettings.bankName || 'Access Bank';
+                    document.getElementById('account-name').textContent = paymentSettings.accountName || 'ieWebNative Inc';
+                    document.getElementById('account-no').textContent = paymentSettings.accountNo || '0123456789';
+
+                    if (paymentSettings.contactEmail) {
+                        const supLink = document.getElementById('support-email-link');
+                        if (supLink) {
+                            supLink.href = 'mailto:' + paymentSettings.contactEmail;
+                            supLink.textContent = paymentSettings.contactEmail;
+                        }
+                    }
+
+                    // Update Duration Cards
+                    document.getElementById('price-1m').textContent = formatNaira(calculatePlanPrice(1, basePrice));
+                    document.getElementById('price-3m').textContent = formatNaira(calculatePlanPrice(3, basePrice));
+                    document.getElementById('price-6m').textContent = formatNaira(calculatePlanPrice(6, basePrice));
+                    document.getElementById('price-12m').textContent = formatNaira(calculatePlanPrice(12, basePrice));
+
+                    updateTotalDisplay();
+                }
+            } catch (err) {
+                console.error('Failed to load payment settings:', err);
+            }
+        }
+
+        function updateTotalDisplay() {
+            const total = calculatePlanPrice(selectedMonths, basePrice);
+            document.getElementById('total-amount').textContent = formatNaira(total);
+            document.getElementById('selected-duration-label').textContent = selectedMonths === 1 ? '1 Month' : selectedMonths + ' Months';
+        }
+
+        // Duration Card Selection
+        document.querySelectorAll('.duration-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.duration-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedMonths = parseInt(card.getAttribute('data-months')) || 1;
+                updateTotalDisplay();
+            });
+        });
+
+        // 1-Click Copy Account Number
+        const copyBtn = document.getElementById('copy-acc-btn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', () => {
+                const accNo = document.getElementById('account-no').textContent.trim();
+                navigator.clipboard.writeText(accNo).then(() => {
+                    const copyText = document.getElementById('copy-text');
+                    copyText.textContent = 'Copied!';
+                    setTimeout(() => {
+                        copyText.textContent = 'Copy';
+                    }, 2000);
+                });
+            });
+        }
+
+        // File Selection & Drag-and-drop
+        const dropzone = document.getElementById('dropzone');
+        const receiptInput = document.getElementById('receipt-input');
+        const fileInfo = document.getElementById('file-info');
+        const fileName = document.getElementById('file-name');
+        const removeFileBtn = document.getElementById('remove-file-btn');
+
+        dropzone.addEventListener('click', () => receiptInput.click());
+
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('dragover');
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                receiptInput.files = e.dataTransfer.files;
+                updateFileDisplay();
+            }
+        });
+
+        receiptInput.addEventListener('change', updateFileDisplay);
+
+        function updateFileDisplay() {
+            if (receiptInput.files && receiptInput.files[0]) {
+                const f = receiptInput.files[0];
+                fileName.textContent = f.name + ' (' + (f.size / (1024 * 1024)).toFixed(2) + ' MB)';
+                fileInfo.style.display = 'flex';
+                dropzone.style.display = 'none';
+            } else {
+                fileInfo.style.display = 'none';
+                dropzone.style.display = 'flex';
+            }
+        }
+
+        removeFileBtn.addEventListener('click', () => {
+            receiptInput.value = '';
+            updateFileDisplay();
+        });
+
+        // Form Submit
+        const form = document.getElementById('subscribe-form');
+        const submitBtn = document.getElementById('submit-btn');
+        const submitText = document.getElementById('submit-text');
+        const alertBox = document.getElementById('form-alert');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!receiptInput.files || !receiptInput.files[0]) {
+                showAlert('Please select or drop your payment receipt file.', false);
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitText.textContent = 'Uploading Receipt...';
+            alertBox.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('months', selectedMonths);
+            formData.append('receipt', receiptInput.files[0]);
+
+            try {
+                const res = await fetch('/api/subscribe', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await res.json();
+
+                if (res.ok && result.success) {
+                    showAlert('Payment proof submitted successfully! Your account will be activated once verified by an administrator.', true);
+                    form.reset();
+                    updateFileDisplay();
+
+                    // Update top status card dynamically to Pending
+                    const statusCardContainer = document.getElementById('status-card-container');
+                    if (statusCardContainer) {
+                        statusCardContainer.innerHTML = `
+                            <div class="sub-status-card status-pending">
+                                <div class="sub-status-info">
+                                    <div class="sub-status-icon-wrap">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                    </div>
+                                    <div class="sub-status-text">
+                                        <h3>Verification Pending</h3>
+                                        <p>Your payment receipt was submitted and is pending administrator confirmation. Your account will activate shortly.</p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <span class="badge badge-pending">Pending Approval</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+                } else {
+                    showAlert(result.error || 'Submission failed. Please try again.', false);
+                }
+            } catch (err) {
+                showAlert('Network error: ' + err.message, false);
+            } finally {
+                submitBtn.disabled = false;
+                submitText.textContent = 'Submit Payment Proof';
+            }
+        });
+
+        function showAlert(msg, isSuccess) {
+            alertBox.textContent = msg;
+            alertBox.style.display = 'block';
+            if (isSuccess) {
+                alertBox.style.background = 'rgba(16, 185, 129, 0.12)';
+                alertBox.style.color = '#10b981';
+                alertBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+            } else {
+                alertBox.style.background = 'rgba(239, 68, 68, 0.12)';
+                alertBox.style.color = '#ef4444';
+                alertBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            }
+        }
+
+        // Initialize on load
+        loadPaymentSettings();
+    </script>
+</body>
+</html>

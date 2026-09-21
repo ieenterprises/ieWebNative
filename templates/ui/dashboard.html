@@ -56,6 +56,31 @@
                 </svg>
                 <span class="btn-text">Docs</span>
             </a>
+            <a href="/subscribe" class="btn btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; font-weight: 600; border-radius: 10px;" title="Subscription Status & Billing" aria-label="Subscription">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                    <line x1="1" y1="10" x2="23" y2="10"></line>
+                </svg>
+                <span class="btn-text">
+                    {% if user.role == 'admin' %}
+                    Admin
+                    {% elif user.subscriptionStatus == 'active' %}
+                    Active
+                    {% elif user.subscriptionStatus == 'pending' %}
+                    Pending
+                    {% else %}
+                    Upgrade
+                    {% endif %}
+                </span>
+            </a>
+            {% if user.role == 'admin' %}
+            <a href="/admin" class="btn btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; font-weight: 600; border-radius: 10px; border-color: rgba(139, 92, 246, 0.4); color: #8b5cf6;" title="Admin Management Portal" aria-label="Admin Portal">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                </svg>
+                <span class="btn-text">Admin Panel</span>
+            </a>
+            {% endif %}
             <a href="/builder" class="btn btn-primary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px; font-weight: 600; border-radius: 10px;" title="Launch App Builder" aria-label="Launch App Builder">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
@@ -96,6 +121,21 @@
                         </div>
                     </div>
                     <div class="dropdown-divider"></div>
+                    <a href="/subscribe" class="dropdown-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                            <line x1="1" y1="10" x2="23" y2="10"></line>
+                        </svg>
+                        Subscription & Billing
+                    </a>
+                    {% if user.role == 'admin' %}
+                    <a href="/admin" class="dropdown-item" style="color: #8b5cf6;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                        </svg>
+                        Admin Dashboard
+                    </a>
+                    {% endif %}
                     <button type="button" class="dropdown-item" id="open-profile-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -125,6 +165,30 @@
 
     <!-- Main Content -->
     <main class="main-content">
+        {% if user.role != 'admin' and user.subscriptionStatus != 'active' %}
+        <div class="sub-alert-banner" style="margin-bottom: 24px; padding: 14px 20px; background: linear-gradient(135deg, rgba(2, 164, 203, 0.08) 0%, rgba(56, 189, 248, 0.08) 100%); border: 1px solid rgba(2, 164, 203, 0.25); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(2, 164, 203, 0.15); color: #02a4cb; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                </div>
+                <div>
+                    {% if user.subscriptionStatus == 'pending' %}
+                    <div style="font-weight: 700; font-size: 0.92rem; color: var(--text-primary);">Payment Receipt Verification In Progress</div>
+                    <div style="font-size: 0.82rem; color: var(--text-secondary);">Your payment receipt is being reviewed by an administrator. Full native build access will activate shortly.</div>
+                    {% else %}
+                    <div style="font-weight: 700; font-size: 0.92rem; color: var(--text-primary);">Activate Subscription to Build Native Applications</div>
+                    <div style="font-size: 0.82rem; color: var(--text-secondary);">Unlock unlimited native Android, iOS, and Desktop packaging by activating your subscription.</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <a href="/subscribe" class="btn btn-primary" style="text-decoration: none; padding: 8px 18px; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px;" title="Manage Subscription" aria-label="Manage Subscription">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                    <span class="btn-text">{% if user.subscriptionStatus == 'pending' %}View Receipt Status{% else %}Upgrade Now{% endif %}</span>
+                </a>
+            </div>
+        </div>
+        {% endif %}
         <!-- Active Background Build Banner -->
         <div id="active-build-banner" class="active-build-banner" style="display: none; position: relative; margin-bottom: 24px; padding: 18px 24px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; box-shadow: 0 4px 20px -2px rgba(99, 102, 241, 0.1); transition: opacity 0.3s ease, transform 0.3s ease;">
             <button type="button" id="banner-dismiss-x" title="Dismiss" aria-label="Dismiss" style="position: absolute; top: 12px; right: 14px; background: transparent; border: none; font-size: 1.3rem; line-height: 1; color: var(--text-secondary, #64748b); cursor: pointer; padding: 4px 8px; border-radius: 4px; display: none;">&times;</button>

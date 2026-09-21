@@ -12,13 +12,40 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
+    function isAdmin() {
+      return isSignedIn() &&
+        (request.auth.token.role == 'admin' ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
     // Users collection
-    // Users can only read and update their own profile
+    // Users can read/write their own profile. Admins can read/manage all profiles.
     match /users/{userId} {
-      allow read: if isSignedIn() && isOwner(userId);
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
       allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && isOwner(userId);
-      allow delete: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (isOwner(userId) &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'subscriptionStatus', 'subscriptionExpiry']))
+      );
+      allow delete: if isSignedIn() && (isOwner(userId) || isAdmin());
+    }
+
+    // Subscription requests collection
+    // Users can create and view their own requests. Admins can view, approve, and manage all requests.
+    match /subscription_requests/{requestId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Payment settings document
+    // Public / authenticated users can read payment details. Only admins can update them.
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // Projects collection
@@ -26,7 +53,7 @@ service cloud.firestore {
     match /projects/{projectId} {
       // Allow read if user owns the project
       allow read: if isSignedIn() &&
-                     resource.data.userId == request.auth.uid;
+                     (resource.data.userId == request.auth.uid || isAdmin());
 
       // Allow create if authenticated and setting themselves as owner
       allow create: if isSignedIn() &&
@@ -37,37 +64,37 @@ service cloud.firestore {
 
       // Allow update if user owns the project and not changing userId
       allow update: if isSignedIn() &&
-                       resource.data.userId == request.auth.uid &&
-                       request.resource.data.userId == request.auth.uid;
+                       (resource.data.userId == request.auth.uid || isAdmin()) &&
+                       request.resource.data.userId == resource.data.userId;
 
-      // Allow delete if user owns the project
+      // Allow delete if user owns the project or is admin
       allow delete: if isSignedIn() &&
-                       resource.data.userId == request.auth.uid;
+                       (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     // Builds collection
     // Users can only access their own builds
     match /builds/{buildId} {
       allow read: if isSignedIn() &&
-                     resource.data.userId == request.auth.uid;
+                     (resource.data.userId == request.auth.uid || isAdmin());
 
       allow create: if isSignedIn() &&
                        request.resource.data.userId == request.auth.uid;
 
-      // Builds are immutable once created (no update)
+      // Builds are immutable once created (no direct client update)
       allow update: if false;
 
       allow delete: if isSignedIn() &&
-                       resource.data.userId == request.auth.uid;
+                       (resource.data.userId == request.auth.uid || isAdmin());
     }
 
-    // Project assets subcollection (if needed for future expansion)
+    // Project assets subcollection
     match /projects/{projectId}/assets/{assetId} {
       allow read: if isSignedIn() &&
-                     get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid;
+                     (get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid || isAdmin());
 
       allow write: if isSignedIn() &&
-                      get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid;
+                      (get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid || isAdmin());
     }
 
     // Deny all other access by default

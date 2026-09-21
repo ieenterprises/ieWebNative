@@ -756,6 +756,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (!response.ok) {
                 const error = await response.json();
+                if (response.status === 403 && (error.redirect === '/subscribe' || (error.error && error.error.toLowerCase().includes('subscription')))) {
+                    resetBuildUI();
+                    showSubscriptionRequiredModal(error.error);
+                    return;
+                }
                 throw new Error(error.error || 'Build failed to start');
             }
 
@@ -791,6 +796,26 @@ document.addEventListener('DOMContentLoaded', function() {
             showToast('Error starting build: ' + error.message, 'error');
             resetBuildUI();
         }
+    });
+
+    function showSubscriptionRequiredModal(msg) {
+        const modal = document.getElementById('subscription-required-modal');
+        const desc = document.getElementById('sub-required-msg');
+        if (modal) {
+            if (desc && msg) desc.textContent = msg;
+            modal.style.display = 'flex';
+        }
+    }
+
+    const closeSubModalBtn = document.getElementById('close-sub-required-modal');
+    const dismissSubModalBtn = document.getElementById('dismiss-sub-required-btn');
+    if (closeSubModalBtn) closeSubModalBtn.addEventListener('click', () => {
+        const modal = document.getElementById('subscription-required-modal');
+        if (modal) modal.style.display = 'none';
+    });
+    if (dismissSubModalBtn) dismissSubModalBtn.addEventListener('click', () => {
+        const modal = document.getElementById('subscription-required-modal');
+        if (modal) modal.style.display = 'none';
     });
 
     function resetBuildUI() {

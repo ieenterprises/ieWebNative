@@ -1,0 +1,324 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Admin Gateway - ieWebNative</title>
+    <link rel="icon" type="image/png" href="/static/images/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/subscription.css">
+    <style>
+        html, body {
+            overflow-x: hidden !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            margin: 0;
+            padding: 0;
+            background: #0b0f19;
+        }
+
+        .gateway-wrapper {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: radial-gradient(circle at 50% 10%, rgba(2, 164, 203, 0.12) 0%, transparent 60%), #0b0f19;
+        }
+
+        .alert-box {
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            display: none;
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.12);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .alert-info {
+            background: rgba(2, 164, 203, 0.12);
+            color: #38bdf8;
+            border: 1px solid rgba(2, 164, 203, 0.3);
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.12);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-admin-submit {
+            width: 100%;
+            padding: 13px;
+            background: linear-gradient(135deg, #02a4cb 0%, #0369a1 100%);
+            color: white;
+            font-size: 0.95rem;
+            font-weight: 700;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+            margin-top: 10px;
+        }
+
+        .btn-admin-submit:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(2, 164, 203, 0.4);
+        }
+
+        .btn-admin-submit:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .return-link {
+            color: #64748b;
+            text-decoration: none;
+            font-size: 0.82rem;
+            margin-top: 24px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: color 0.2s;
+        }
+
+        .return-link:hover {
+            color: #38bdf8;
+        }
+    </style>
+</head>
+<body class="admin-body">
+    <div class="gateway-wrapper">
+        <div class="admin-login-box">
+            <div class="admin-login-header">
+                <img src="/static/images/logo.png" alt="Logo">
+                <h2 style="font-size: 1.4rem; font-weight: 800; color: #f8fafc; margin-bottom: 4px;">Admin Gateway</h2>
+                <p style="font-size: 0.85rem; color: #94a3b8;">Restricted Access Portal for ieWebNative Administrators</p>
+            </div>
+
+            <!-- Tabs -->
+            <div class="admin-tabs">
+                <button type="button" class="admin-tab-btn active" id="tab-signin-btn">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
+                    Sign In
+                </button>
+                <button type="button" class="admin-tab-btn" id="tab-signup-btn">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                    <span id="signup-tab-text">Setup Admin</span>
+                </button>
+            </div>
+
+            <!-- Alert Message -->
+            <div id="alert-box" class="alert-box"></div>
+
+            <!-- Sign In Form -->
+            <form id="admin-signin-form">
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label class="form-label">Admin Email</label>
+                    <input type="email" id="signin-email" class="form-input" placeholder="admin@iewebnative.com" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label class="form-label">Password</label>
+                    <input type="password" id="signin-password" class="form-input" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn-admin-submit" id="signin-submit-btn">
+                    <span>Access Admin Portal</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                </button>
+            </form>
+
+            <!-- Bootstrap / Register Form -->
+            <form id="admin-signup-form" style="display: none;">
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label class="form-label">Admin Full Name</label>
+                    <input type="text" id="signup-name" class="form-input" placeholder="Super Admin" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label class="form-label">Admin Email Address</label>
+                    <input type="email" id="signup-email" class="form-input" placeholder="admin@iewebnative.com" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 14px;">
+                    <label class="form-label">Password (Min. 6 characters)</label>
+                    <input type="password" id="signup-password" class="form-input" placeholder="••••••••" minlength="6" required>
+                </div>
+                <div class="form-group" id="master-key-group" style="margin-bottom: 20px;">
+                    <label class="form-label" style="display: flex; justify-content: space-between;">
+                        <span>Master Setup Key</span>
+                        <span style="color: #38bdf8; font-size: 0.75rem;">Required for override</span>
+                    </label>
+                    <input type="password" id="signup-masterkey" class="form-input" placeholder="Enter ADMIN_SETUP_KEY">
+                </div>
+                <button type="submit" class="btn-admin-submit" id="signup-submit-btn">
+                    <span>Register Administrator</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                </button>
+            </form>
+        </div>
+
+        <a href="/" class="return-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            Return to ieWebNative
+        </a>
+    </div>
+
+    <script>
+        let adminExists = true;
+        const alertBox = document.getElementById('alert-box');
+        const tabSignin = document.getElementById('tab-signin-btn');
+        const tabSignup = document.getElementById('tab-signup-btn');
+        const signinForm = document.getElementById('admin-signin-form');
+        const signupForm = document.getElementById('admin-signup-form');
+        const signupTabText = document.getElementById('signup-tab-text');
+        const masterKeyGroup = document.getElementById('master-key-group');
+
+        // Check if URL has ?error=unauthorized
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('error') === 'unauthorized') {
+            showAlert('Access Denied: Administrator credentials are required to view the management portal.', 'error');
+        }
+
+        // Query setup status
+        async function checkSetup() {
+            try {
+                const res = await fetch('/api/admin/setup');
+                const data = await res.json();
+                adminExists = !!data.adminExists;
+
+                if (!adminExists) {
+                    signupTabText.textContent = 'Initial Setup';
+                    showAlert('First-time setup detected: No administrator accounts exist yet. Please configure the primary administrator account.', 'info');
+                    switchTab('signup');
+                    if (masterKeyGroup) masterKeyGroup.style.display = 'none';
+                } else {
+                    signupTabText.textContent = 'Setup Admin';
+                    if (masterKeyGroup) masterKeyGroup.style.display = 'block';
+                }
+            } catch (err) {
+                console.error('Error checking setup status:', err);
+            }
+        }
+
+        function switchTab(mode) {
+            if (mode === 'signin') {
+                tabSignin.classList.add('active');
+                tabSignup.classList.remove('active');
+                signinForm.style.display = 'block';
+                signupForm.style.display = 'none';
+                clearAlert();
+            } else {
+                tabSignup.classList.add('active');
+                tabSignin.classList.remove('active');
+                signupForm.style.display = 'block';
+                signinForm.style.display = 'none';
+                if (adminExists) {
+                    showAlert('An administrator already exists. A valid Master Setup Key is required to create additional admin accounts.', 'info');
+                }
+            }
+        }
+
+        tabSignin.addEventListener('click', () => switchTab('signin'));
+        tabSignup.addEventListener('click', () => switchTab('signup'));
+
+        function showAlert(msg, type = 'error') {
+            alertBox.textContent = msg;
+            alertBox.className = 'alert-box alert-' + type;
+            alertBox.style.display = 'block';
+        }
+
+        function clearAlert() {
+            alertBox.style.display = 'none';
+        }
+
+        // Handle Admin Sign In
+        signinForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('signin-email').value.trim();
+            const password = document.getElementById('signin-password').value;
+            const btn = document.getElementById('signin-submit-btn');
+
+            btn.disabled = true;
+            clearAlert();
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    if (data.user && data.user.role === 'admin') {
+                        showAlert('Authentication successful. Redirecting to admin portal...', 'success');
+                        setTimeout(() => {
+                            window.location.href = '/admin';
+                        }, 500);
+                    } else {
+                        // User is valid, but not an admin
+                        showAlert('Access Denied: This account does not possess administrator privileges.', 'error');
+                        // Log out session
+                        fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+                    }
+                } else {
+                    showAlert(data.error || 'Invalid credentials. Please verify your email and password.', 'error');
+                }
+            } catch (err) {
+                showAlert('Connection error: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // Handle Admin Setup / Bootstrap
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('signup-name').value.trim();
+            const email = document.getElementById('signup-email').value.trim();
+            const password = document.getElementById('signup-password').value;
+            const masterKey = document.getElementById('signup-masterkey').value.trim();
+            const btn = document.getElementById('signup-submit-btn');
+
+            btn.disabled = true;
+            clearAlert();
+
+            try {
+                const res = await fetch('/api/admin/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, password, masterKey })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    showAlert('Administrator account created successfully! Redirecting...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/admin';
+                    }, 800);
+                } else {
+                    showAlert(data.error || 'Failed to setup admin account.', 'error');
+                }
+            } catch (err) {
+                showAlert('Connection error: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // Init
+        checkSetup();
+    </script>
+</body>
+</html>

@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Admin Dashboard - ieWebNative</title>
+    <link rel="icon" type="image/png" href="/static/images/logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/subscription.css">
+    <style>
+        html, body {
+            overflow-x: hidden !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Modal Styles */
+        .admin-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(11, 15, 25, 0.85);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            padding: 20px;
+        }
+
+        .admin-modal-container {
+            background: #131b2e;
+            border: 1px solid #1e2d42;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .admin-modal-header {
+            padding: 18px 24px;
+            border-bottom: 1px solid #1e2d42;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .admin-modal-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #f8fafc;
+            margin: 0;
+        }
+
+        .admin-modal-close {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+        }
+
+        .admin-modal-close:hover {
+            color: #f1f5f9;
+            background: #1e293b;
+        }
+
+        .admin-modal-body {
+            padding: 24px;
+            flex: 1;
+        }
+
+        /* Toast notification */
+        .admin-toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #10b981;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+            display: none;
+            align-items: center;
+            gap: 8px;
+            z-index: 3000;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="admin-body">
+    <div class="admin-layout">
+        <!-- Sidebar -->
+        <aside class="admin-sidebar">
+            <div class="admin-sidebar-header">
+                <img src="/static/images/logo.png" alt="Logo" style="height: 32px; width: auto;">
+                <div>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #f8fafc;">ieWebNative</div>
+                    <div style="font-size: 0.72rem; color: #38bdf8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Admin Portal</div>
+                </div>
+            </div>
+
+            <nav class="admin-sidebar-nav">
+                <button type="button" class="admin-nav-item active" id="nav-requests-btn" title="Subscription Requests" aria-label="Subscription Requests">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    <span class="nav-text">Requests</span>
+                    <span class="nav-count" id="badge-requests-count">0</span>
+                </button>
+
+                <button type="button" class="admin-nav-item" id="nav-users-btn" title="Manage Users" aria-label="Manage Users">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    <span class="nav-text">Manage Users</span>
+                    <span class="nav-count" id="badge-users-count">0</span>
+                </button>
+
+                <button type="button" class="admin-nav-item" id="nav-settings-btn" title="Payment Settings" aria-label="Payment Settings">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                    <span class="nav-text">Payment Settings</span>
+                </button>
+            </nav>
+
+            <div class="admin-sidebar-footer">
+                <a href="/dashboard" class="admin-nav-item" style="color: #cbd5e1;" title="Return to Dashboard">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    <span class="nav-text">Back to Dashboard</span>
+                </a>
+                <a href="/api/auth/logout" class="admin-nav-item" style="color: #ef4444;" title="Sign Out">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    <span class="nav-text">Sign Out</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="admin-main">
+            <!-- Topbar -->
+            <div class="admin-topbar">
+                <div class="admin-title-area">
+                    <h1 id="page-heading">Subscription Requests</h1>
+                    <p id="page-subheading">Verify and approve proof of payment receipts submitted by users.</p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="font-size: 0.85rem; color: #94a3b8; text-align: right;">
+                        <div style="font-weight: 700; color: #f8fafc;">{{ user.name }}</div>
+                        <div style="font-size: 0.75rem; color: #38bdf8;">Administrator</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 1: Requests -->
+            <section id="tab-requests" class="admin-tab-content">
+                <div class="admin-card">
+                    <div class="admin-card-header">
+                        <div class="admin-card-title">Incoming Payment Proofs</div>
+                        <button type="button" class="btn-xs btn-xs-cyan" onclick="loadRequests()" title="Refresh requests list">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                            <span class="btn-text">Refresh</span>
+                        </button>
+                    </div>
+
+                    <div class="admin-table-wrap">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>User Email</th>
+                                    <th>Date Submitted</th>
+                                    <th>Duration</th>
+                                    <th>Payment Receipt</th>
+                                    <th>Status</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="requests-table-body">
+                                <tr>
+                                    <td colspan="6" style="text-align: center; color: #64748b; padding: 30px;">Loading subscription requests...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 2: Users -->
+            <section id="tab-users" class="admin-tab-content" style="display: none;">
+                <div class="admin-card">
+                    <div class="admin-card-header">
+                        <div class="admin-card-title">User Accounts & Subscriptions</div>
+                        <div class="admin-search-box">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            <input type="text" id="user-search-input" placeholder="Search by name or email..." oninput="filterUsers()">
+                        </div>
+                    </div>
+
+                    <div class="admin-table-wrap">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Role</th>
+                                    <th>Subscription</th>
+                                    <th>Expiry Date</th>
+                                    <th style="text-align: right;">Quick Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body">
+                                <tr>
+                                    <td colspan="5" style="text-align: center; color: #64748b; padding: 30px;">Loading users...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 3: Payment Settings -->
+            <section id="tab-settings" class="admin-tab-content" style="display: none;">
+                <div class="admin-card">
+                    <div class="admin-card-header">
+                        <div class="admin-card-title">Bank Transfer & Pricing Configuration</div>
+                    </div>
+
+                    <form id="payment-settings-form">
+                        <div class="settings-form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Price Per Month (₦)</label>
+                                <input type="number" id="settings-price" class="form-input" placeholder="15000" min="0" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Bank Name</label>
+                                <input type="text" id="settings-bank-name" class="form-input" placeholder="Access Bank" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Account Name</label>
+                                <input type="text" id="settings-account-name" class="form-input" placeholder="ieWebNative Inc" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Account Number</label>
+                                <input type="text" id="settings-account-no" class="form-input" placeholder="0123456789" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Billing Support Email</label>
+                                <input type="email" id="settings-email" class="form-input" placeholder="billing@iewebnative.com">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Billing Support Phone</label>
+                                <input type="text" id="settings-phone" class="form-input" placeholder="+2348000000000">
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
+                            <button type="submit" class="btn-xs btn-xs-emerald" id="save-settings-btn" style="padding: 10px 20px; font-size: 0.9rem;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                                <span>Save Payment Settings</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Receipt Preview Modal -->
+    <div class="admin-modal-overlay" id="receipt-modal">
+        <div class="admin-modal-container" style="max-width: 700px;">
+            <div class="admin-modal-header">
+                <h3 class="admin-modal-title">Payment Receipt Proof</h3>
+                <button type="button" class="admin-modal-close" onclick="closeReceiptModal()">✕</button>
+            </div>
+            <div class="admin-modal-body" style="text-align: center;">
+                <div id="receipt-content">
+                    <img id="receipt-img" src="" alt="Receipt Preview" style="max-width: 100%; max-height: 70vh; border-radius: 8px; display: none;">
+                    <iframe id="receipt-pdf" src="" style="width: 100%; height: 70vh; border: none; display: none;"></iframe>
+                </div>
+                <div style="margin-top: 16px;">
+                    <a id="receipt-external-link" href="#" target="_blank" class="btn-xs btn-xs-cyan" style="padding: 8px 16px; font-size: 0.85rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        Open in New Tab
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete User Confirmation Modal -->
+    <div class="admin-modal-overlay" id="delete-user-modal">
+        <div class="admin-modal-container" style="max-width: 460px;">
+            <div class="admin-modal-header" style="background: rgba(239, 68, 68, 0.15); border-bottom-color: rgba(239, 68, 68, 0.3);">
+                <h3 class="admin-modal-title" style="color: #f87171;">Confirm Permanent Deletion</h3>
+                <button type="button" class="admin-modal-close" onclick="closeDeleteModal()">✕</button>
+            </div>
+            <div class="admin-modal-body">
+                <p style="font-size: 0.9rem; color: #cbd5e1; line-height: 1.6; margin-bottom: 16px;">
+                    Are you sure you want to permanently delete user <strong id="delete-target-email" style="color: #ffffff;"></strong>?
+                </p>
+                <div style="font-size: 0.82rem; color: #94a3b8; background: rgba(0, 0, 0, 0.2); padding: 12px; border-radius: 8px; margin-bottom: 20px;">
+                    This action is irreversible and immediately wipes all user records, projects, and native builds from the system.
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn-xs" onclick="closeDeleteModal()" style="padding: 8px 14px;">Cancel</button>
+                    <button type="button" class="btn-xs btn-xs-rose" id="confirm-delete-btn" style="padding: 8px 16px;">Delete User</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="admin-toast" class="admin-toast">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span id="toast-msg">Operation completed successfully</span>
+    </div>
+
+    <script>
+        let allUsers = [];
+        let pendingRequestsCount = 0;
+        let deleteTargetUid = null;
+        const currentAdminUid = "{{ user.id }}";
+
+        // Navigation
+        const navRequests = document.getElementById('nav-requests-btn');
+        const navUsers = document.getElementById('nav-users-btn');
+        const navSettings = document.getElementById('nav-settings-btn');
+        const tabRequests = document.getElementById('tab-requests');
+        const tabUsers = document.getElementById('tab-users');
+        const tabSettings = document.getElementById('tab-settings');
+        const pageHeading = document.getElementById('page-heading');
+        const pageSubheading = document.getElementById('page-subheading');
+
+        function switchAdminTab(tab) {
+            navRequests.classList.remove('active');
+            navUsers.classList.remove('active');
+            navSettings.classList.remove('active');
+            tabRequests.style.display = 'none';
+            tabUsers.style.display = 'none';
+            tabSettings.style.display = 'none';
+
+            if (tab === 'requests') {
+                navRequests.classList.add('active');
+                tabRequests.style.display = 'block';
+                pageHeading.textContent = 'Subscription Requests';
+                pageSubheading.textContent = 'Verify and approve proof of payment receipts submitted by users.';
+                loadRequests();
+            } else if (tab === 'users') {
+                navUsers.classList.add('active');
+                tabUsers.style.display = 'block';
+                pageHeading.textContent = 'Manage Users';
+                pageSubheading.textContent = 'View registered users, grant access durations, or manage account roles.';
+                loadUsers();
+            } else if (tab === 'settings') {
+                navSettings.classList.add('active');
+                tabSettings.style.display = 'block';
+                pageHeading.textContent = 'Payment Settings';
+                pageSubheading.textContent = 'Configure bank transfer credentials and monthly billing rates.';
+                loadSettings();
+            }
+        }
+
+        navRequests.addEventListener('click', () => switchAdminTab('requests'));
+        navUsers.addEventListener('click', () => switchAdminTab('users'));
+        navSettings.addEventListener('click', () => switchAdminTab('settings'));
+
+        function showToast(msg) {
+            const toast = document.getElementById('admin-toast');
+            document.getElementById('toast-msg').textContent = msg;
+            toast.style.display = 'inline-flex';
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 3000);
+        }
+
+        // ==================== TAB 1: REQUESTS ====================
+
+        async function loadRequests() {
+            const tbody = document.getElementById('requests-table-body');
+            try {
+                const res = await fetch('/api/admin/requests');
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Failed to load requests: ${data.error || 'Unknown error'}</td></tr>`;
+                    return;
+                }
+
+                const requests = data.requests || [];
+                const pending = requests.filter(r => r.status === 'pending');
+                document.getElementById('badge-requests-count').textContent = pending.length;
+
+                if (requests.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #64748b; padding: 30px;">No subscription requests found.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = requests.map(r => {
+                    const d = new Date(r.createdAt);
+                    const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    
+                    let statusBadge = `<span class="badge badge-pending">Pending</span>`;
+                    if (r.status === 'approved') statusBadge = `<span class="badge badge-active">Approved</span>`;
+                    if (r.status === 'rejected') statusBadge = `<span class="badge badge-inactive">Rejected</span>`;
+
+                    let actionsHtml = `<span style="color: #64748b; font-size: 0.8rem;">Completed</span>`;
+                    if (r.status === 'pending') {
+                        actionsHtml = `
+                            <div class="action-btns" style="justify-content: flex-end;">
+                                <button type="button" class="btn-xs btn-xs-emerald" onclick="approveRequest('${r.id}', ${r.monthsRequested})" title="Approve Request">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    <span class="btn-text">Approve (+${r.monthsRequested} Mo)</span>
+                                </button>
+                                <button type="button" class="btn-xs btn-xs-rose" onclick="rejectRequest('${r.id}')" title="Reject Request">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                    <span class="btn-text">Reject</span>
+                                </button>
+                            </div>
+                        `;
+                    }
+
+                    return `
+                        <tr>
+                            <td><strong style="color: #f1f5f9;">${r.email}</strong></td>
+                            <td style="color: #94a3b8; font-size: 0.82rem;">${dateStr}</td>
+                            <td><span style="font-weight: 700; color: #38bdf8;">${r.monthsRequested} Month${r.monthsRequested > 1 ? 's' : ''}</span></td>
+                            <td>
+                                <button type="button" class="btn-xs btn-xs-cyan" onclick="viewReceipt('${r.receiptUrl}')" title="Inspect Payment Receipt">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                    <span class="btn-text">View Receipt</span>
+                                </button>
+                            </td>
+                            <td>${statusBadge}</td>
+                            <td style="text-align: right;">${actionsHtml}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        async function approveRequest(reqId, months) {
+            try {
+                const res = await fetch(`/api/admin/requests/${reqId}/approve`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Approved request. Granted ${months} month(s) access.`);
+                    loadRequests();
+                } else {
+                    alert(data.error || 'Failed to approve request');
+                }
+            } catch (err) {
+                alert('Connection error: ' + err.message);
+            }
+        }
+
+        async function rejectRequest(reqId) {
+            if (!confirm('Are you sure you want to reject this subscription request?')) return;
+            try {
+                const res = await fetch(`/api/admin/requests/${reqId}/reject`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast('Subscription request rejected.');
+                    loadRequests();
+                } else {
+                    alert(data.error || 'Failed to reject request');
+                }
+            } catch (err) {
+                alert('Connection error: ' + err.message);
+            }
+        }
+
+        function viewReceipt(url) {
+            const modal = document.getElementById('receipt-modal');
+            const img = document.getElementById('receipt-img');
+            const pdf = document.getElementById('receipt-pdf');
+            const extLink = document.getElementById('receipt-external-link');
+
+            extLink.href = url;
+            if (url.toLowerCase().endsWith('.pdf')) {
+                pdf.src = url;
+                pdf.style.display = 'block';
+                img.style.display = 'none';
+            } else {
+                img.src = url;
+                img.style.display = 'inline-block';
+                pdf.style.display = 'none';
+            }
+            modal.style.display = 'flex';
+        }
+
+        function closeReceiptModal() {
+            document.getElementById('receipt-modal').style.display = 'none';
+            document.getElementById('receipt-img').src = '';
+            document.getElementById('receipt-pdf').src = '';
+        }
+
+        // ==================== TAB 2: USERS ====================
+
+        async function loadUsers() {
+            const tbody = document.getElementById('users-table-body');
+            try {
+                const res = await fetch('/api/admin/users');
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 20px;">Failed to load users: ${data.error || 'Unknown error'}</td></tr>`;
+                    return;
+                }
+
+                allUsers = data.users || [];
+                document.getElementById('badge-users-count').textContent = allUsers.length;
+                renderUsersTable(allUsers);
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 20px;">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        function renderUsersTable(users) {
+            const tbody = document.getElementById('users-table-body');
+            if (users.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #64748b; padding: 30px;">No matching users found.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = users.map(u => {
+                const roleBadge = u.role === 'admin' ? `<span class="badge badge-admin">Admin</span>` : `<span class="badge badge-user">User</span>`;
+                
+                let subBadge = `<span class="badge badge-inactive">Inactive</span>`;
+                if (u.role === 'admin') {
+                    subBadge = `<span class="badge badge-active">Unlimited</span>`;
+                } else if (u.subscriptionStatus === 'active') {
+                    subBadge = `<span class="badge badge-active">Active</span>`;
+                } else if (u.subscriptionStatus === 'pending') {
+                    subBadge = `<span class="badge badge-pending">Pending</span>`;
+                }
+
+                let expiryStr = '<span style="color: #64748b;">—</span>';
+                if (u.role === 'admin' || (u.subscriptionStatus === 'active' && !u.subscriptionExpiry)) {
+                    expiryStr = '<strong style="color: #38bdf8;">Lifetime</strong>';
+                } else if (u.subscriptionExpiry) {
+                    const d = new Date(u.subscriptionExpiry);
+                    expiryStr = `<span style="font-size: 0.82rem; color: #94a3b8;">${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>`;
+                }
+
+                const isSelf = u.id === currentAdminUid;
+                const toggleRoleText = u.role === 'admin' ? 'Demote' : 'Make Admin';
+                const nextRole = u.role === 'admin' ? 'user' : 'admin';
+
+                return `
+                    <tr>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div style="width: 32px; height: 32px; border-radius: 8px; background: #1e293b; color: #38bdf8; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.8rem;">
+                                    ${(u.name || u.email || 'U').charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                    <div style="font-weight: 700; color: #f1f5f9;">${u.name || 'User'} ${isSelf ? '<span style="font-size: 0.72rem; color: #38bdf8;">(You)</span>' : ''}</div>
+                                    <div style="font-size: 0.78rem; color: #94a3b8;">${u.email}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>${roleBadge}</td>
+                        <td>${subBadge}</td>
+                        <td>${expiryStr}</td>
+                        <td style="text-align: right;">
+                            <div class="action-btns" style="justify-content: flex-end;">
+                                <button type="button" class="btn-xs btn-xs-emerald" onclick="updateSubscription('${u.id}', 'add_1_month')" title="Add 1 Month Access">
+                                    <span class="btn-text">+1 Mo</span>
+                                </button>
+                                <button type="button" class="btn-xs btn-xs-cyan" onclick="updateSubscription('${u.id}', 'add_3_months')" title="Add 3 Months Access">
+                                    <span class="btn-text">+3 Mo</span>
+                                </button>
+                                <button type="button" class="btn-xs btn-xs-purple" onclick="updateSubscription('${u.id}', 'add_1_year')" title="Add 1 Year Access">
+                                    <span class="btn-text">+1 Yr</span>
+                                </button>
+                                <button type="button" class="btn-xs btn-xs-cyan" onclick="updateSubscription('${u.id}', 'lifetime')" title="Grant Lifetime Access">
+                                    <span class="btn-text">Lifetime</span>
+                                </button>
+                                <button type="button" class="btn-xs btn-xs-rose" onclick="updateSubscription('${u.id}', 'deactivate')" title="Deactivate Subscription">
+                                    <span class="btn-text">Deactivate</span>
+                                </button>
+                                ${!isSelf ? `
+                                    <button type="button" class="btn-xs" onclick="toggleRole('${u.id}', '${nextRole}')" title="Toggle Admin Role">
+                                        <span class="btn-text">${toggleRoleText}</span>
+                                    </button>
+                                    <button type="button" class="btn-xs btn-xs-rose" onclick="openDeleteModal('${u.id}', '${u.email}')" title="Delete User Permanently">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function filterUsers() {
+            const q = document.getElementById('user-search-input').value.trim().toLowerCase();
+            if (!q) {
+                renderUsersTable(allUsers);
+                return;
+            }
+            const filtered = allUsers.filter(u => 
+                (u.name && u.name.toLowerCase().includes(q)) || 
+                (u.email && u.email.toLowerCase().includes(q))
+            );
+            renderUsersTable(filtered);
+        }
+
+        async function updateSubscription(userId, action) {
+            try {
+                const res = await fetch(`/api/admin/users/${userId}/subscription`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(data.message || 'Subscription updated.');
+                    loadUsers();
+                } else {
+                    alert(data.error || 'Failed to update subscription');
+                }
+            } catch (err) {
+                alert('Connection error: ' + err.message);
+            }
+        }
+
+        async function toggleRole(userId, newRole) {
+            if (!confirm(`Are you sure you want to change this user's role to ${newRole.toUpperCase()}?`)) return;
+            try {
+                const res = await fetch(`/api/admin/users/${userId}/role`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: newRole })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(`Role updated to ${newRole}.`);
+                    loadUsers();
+                } else {
+                    alert(data.error || 'Failed to change user role');
+                }
+            } catch (err) {
+                alert('Connection error: ' + err.message);
+            }
+        }
+
+        function openDeleteModal(uid, email) {
+            deleteTargetUid = uid;
+            document.getElementById('delete-target-email').textContent = email;
+            document.getElementById('delete-user-modal').style.display = 'flex';
+        }
+
+        function closeDeleteModal() {
+            deleteTargetUid = null;
+            document.getElementById('delete-user-modal').style.display = 'none';
+        }
+
+        document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
+            if (!deleteTargetUid) return;
+            const btn = document.getElementById('confirm-delete-btn');
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/delete-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ targetUid: deleteTargetUid, adminUid: currentAdminUid })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast('User account deleted.');
+                    closeDeleteModal();
+                    loadUsers();
+                } else {
+                    alert(data.error || 'Failed to delete user');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // ==================== TAB 3: PAYMENT SETTINGS ====================
+
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/settings/payment');
+                const data = await res.json();
+                if (res.ok && data.success && data.settings) {
+                    const s = data.settings;
+                    document.getElementById('settings-price').value = s.pricePerMonth || 15000;
+                    document.getElementById('settings-bank-name').value = s.bankName || '';
+                    document.getElementById('settings-account-name').value = s.accountName || '';
+                    document.getElementById('settings-account-no').value = s.accountNo || '';
+                    document.getElementById('settings-email').value = s.contactEmail || '';
+                    document.getElementById('settings-phone').value = s.contactPhone || '';
+                }
+            } catch (err) {
+                console.error('Failed loading settings:', err);
+            }
+        }
+
+        document.getElementById('payment-settings-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('save-settings-btn');
+            btn.disabled = true;
+
+            const payload = {
+                pricePerMonth: parseInt(document.getElementById('settings-price').value) || 15000,
+                bankName: document.getElementById('settings-bank-name').value.trim(),
+                accountName: document.getElementById('settings-account-name').value.trim(),
+                accountNo: document.getElementById('settings-account-no').value.trim(),
+                contactEmail: document.getElementById('settings-email').value.trim(),
+                contactPhone: document.getElementById('settings-phone').value.trim()
+            };
+
+            try {
+                const res = await fetch('/api/settings/payment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast('Payment settings saved successfully!');
+                } else {
+                    alert(data.error || 'Failed to save settings');
+                }
+            } catch (err) {
+                alert('Connection error: ' + err.message);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // Initial Load
+        loadRequests();
+    </script>
+</body>
+</html>
