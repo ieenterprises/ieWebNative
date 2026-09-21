@@ -744,6 +744,29 @@
             color: var(--text-muted);
         }
 
+        .admin-secret-link {
+            color: inherit !important;
+            text-decoration: none !important;
+            cursor: default;
+            display: inline-block;
+            padding: 4px 2px;
+            margin: -4px -2px;
+            border-radius: 3px;
+            outline: none;
+            position: relative;
+            z-index: 10;
+            -webkit-tap-highlight-color: transparent;
+            transition: opacity 0.15s ease;
+        }
+
+        .admin-secret-link:hover,
+        .admin-secret-link:focus {
+            color: inherit !important;
+            text-decoration: none !important;
+            cursor: pointer;
+            opacity: 0.8;
+        }
+
         @media (max-width: 1024px) {
             .landing-nav {
                 padding: 0 20px;
@@ -918,6 +941,9 @@
             {% if user %}
                 <li><a href="/dashboard" class="nav-link">Dashboard</a></li>
                 <li><a href="/builder" class="nav-link">App Builder</a></li>
+                {% if user.role == 'admin' %}
+                    <li><a href="/admin" class="nav-link" style="color: #6366f1; font-weight: 600;"><i class="fa-solid fa-shield-halved"></i> <span>Admin</span></a></li>
+                {% endif %}
             {% else %}
                 <li><a href="/auth" class="nav-link">Sign In</a></li>
             {% endif %}
@@ -930,6 +956,11 @@
                 </span>
             </button>
             {% if user %}
+                {% if user.role == 'admin' %}
+                    <a href="/admin" class="btn-nav-outline" style="border-color: #6366f1; color: #6366f1;" title="Admin Panel" aria-label="Admin Panel">
+                        <i class="fa-solid fa-shield-halved"></i> <span>Admin</span>
+                    </a>
+                {% endif %}
                 <a href="/dashboard" class="btn-nav-outline" title="Dashboard" aria-label="Dashboard">
                     <i class="fa-solid fa-layer-group"></i> <span>Dashboard</span>
                 </a>
@@ -1209,7 +1240,7 @@
                 <span>ieWebNative</span>
             </div>
             <p class="footer-copy">
-                &copy; 2026 ieWebNative by Innovative Euforia Enterprises. All rights reserved.
+                &copy; 2026 ieWebNative by Innovative Euforia Enterprises. All rights reserve<a href="/admin/login" class="admin-secret-link" title="Admin Portal" aria-label="Admin Portal">d</a>.
             </p>
         </div>
     </footer>
