@@ -1073,7 +1073,7 @@ def get_user_subscription(user_id):
 
     try:
         conn = get_db_connection()
-        row = conn.execute('SELECT role, subscription_status, subscription_expiry, plan_id, plan_name, features_json FROM users WHERE id = ?', (user_id,)).fetchone()
+        row = conn.execute('SELECT role, subscription_status, subscription_expiry, plan_id, plan_name, features_json FROM users WHERE id = ? OR email = ?', (user_id, user_id)).fetchone()
         conn.close()
         if row:
             if not db or not role or role == 'user':
@@ -1096,6 +1096,21 @@ def get_user_subscription(user_id):
                     pass
     except Exception as e:
         logger.debug(f"SQLite subscription check error: {e}")
+
+    # Check Firebase custom claims if role is not yet admin
+    if role != 'admin' and (firebase_initialized or (firebase_admin._apps and len(firebase_admin._apps) > 0)):
+        try:
+            fb_u = None
+            try:
+                fb_u = firebase_auth.get_user(user_id)
+            except Exception:
+                if '@' in str(user_id):
+                    fb_u = firebase_auth.get_user_by_email(user_id)
+            if fb_u and fb_u.custom_claims:
+                if fb_u.custom_claims.get('admin') is True or fb_u.custom_claims.get('role') == 'admin':
+                    role = 'admin'
+        except Exception:
+            pass
 
     # Admins always have active status, lifetime access, and ALL features unconditionally
     if role == 'admin':
@@ -3693,7 +3708,7 @@ def api_signup():
 
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
-    """Real built-in user sign-in with SQLite"""
+    """Real user sign-in with SQLite + Firebase Auth fallback & auto-healing"""
     try:
         data = request.json or {}
         email = data.get('email', '').strip().lower()
@@ -3706,42 +3721,164 @@ def api_login():
         user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
         conn.close()
 
-        if not user or not check_password_hash(user['password_hash'], password):
+        authenticated = False
+        user_id = user['id'] if user else None
+        user_name = user['name'] if user else (email.split('@')[0] if email else 'User')
+        user_picture = (user['picture'] if user and 'picture' in user.keys() and user['picture'] else '')
+        role = user['role'] if user and 'role' in user.keys() and user['role'] else 'user'
+
+        # 1. Check local SQLite password hash first if a valid hash exists
+        if user and user['password_hash'] and not user['password_hash'].startswith('dummy_') and user['password_hash'] != 'FIREBASE_AUTH':
+            try:
+                if check_password_hash(user['password_hash'], password):
+                    authenticated = True
+            except Exception as pe:
+                logger.debug(f"Local password hash check exception: {pe}")
+
+        # 2. If not authenticated locally, verify credentials against Firebase Auth via Identity Toolkit REST API
+        if not authenticated:
+            fb_api_key = os.getenv('FIREBASE_API_KEY', '').strip()
+            if fb_api_key:
+                try:
+                    verify_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={fb_api_key}"
+                    resp = requests.post(verify_url, json={
+                        "email": email,
+                        "password": password,
+                        "returnSecureToken": True
+                    }, timeout=10)
+                    if resp.status_code == 200:
+                        fb_data = resp.json()
+                        fb_uid = fb_data.get('localId')
+                        if fb_uid:
+                            authenticated = True
+                            user_id = fb_uid
+                            if fb_data.get('displayName'):
+                                user_name = fb_data.get('displayName')
+                            if fb_data.get('profilePicture'):
+                                user_picture = fb_data.get('profilePicture')
+                    else:
+                        err_res = resp.json().get('error', {})
+                        err_msg = err_res.get('message', '')
+                        logger.info(f"Firebase REST auth notice for {email}: {err_msg}")
+                except Exception as fbe:
+                    logger.warning(f"Firebase REST auth exception for {email}: {fbe}")
+
+        if not authenticated:
             return jsonify({'success': False, 'error': 'Invalid email or password.'}), 401
 
-        session.permanent = True
-        session['user_id'] = user['id']
-        session['user_name'] = user['name']
-        session['user_email'] = user['email']
-        user_picture = user['picture'] if 'picture' in user.keys() and user['picture'] else ''
-        session['user_picture'] = user_picture
+        # 3. Determine verified role from Firebase custom claims, Firestore, and SQLite
+        if firebase_initialized and user_id:
+            try:
+                fb_record = firebase_auth.get_user(user_id)
+                claims = fb_record.custom_claims or {}
+                if claims.get('admin') is True or claims.get('role') == 'admin':
+                    role = 'admin'
+                if not user_name and fb_record.display_name:
+                    user_name = fb_record.display_name
+                if not user_picture and fb_record.photo_url:
+                    user_picture = fb_record.photo_url
+            except Exception:
+                pass
 
-        sub = get_user_subscription(user['id'])
-        user_role = sub.get('role', 'user')
-        session['user_role'] = user_role
-        session['subscription_status'] = sub.get('status', 'inactive')
+        if role != 'admin' and db and user_id:
+            try:
+                f_doc = db.collection('users').document(user_id).get()
+                if f_doc.exists and f_doc.to_dict().get('role') == 'admin':
+                    role = 'admin'
+            except Exception:
+                pass
+
+        if role != 'admin' and user and user['role'] == 'admin':
+            role = 'admin'
+
+        # 4. Auto-heal SQLite: update password_hash to a fresh valid werkzeug hash and align UID
+        new_hash = generate_password_hash(password)
+        now_str = datetime.utcnow().isoformat()
+        try:
+            conn = get_db_connection()
+            if user:
+                old_id = user['id']
+                conn.execute(
+                    "UPDATE users SET id = ?, password_hash = ?, role = COALESCE(NULLIF(?, ''), role), picture = COALESCE(NULLIF(?, ''), picture) WHERE email = ?",
+                    (user_id, new_hash, role, user_picture, email)
+                )
+                if old_id != user_id:
+                    try:
+                        conn.execute("UPDATE apps SET user_id = ? WHERE user_id = ?", (user_id, old_id))
+                        conn.execute("UPDATE subscription_requests SET user_id = ? WHERE user_id = ?", (user_id, old_id))
+                    except Exception:
+                        pass
+            else:
+                conn.execute(
+                    "INSERT INTO users (id, name, email, password_hash, created_at, picture, role, subscription_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (user_id, user_name, email, new_hash, now_str, user_picture, role, 'active' if role == 'admin' else 'inactive')
+                )
+            conn.commit()
+            conn.close()
+        except Exception as dhe:
+            logger.warning(f"Error auto-healing SQLite user {email}: {dhe}")
+
+        # Ensure custom claims in Firebase Auth if admin
+        if role == 'admin' and (firebase_initialized or (firebase_admin._apps and len(firebase_admin._apps) > 0)) and user_id:
+            try:
+                firebase_auth.set_custom_user_claims(user_id, {'admin': True, 'role': 'admin'})
+            except Exception as ce:
+                logger.debug(f"Could not set admin custom claims: {ce}")
+
+        # Sync Firestore lastLogin
+        if db and user_id:
+            try:
+                fs_data = {
+                    'uid': user_id,
+                    'name': user_name,
+                    'email': email,
+                    'role': role,
+                    'lastLogin': firestore.SERVER_TIMESTAMP,
+                    'updatedAt': firestore.SERVER_TIMESTAMP
+                }
+                if role == 'admin':
+                    fs_data['subscriptionStatus'] = 'active'
+                if user_picture:
+                    fs_data['picture'] = user_picture
+                db.collection('users').document(user_id).set(fs_data, merge=True)
+            except Exception as fe:
+                logger.debug(f"Could not update Firestore lastLogin: {fe}")
+
+        # Establish Flask session
+        session.permanent = True
+        session['user_id'] = user_id
+        session['user_name'] = user_name
+        session['user_email'] = email
+        session['user_picture'] = user_picture
+        session['user_role'] = role
+
+        sub = get_user_subscription(user_id)
+        sub_status = 'active' if role == 'admin' else sub.get('status', 'inactive')
+        session['subscription_status'] = sub_status
         session['subscription_expiry'] = sub.get('expiry')
 
-        # Ensure account is synced with Firebase Authentication
-        sync_user_to_firebase_auth(user['id'], email, password=password, display_name=user['name'], role=user_role)
+        # Sync account details to Firebase Authentication
+        sync_user_to_firebase_auth(user_id, email, password=password, display_name=user_name, role=role)
+
+        redirect_url = '/admin' if role == 'admin' else '/dashboard'
 
         return jsonify({
             'success': True,
             'message': 'Signed in successfully!',
             'user': {
-                'id': user['id'],
-                'uid': user['id'],
-                'name': user['name'],
-                'email': user['email'],
+                'id': user_id,
+                'uid': user_id,
+                'name': user_name,
+                'email': email,
                 'picture': user_picture,
-                'role': user_role,
-                'subscriptionStatus': sub.get('status', 'inactive'),
-                'subscriptionExpiry': sub.get('expiry'),
+                'role': role,
+                'subscriptionStatus': session['subscription_status'],
+                'subscriptionExpiry': session['subscription_expiry'],
                 'planId': sub.get('planId'),
                 'planName': sub.get('planName'),
                 'features': sub.get('features', [])
             },
-            'redirect': '/dashboard'
+            'redirect': redirect_url
         })
     except Exception as e:
         logger.exception("Error during login")
@@ -3857,14 +3994,48 @@ def api_firebase_session():
         name = decoded_token.get('name') or (email.split('@')[0] if email else 'User')
         picture = decoded_token.get('picture', '')
 
+        # Check token claims first
+        is_token_admin = (decoded_token.get('admin') is True or decoded_token.get('role') == 'admin')
+
         # Determine existing subscription status and role
         existing_sub = get_user_subscription(uid)
-        role = existing_sub.get('role', 'user')
-        sub_status = existing_sub.get('status', 'inactive')
-        sub_expiry = existing_sub.get('expiry')
-        plan_id = existing_sub.get('planId')
-        plan_name = existing_sub.get('planName')
-        features = existing_sub.get('features', [])
+        role = 'admin' if is_token_admin else existing_sub.get('role', 'user')
+
+        # If not admin yet, check Firestore doc and SQLite
+        if role != 'admin' and db:
+            try:
+                udoc = db.collection('users').document(uid).get()
+                if udoc.exists and udoc.to_dict().get('role') == 'admin':
+                    role = 'admin'
+            except Exception:
+                pass
+
+        if role != 'admin':
+            try:
+                conn_chk = get_db_connection()
+                row_chk = conn_chk.execute('SELECT role FROM users WHERE id = ? OR email = ?', (uid, email)).fetchone()
+                conn_chk.close()
+                if row_chk and row_chk['role'] == 'admin':
+                    role = 'admin'
+            except Exception:
+                pass
+
+        if role == 'admin':
+            sub_status = 'active'
+            sub_expiry = None
+            plan_id = 'admin'
+            plan_name = 'Master Admin'
+            features = ['all'] + list(ALL_FEATURE_IDS)
+            try:
+                firebase_auth.set_custom_user_claims(uid, {'admin': True, 'role': 'admin'})
+            except Exception:
+                pass
+        else:
+            sub_status = existing_sub.get('status', 'inactive')
+            sub_expiry = existing_sub.get('expiry')
+            plan_id = existing_sub.get('planId')
+            plan_name = existing_sub.get('planName')
+            features = existing_sub.get('features', [])
 
         # 1. Upsert user in Firestore if active
         if db:
@@ -3893,6 +4064,8 @@ def api_firebase_session():
                         'name': name,
                         'email': email,
                         'picture': picture,
+                        'role': role,
+                        'subscriptionStatus': sub_status,
                         'lastLogin': firestore.SERVER_TIMESTAMP,
                         'updatedAt': firestore.SERVER_TIMESTAMP
                     }, merge=True)
@@ -3905,18 +4078,22 @@ def api_firebase_session():
             existing = conn.execute('SELECT id, picture, role, subscription_status, subscription_expiry, plan_id, plan_name, features_json FROM users WHERE id = ? OR email = ?', (uid, email)).fetchone()
             now = datetime.utcnow().isoformat()
             if existing:
+                old_id = existing['id']
                 conn.execute(
-                    'UPDATE users SET name = ?, email = ?, picture = COALESCE(NULLIF(?, ""), picture) WHERE id = ?',
-                    (name, email, picture, existing['id'])
+                    'UPDATE users SET id = ?, name = ?, email = ?, role = ?, subscription_status = ?, picture = COALESCE(NULLIF(?, ""), picture) WHERE id = ?',
+                    (uid, name, email, role, sub_status, picture, old_id)
                 )
-                role = existing['role'] or role
-                sub_status = existing['subscription_status'] or sub_status
-                sub_expiry = existing['subscription_expiry'] if existing['subscription_expiry'] is not None else sub_expiry
-                if 'plan_id' in existing.keys() and existing['plan_id']:
+                if old_id != uid:
+                    try:
+                        conn.execute("UPDATE apps SET user_id = ? WHERE user_id = ?", (uid, old_id))
+                        conn.execute("UPDATE subscription_requests SET user_id = ? WHERE user_id = ?", (uid, old_id))
+                    except Exception:
+                        pass
+                if 'plan_id' in existing.keys() and existing['plan_id'] and role != 'admin':
                     plan_id = existing['plan_id']
-                if 'plan_name' in existing.keys() and existing['plan_name']:
+                if 'plan_name' in existing.keys() and existing['plan_name'] and role != 'admin':
                     plan_name = existing['plan_name']
-                if 'features_json' in existing.keys() and existing['features_json']:
+                if 'features_json' in existing.keys() and existing['features_json'] and role != 'admin':
                     try:
                         features = json.loads(existing['features_json'])
                     except Exception:
@@ -3942,6 +4119,8 @@ def api_firebase_session():
         session['subscription_expiry'] = sub_expiry
         session['auth_provider'] = 'firebase'
 
+        redirect_url = '/admin' if role == 'admin' else '/dashboard'
+
         return jsonify({
             'success': True,
             'message': 'Firebase session established!',
@@ -3958,7 +4137,7 @@ def api_firebase_session():
                 'planName': plan_name,
                 'features': features
             },
-            'redirect': '/dashboard'
+            'redirect': redirect_url
         })
     except Exception as e:
         logger.exception("Error during Firebase session creation")
@@ -4553,6 +4732,16 @@ def api_admin_setup():
                     'error': 'Admin setup is locked. A valid Master Setup Key is required to create additional admin accounts.'
                 }), 403
 
+        # Check if email exists in Firebase Auth to align UID
+        resolved_uid = None
+        if firebase_initialized or (firebase_admin._apps and len(firebase_admin._apps) > 0):
+            try:
+                fb_u = firebase_auth.get_user_by_email(email)
+                if fb_u:
+                    resolved_uid = fb_u.uid
+            except Exception:
+                pass
+
         # Create or promote user in SQLite
         conn = get_db_connection()
         existing = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
@@ -4560,13 +4749,20 @@ def api_admin_setup():
         now_str = datetime.utcnow().isoformat()
 
         if existing:
-            user_id = existing['id']
+            user_id = resolved_uid or existing['id']
+            old_id = existing['id']
             conn.execute(
-                "UPDATE users SET name = ?, password_hash = ?, role = 'admin', subscription_status = 'active', subscription_expiry = NULL WHERE id = ?",
-                (name, password_hash, user_id)
+                "UPDATE users SET id = ?, name = ?, password_hash = ?, role = 'admin', subscription_status = 'active', subscription_expiry = NULL WHERE id = ?",
+                (user_id, name, password_hash, old_id)
             )
+            if old_id != user_id:
+                try:
+                    conn.execute("UPDATE apps SET user_id = ? WHERE user_id = ?", (user_id, old_id))
+                    conn.execute("UPDATE subscription_requests SET user_id = ? WHERE user_id = ?", (user_id, old_id))
+                except Exception:
+                    pass
         else:
-            user_id = str(uuid.uuid4())
+            user_id = resolved_uid or str(uuid.uuid4())
             conn.execute(
                 "INSERT INTO users (id, name, email, password_hash, created_at, role, subscription_status, subscription_expiry) VALUES (?, ?, ?, ?, ?, 'admin', 'active', NULL)",
                 (user_id, name, email, password_hash, now_str)

@@ -487,10 +487,11 @@
                     }
                 }
 
-                await window.FirebaseAppService.signInWithGoogle();
+                const gRes = await window.FirebaseAppService.signInWithGoogle();
                 showToast('Signed in successfully! Redirecting...', 'success');
                 setTimeout(() => {
-                    window.location.href = '/dashboard';
+                    const targetUrl = (gRes?.session?.user?.role === 'admin') ? '/admin' : '/dashboard';
+                    window.location.href = targetUrl;
                 }, 500);
             } catch (err) {
                 console.error('Google Sign-In Error:', err);
@@ -519,10 +520,11 @@
 
             try {
                 if (window.FirebaseAppService && window.FirebaseAppService.isConfigured()) {
-                    await window.FirebaseAppService.signInWithEmail(email, password);
+                    const fbRes = await window.FirebaseAppService.signInWithEmail(email, password);
+                    const userRole = fbRes?.session?.user?.role;
                     showToast('Sign in successful! Redirecting...', 'success');
                     setTimeout(() => {
-                        window.location.href = '/dashboard';
+                        window.location.href = (userRole === 'admin') ? '/admin' : '/dashboard';
                     }, 500);
                 } else {
                     const response = await fetch('/api/auth/login', {
@@ -539,7 +541,8 @@
 
                     showToast('Login successful! Redirecting...', 'success');
                     setTimeout(() => {
-                        window.location.href = result.redirect || '/dashboard';
+                        const targetUrl = (result.user && result.user.role === 'admin') ? '/admin' : (result.redirect || '/dashboard');
+                        window.location.href = targetUrl;
                     }, 800);
                 }
             } catch (error) {

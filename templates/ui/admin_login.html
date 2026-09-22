@@ -253,15 +253,40 @@
             clearAlert();
 
             try {
-                const res = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
-                });
-                const data = await res.json();
+                let userRole = null;
+                let loginSuccess = false;
 
-                if (res.ok && data.success) {
-                    if (data.user && data.user.role === 'admin') {
+                // 1. Try client Firebase Authentication first if configured
+                if (window.FirebaseAppService && window.FirebaseAppService.isConfigured()) {
+                    try {
+                        const fbRes = await window.FirebaseAppService.signInWithEmail(email, password);
+                        if (fbRes && fbRes.session && fbRes.session.success) {
+                            loginSuccess = true;
+                            userRole = fbRes.session.user?.role;
+                        }
+                    } catch (fbErr) {
+                        console.warn('Firebase client sign-in failed, trying backend login endpoint:', fbErr);
+                    }
+                }
+
+                // 2. If client Firebase did not log in, call backend /api/auth/login (supports SQLite & Firebase Identity Toolkit)
+                if (!loginSuccess) {
+                    const res = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+                    const data = await res.json();
+
+                    if (!res.ok || !data.success) {
+                        throw new Error(data.error || 'Invalid credentials. Please verify your email and password.');
+                    }
+                    loginSuccess = true;
+                    userRole = data.user?.role;
+                }
+
+                if (loginSuccess) {
+                    if (userRole === 'admin') {
                         showAlert('Authentication successful. Redirecting to admin portal...', 'success');
                         setTimeout(() => {
                             window.location.href = '/admin';
@@ -269,14 +294,11 @@
                     } else {
                         // User is valid, but not an admin
                         showAlert('Access Denied: This account does not possess administrator privileges.', 'error');
-                        // Log out session
                         fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
                     }
-                } else {
-                    showAlert(data.error || 'Invalid credentials. Please verify your email and password.', 'error');
                 }
             } catch (err) {
-                showAlert('Connection error: ' + err.message, 'error');
+                showAlert(err.message || 'Connection error. Please try again.', 'error');
             } finally {
                 btn.disabled = false;
             }
@@ -320,5 +342,11 @@
         // Init
         checkSetup();
     </script>
+
+    <!-- Firebase SDK & Client Service -->
+    <script>
+        window.FIREBASE_CONFIG = {{ firebase_config|tojson if firebase_config else '{}' }};
+    </script>
+    <script src="{{ url_for('static', filename='js/firebase-app.js') }}"></script>
 </body>
 </html>
