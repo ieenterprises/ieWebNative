@@ -4474,23 +4474,73 @@ def api_delete_user():
 @app.route('/api/admin/requests', methods=['GET'])
 @admin_required
 def api_admin_get_requests():
-    """Admin-only: List all subscription payment requests"""
+    """Admin-only: List all subscription payment requests (Firestore + SQLite)"""
     try:
-        requests_list = []
-        conn = get_db_connection()
-        rows = conn.execute('SELECT * FROM subscription_requests ORDER BY created_at DESC').fetchall()
-        conn.close()
+        requests_map = {}
 
-        for r in rows:
-            requests_list.append({
-                'id': r['id'],
-                'userId': r['user_id'],
-                'email': r['email'],
-                'monthsRequested': r['months_requested'],
-                'receiptUrl': r['receipt_url'],
-                'status': r['status'],
-                'createdAt': r['created_at']
-            })
+        # 1. Fetch from Firestore if available
+        if db:
+            try:
+                for doc in db.collection('subscription_requests').stream():
+                    rdata = doc.to_dict() or {}
+                    rid = doc.id
+                    created_at_val = rdata.get('createdAt')
+                    if hasattr(created_at_val, 'timestamp'):
+                        created_at_ms = int(created_at_val.timestamp() * 1000)
+                    elif isinstance(created_at_val, (int, float)):
+                        created_at_ms = int(created_at_val)
+                    else:
+                        created_at_ms = int(time.time() * 1000)
+
+                    requests_map[rid] = {
+                        'id': rid,
+                        'userId': rdata.get('userId', ''),
+                        'email': rdata.get('email', ''),
+                        'monthsRequested': int(rdata.get('monthsRequested') or 1),
+                        'receiptUrl': rdata.get('receiptUrl', ''),
+                        'status': rdata.get('status', 'pending'),
+                        'createdAt': created_at_ms
+                    }
+            except Exception as fe:
+                logger.warning(f"Error reading subscription requests from Firestore: {fe}")
+
+        # 2. Fetch from SQLite
+        try:
+            conn = get_db_connection()
+            rows = conn.execute('SELECT * FROM subscription_requests ORDER BY created_at DESC').fetchall()
+            for r in rows:
+                rid = r['id']
+                if rid not in requests_map:
+                    requests_map[rid] = {
+                        'id': rid,
+                        'userId': r['user_id'],
+                        'email': r['email'],
+                        'monthsRequested': r['months_requested'],
+                        'receiptUrl': r['receipt_url'],
+                        'status': r['status'],
+                        'createdAt': r['created_at']
+                    }
+                else:
+                    if r['status'] in ['approved', 'rejected']:
+                        requests_map[rid]['status'] = r['status']
+
+            # Backfill SQLite with Firestore requests for local continuity
+            for req in requests_map.values():
+                try:
+                    conn.execute('''
+                        INSERT OR REPLACE INTO subscription_requests (id, user_id, email, months_requested, receipt_url, status, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (req['id'], req['userId'], req['email'], req['monthsRequested'], req['receiptUrl'], req['status'], req['createdAt']))
+                except Exception:
+                    pass
+            conn.commit()
+            conn.close()
+        except Exception as se:
+            logger.warning(f"Error merging subscription requests from SQLite: {se}")
+
+        # Sort by createdAt DESC
+        requests_list = list(requests_map.values())
+        requests_list.sort(key=lambda r: r.get('createdAt', 0), reverse=True)
 
         return jsonify({'success': True, 'requests': requests_list})
     except Exception as e:
@@ -4503,28 +4553,43 @@ def api_admin_get_requests():
 def api_admin_approve_request(request_id):
     """Admin-only: Approve subscription request and extend user's active subscription"""
     try:
+        user_id = None
+        months = 1
+        req_row = None
+
         conn = get_db_connection()
         req_row = conn.execute('SELECT * FROM subscription_requests WHERE id = ?', (request_id,)).fetchone()
-        if not req_row:
+        if req_row:
+            user_id = req_row['user_id']
+            months = int(req_row['months_requested'] or 1)
+
+        # Fallback to Firestore if not found in SQLite
+        if not user_id and db:
+            try:
+                fdoc = db.collection('subscription_requests').document(request_id).get()
+                if fdoc.exists:
+                    fdata = fdoc.to_dict() or {}
+                    user_id = fdata.get('userId')
+                    months = int(fdata.get('monthsRequested') or 1)
+            except Exception as fe:
+                logger.warning(f"Error fetching request from Firestore: {fe}")
+
+        if not user_id:
             conn.close()
             return jsonify({'success': False, 'error': 'Subscription request not found.'}), 404
 
-        user_id = req_row['user_id']
-        months = int(req_row['months_requested'] or 1)
         now_ms = int(time.time() * 1000)
 
-        # Calculate new expiry
-        user_row = conn.execute('SELECT subscription_expiry FROM users WHERE id = ?', (user_id,)).fetchone()
-        curr_expiry = user_row['subscription_expiry'] if user_row else None
+        # Get user's current subscription (checks Firestore + SQLite)
+        curr_sub = get_user_subscription(user_id)
+        curr_expiry = curr_sub.get('expiry')
 
         base_ms = curr_expiry if (curr_expiry and curr_expiry > now_ms) else now_ms
         add_ms = months * 30 * 24 * 60 * 60 * 1000
         new_expiry = base_ms + add_ms
 
-        # Update request status
+        # Update SQLite
         conn.execute("UPDATE subscription_requests SET status = 'approved' WHERE id = ?", (request_id,))
-
-        # Update user subscription in SQLite
         conn.execute(
             "UPDATE users SET subscription_status = 'active', subscription_expiry = ? WHERE id = ?",
             (new_expiry, user_id)
@@ -4535,7 +4600,7 @@ def api_admin_approve_request(request_id):
         # Update in Firestore if active
         if db:
             try:
-                db.collection('subscription_requests').document(request_id).set({'status': 'approved'}, merge=True)
+                db.collection('subscription_requests').document(request_id).set({'status': 'approved', 'updatedAt': firestore.SERVER_TIMESTAMP}, merge=True)
                 db.collection('users').document(user_id).set({
                     'subscriptionStatus': 'active',
                     'subscriptionExpiry': new_expiry,
@@ -4559,13 +4624,25 @@ def api_admin_approve_request(request_id):
 def api_admin_reject_request(request_id):
     """Admin-only: Reject subscription request"""
     try:
+        user_id = None
         conn = get_db_connection()
         req_row = conn.execute('SELECT * FROM subscription_requests WHERE id = ?', (request_id,)).fetchone()
-        if not req_row:
+        if req_row:
+            user_id = req_row['user_id']
+
+        if not user_id and db:
+            try:
+                fdoc = db.collection('subscription_requests').document(request_id).get()
+                if fdoc.exists:
+                    fdata = fdoc.to_dict() or {}
+                    user_id = fdata.get('userId')
+            except Exception:
+                pass
+
+        if not user_id:
             conn.close()
             return jsonify({'success': False, 'error': 'Subscription request not found.'}), 404
 
-        user_id = req_row['user_id']
         conn.execute("UPDATE subscription_requests SET status = 'rejected' WHERE id = ?", (request_id,))
 
         # If user has no active expiry, reset status to inactive
@@ -4583,7 +4660,7 @@ def api_admin_reject_request(request_id):
 
         if db:
             try:
-                db.collection('subscription_requests').document(request_id).set({'status': 'rejected'}, merge=True)
+                db.collection('subscription_requests').document(request_id).set({'status': 'rejected', 'updatedAt': firestore.SERVER_TIMESTAMP}, merge=True)
             except Exception as fe:
                 logger.warning(f"Error updating Firestore on rejection: {fe}")
 
@@ -4596,33 +4673,132 @@ def api_admin_reject_request(request_id):
 @app.route('/api/admin/users', methods=['GET'])
 @admin_required
 def api_admin_get_users():
-    """Admin-only: Get all registered users with subscription statuses and roles"""
+    """Admin-only: Get all registered users with subscription statuses and roles (Firestore + Firebase Auth + SQLite)"""
     try:
-        users_list = []
-        conn = get_db_connection()
-        rows = conn.execute('SELECT id, name, email, role, subscription_status, subscription_expiry, created_at, picture FROM users ORDER BY created_at DESC').fetchall()
-        conn.close()
-
+        users_map = {}
         now_ms = int(time.time() * 1000)
-        for r in rows:
-            role = r['role'] or 'user'
-            status = r['subscription_status'] or 'inactive'
-            expiry = r['subscription_expiry']
 
-            if role != 'admin' and status == 'active' and expiry is not None and expiry < now_ms:
-                status = 'inactive'
+        # 1. Fetch from Cloud Firestore
+        if db:
+            try:
+                for doc in db.collection('users').stream():
+                    udata = doc.to_dict() or {}
+                    uid = doc.id
+                    role = udata.get('role', 'user')
+                    status = udata.get('subscriptionStatus', 'inactive')
+                    expiry = udata.get('subscriptionExpiry')
 
-            users_list.append({
-                'id': r['id'],
-                'uid': r['id'],
-                'name': r['name'] or 'User',
-                'email': r['email'] or '',
-                'picture': r['picture'] or '',
-                'role': role,
-                'subscriptionStatus': status,
-                'subscriptionExpiry': expiry,
-                'createdAt': r['created_at']
-            })
+                    if role != 'admin' and status == 'active' and expiry is not None and expiry < now_ms:
+                        status = 'inactive'
+
+                    created_val = udata.get('createdAt')
+                    if hasattr(created_val, 'timestamp'):
+                        created_str = datetime.utcfromtimestamp(created_val.timestamp()).isoformat()
+                    elif isinstance(created_val, (int, float)):
+                        created_str = datetime.utcfromtimestamp(created_val / 1000.0 if created_val > 1e11 else created_val).isoformat()
+                    else:
+                        created_str = str(created_val) if created_val else datetime.utcnow().isoformat()
+
+                    users_map[uid] = {
+                        'id': uid,
+                        'uid': uid,
+                        'name': udata.get('name') or udata.get('displayName') or 'User',
+                        'email': udata.get('email') or '',
+                        'picture': udata.get('picture') or udata.get('photoURL') or '',
+                        'role': role,
+                        'subscriptionStatus': status,
+                        'subscriptionExpiry': expiry,
+                        'createdAt': created_str
+                    }
+            except Exception as fe:
+                logger.warning(f"Error reading users from Firestore: {fe}")
+
+        # 2. Fetch from Firebase Authentication
+        if firebase_initialized:
+            try:
+                page = firebase_auth.list_users()
+                for fb_u in page.iterate_all():
+                    fuid = fb_u.uid
+                    femail = fb_u.email or ''
+                    fname = fb_u.display_name or (femail.split('@')[0] if femail else 'User')
+                    fpic = fb_u.photo_url or ''
+                    custom_claims = fb_u.custom_claims or {}
+                    frole = 'admin' if custom_claims.get('admin') or custom_claims.get('role') == 'admin' else 'user'
+
+                    if fuid in users_map:
+                        if not users_map[fuid].get('email'):
+                            users_map[fuid]['email'] = femail
+                        if not users_map[fuid].get('name') or users_map[fuid]['name'] == 'User':
+                            users_map[fuid]['name'] = fname
+                        if frole == 'admin':
+                            users_map[fuid]['role'] = 'admin'
+                    else:
+                        created_ms = fb_u.user_metadata.creation_timestamp if fb_u.user_metadata else int(time.time() * 1000)
+                        created_str = datetime.utcfromtimestamp(created_ms / 1000.0).isoformat()
+                        sub_info = get_user_subscription(fuid)
+                        users_map[fuid] = {
+                            'id': fuid,
+                            'uid': fuid,
+                            'name': fname,
+                            'email': femail,
+                            'picture': fpic,
+                            'role': 'admin' if (frole == 'admin' or sub_info.get('role') == 'admin') else sub_info.get('role', 'user'),
+                            'subscriptionStatus': 'active' if frole == 'admin' else sub_info.get('status', 'inactive'),
+                            'subscriptionExpiry': sub_info.get('expiry'),
+                            'createdAt': created_str
+                        }
+            except Exception as ae:
+                logger.warning(f"Error reading users from Firebase Auth: {ae}")
+
+        # 3. Fetch from local SQLite users table
+        try:
+            conn = get_db_connection()
+            rows = conn.execute('SELECT id, name, email, role, subscription_status, subscription_expiry, created_at, picture FROM users').fetchall()
+            for r in rows:
+                rid = r['id']
+                remail = r['email'] or ''
+                matched_key = rid if rid in users_map else next((k for k, v in users_map.items() if v.get('email') and v['email'].lower() == remail.lower()), None)
+
+                role = r['role'] or 'user'
+                status = r['subscription_status'] or 'inactive'
+                expiry = r['subscription_expiry']
+                if role != 'admin' and status == 'active' and expiry is not None and expiry < now_ms:
+                    status = 'inactive'
+
+                if matched_key:
+                    if r['name'] and users_map[matched_key]['name'] == 'User':
+                        users_map[matched_key]['name'] = r['name']
+                    if role == 'admin':
+                        users_map[matched_key]['role'] = 'admin'
+                else:
+                    users_map[rid] = {
+                        'id': rid,
+                        'uid': rid,
+                        'name': r['name'] or 'User',
+                        'email': remail,
+                        'picture': r['picture'] or '',
+                        'role': role,
+                        'subscriptionStatus': status,
+                        'subscriptionExpiry': expiry,
+                        'createdAt': r['created_at']
+                    }
+
+            # Backfill SQLite
+            for u in users_map.values():
+                try:
+                    conn.execute('''
+                        INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, picture, role, subscription_status, subscription_expiry)
+                        VALUES (?, ?, ?, 'FIREBASE_AUTH', ?, ?, ?, ?, ?)
+                    ''', (u['id'], u['name'], u['email'], u['createdAt'], u['picture'], u['role'], u['subscriptionStatus'], u['subscriptionExpiry']))
+                except Exception:
+                    pass
+            conn.commit()
+            conn.close()
+        except Exception as se:
+            logger.warning(f"Error merging users from SQLite: {se}")
+
+        users_list = list(users_map.values())
+        users_list.sort(key=lambda u: (0 if u.get('role') == 'admin' else 1, str(u.get('createdAt', ''))), reverse=False)
 
         return jsonify({'success': True, 'users': users_list})
     except Exception as e:
