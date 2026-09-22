@@ -156,12 +156,12 @@
                     </div>
                     <div class="bank-total-box">
                         <div>
-                            <div class="bank-label">Selected Duration</div>
-                            <div style="font-weight: 700;" id="selected-duration-label">1 Month</div>
+                            <div class="bank-label">Selected Plan</div>
+                            <div style="font-weight: 700;" id="selected-duration-label"><span style="color: #94a3b8; font-weight: 500; font-size: 0.92rem;">No plan selected</span></div>
                         </div>
                         <div style="text-align: right;">
                             <div class="bank-label">Total Amount</div>
-                            <div class="total-amount-display" id="total-amount">₦15,000</div>
+                            <div class="total-amount-display" id="total-amount">—</div>
                         </div>
                     </div>
                 </div>
@@ -212,7 +212,7 @@
         // State
         let availablePlans = [];
         let selectedPlan = null;
-        let selectedMonths = 1;
+        let selectedMonths = 0;
         let paymentSettings = {};
         const expiryMs = {{ user.subscriptionExpiry or 'null' }};
 
@@ -249,15 +249,18 @@
 
             if (!plans || plans.length === 0) {
                 grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--sub-text-muted); padding: 30px;">No subscription plans currently active. Please check back shortly or contact billing support.</div>`;
+                selectedPlan = null;
+                selectedMonths = 0;
+                updateTotalDisplay();
                 return;
             }
 
             availablePlans = plans;
 
-            // Maintain selected plan or select first
-            if (!selectedPlan || !availablePlans.find(p => p.id === selectedPlan.id)) {
-                selectedPlan = availablePlans[0];
-                selectedMonths = selectedPlan.months;
+            // Only maintain selected plan if it still exists in the refreshed list
+            if (selectedPlan && !availablePlans.find(p => p.id === selectedPlan.id)) {
+                selectedPlan = null;
+                selectedMonths = 0;
             }
 
             grid.innerHTML = availablePlans.map(p => {
@@ -328,14 +331,15 @@
         }
 
         function updateTotalDisplay() {
-            if (!selectedPlan && availablePlans.length > 0) {
-                selectedPlan = availablePlans[0];
-                selectedMonths = selectedPlan.months;
-            }
-            const total = selectedPlan ? selectedPlan.price : 15000;
-            const durationLabel = selectedPlan ? selectedPlan.name : (selectedMonths === 1 ? '1 Month' : selectedMonths + ' Months');
             const totalEl = document.getElementById('total-amount');
             const durEl = document.getElementById('selected-duration-label');
+            if (!selectedPlan) {
+                if (durEl) durEl.innerHTML = '<span style="color: #94a3b8; font-weight: 500; font-size: 0.92rem;">No plan selected</span>';
+                if (totalEl) totalEl.textContent = '—';
+                return;
+            }
+            const total = selectedPlan.price;
+            const durationLabel = selectedPlan.name || (selectedPlan.months === 1 ? '1 Month' : selectedPlan.months + ' Months');
             if (totalEl) totalEl.textContent = formatNaira(total);
             if (durEl) durEl.textContent = durationLabel;
         }
@@ -459,6 +463,16 @@
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            if (!selectedPlan || !selectedPlan.id) {
+                showAlert('Please select a subscription plan above before submitting your payment receipt.', false);
+                const grid = document.getElementById('duration-grid');
+                if (grid) {
+                    grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                return;
+            }
+
             if (!receiptInput.files || !receiptInput.files[0]) {
                 showAlert('Please select or drop your payment receipt file.', false);
                 return;

@@ -5662,13 +5662,39 @@ def api_subscribe_submit():
                 'error': 'As the administrator and application owner, you have permanent unrestricted access and do not need a subscription.'
             }), 403
 
-        months_str = request.form.get('months', '1')
+        # Validate subscription plan
+        active_plans = get_subscription_plans()
+        if not active_plans:
+            return jsonify({
+                'success': False,
+                'error': 'No subscription plans are currently active. Please contact support.'
+            }), 400
+
+        plan_id = request.form.get('planId', '').strip()
+        if not plan_id:
+            return jsonify({
+                'success': False,
+                'error': 'Please select a subscription plan before submitting payment proof.'
+            }), 400
+
+        matched_plan = next((p for p in active_plans if p.get('id') == plan_id), None)
+        if not matched_plan:
+            return jsonify({
+                'success': False,
+                'error': 'The selected subscription plan is no longer available. Please select an active plan.'
+            }), 400
+
+        plan_name = matched_plan.get('name') or request.form.get('planName', '').strip() or 'Subscription Plan'
         try:
-            months = int(months_str)
+            months = int(matched_plan.get('months', 1))
             if months < 1:
                 months = 1
         except Exception:
             months = 1
+
+        plan_features = matched_plan.get('features')
+        if not plan_features or not isinstance(plan_features, list):
+            plan_features = list(ALL_FEATURE_IDS)
 
         if 'receipt' not in request.files:
             return jsonify({'success': False, 'error': 'Payment receipt file is required.'}), 400
@@ -5706,19 +5732,6 @@ def api_subscribe_submit():
             receipt_file.seek(0)
             receipt_file.save(local_save_path)
             receipt_url = f"/static/uploads/receipts/{clean_filename}"
-
-        plan_id = request.form.get('planId', '').strip() or None
-        plan_name = request.form.get('planName', '').strip() or None
-        plan_features = None
-        if plan_id:
-            for p in get_subscription_plans():
-                if p.get('id') == plan_id:
-                    plan_features = p.get('features')
-                    if not plan_name:
-                        plan_name = p.get('name')
-                    break
-        if not plan_features or not isinstance(plan_features, list):
-            plan_features = list(ALL_FEATURE_IDS)
 
         # Record subscription request
         request_id = str(uuid.uuid4())
