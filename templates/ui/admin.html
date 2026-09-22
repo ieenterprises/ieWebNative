@@ -252,6 +252,10 @@
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                                 <span class="btn-text">Create Plan</span>
                             </button>
+                            <button type="button" class="btn-xs btn-xs-rose" onclick="deleteAllPlans()" title="Delete all subscription plans" id="btn-delete-all-plans">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                <span class="btn-text">Delete All</span>
+                            </button>
                             <button type="button" class="btn-xs btn-xs-cyan" onclick="loadPlans()" title="Refresh plans list">
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                                 <span class="btn-text">Refresh</span>
@@ -1106,7 +1110,7 @@
         async function deletePlan(planId, planName) {
             if (!confirm(`Are you sure you want to delete the plan "${planName}"?`)) return;
             try {
-                const res = await fetch(`/api/admin/plans/${planId}`, {
+                const res = await fetch(`/api/admin/plans/${encodeURIComponent(planId)}`, {
                     method: 'DELETE'
                 });
                 const data = await res.json();
@@ -1115,6 +1119,28 @@
                     loadPlans();
                 } else {
                     alert(data.error || 'Failed to delete plan');
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+            }
+        }
+
+        async function deleteAllPlans() {
+            if (!allPlans || allPlans.length === 0) {
+                showToast('No plans to delete.');
+                return;
+            }
+            if (!confirm(`Are you sure you want to delete all ${allPlans.length} subscription plans? This will remove all plans from the pricing page until you create new ones.`)) return;
+            try {
+                const res = await fetch('/api/admin/plans', {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(data.message || 'All plans deleted.');
+                    loadPlans();
+                } else {
+                    alert(data.error || 'Failed to delete all plans');
                 }
             } catch (err) {
                 alert('Network error: ' + err.message);

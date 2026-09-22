@@ -984,37 +984,49 @@ def get_subscription_plans():
     """Retrieve all active subscription plans from Firestore or SQLite, normalizing features"""
     plans = None
 
-    # 1. Try Firestore
+    # 1. Try Firestore first
     if db:
         try:
             doc = db.collection('settings').document('plans').get()
             if doc.exists:
                 data = doc.to_dict() or {}
-                raw_plans = data.get('plans')
-                if isinstance(raw_plans, list) and len(raw_plans) > 0:
-                    plans = raw_plans
+                if 'plans' in data and isinstance(data['plans'], list):
+                    plans = data['plans']
         except Exception as e:
             logger.debug(f"Firestore plans read notice: {e}")
 
-    # 2. Try SQLite
-    if not plans:
+    # 2. Try SQLite if not found in Firestore
+    if plans is None:
         try:
             conn = get_db_connection()
             row = conn.execute("SELECT value_json FROM settings WHERE key = 'plans'").fetchone()
             conn.close()
-            if row and row['value_json']:
+            if row and row['value_json'] is not None:
                 raw_plans = json.loads(row['value_json'])
-                if isinstance(raw_plans, list) and len(raw_plans) > 0:
+                if isinstance(raw_plans, list):
                     plans = raw_plans
         except Exception as e:
             logger.debug(f"SQLite plans read notice: {e}")
 
-    # Fallback to defaults and seed
-    if not plans:
-        save_subscription_plans(DEFAULT_SUBSCRIPTION_PLANS)
-        plans = DEFAULT_SUBSCRIPTION_PLANS
+    # 3. Fallback to defaults ONLY if plans have NEVER been initialized anywhere
+    if plans is None:
+        initialized = False
+        try:
+            conn = get_db_connection()
+            row_init = conn.execute("SELECT value_json FROM settings WHERE key = 'plans_initialized'").fetchone()
+            conn.close()
+            if row_init and row_init['value_json'] == 'true':
+                initialized = True
+        except Exception:
+            pass
 
-    # Ensure every plan has a valid features list
+        if initialized:
+            plans = []
+        else:
+            save_subscription_plans(DEFAULT_SUBSCRIPTION_PLANS)
+            plans = list(DEFAULT_SUBSCRIPTION_PLANS)
+
+    # Ensure every plan in list has a valid features list
     for p in plans:
         if not isinstance(p.get('features'), list) or len(p.get('features')) == 0:
             p['features'] = list(ALL_FEATURE_IDS)
@@ -1031,6 +1043,7 @@ def save_subscription_plans(plans):
     try:
         conn = get_db_connection()
         conn.execute("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('plans', ?)", (json.dumps(plans),))
+        conn.execute("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('plans_initialized', 'true')")
         conn.commit()
         conn.close()
     except Exception as e:
@@ -1038,7 +1051,11 @@ def save_subscription_plans(plans):
 
     if db:
         try:
-            db.collection('settings').document('plans').set({'plans': plans, 'updatedAt': firestore.SERVER_TIMESTAMP}, merge=True)
+            db.collection('settings').document('plans').set({
+                'plans': plans,
+                'initialized': True,
+                'updatedAt': firestore.SERVER_TIMESTAMP
+            }, merge=True)
         except Exception as e:
             logger.error(f"Failed to save plans to Firestore: {e}")
 
@@ -5509,11 +5526,35 @@ def api_admin_update_plan(plan_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/admin/plans', methods=['DELETE'])
+@admin_required
+def api_admin_delete_all_plans():
+    """Admin-only: Delete all subscription plans"""
+    try:
+        save_subscription_plans([])
+        return jsonify({
+            'success': True,
+            'message': 'All subscription plans deleted successfully.',
+            'plans': []
+        })
+    except Exception as e:
+        logger.exception("Error deleting all subscription plans")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/admin/plans/<plan_id>', methods=['DELETE'])
 @admin_required
 def api_admin_delete_plan(plan_id):
-    """Admin-only: Delete an existing subscription plan"""
+    """Admin-only: Delete an existing subscription plan, or all plans if plan_id == 'all'"""
     try:
+        if plan_id in ('all', 'clear_all', '__all__'):
+            save_subscription_plans([])
+            return jsonify({
+                'success': True,
+                'message': 'All subscription plans deleted successfully.',
+                'plans': []
+            })
+
         plans = list(get_subscription_plans())
         found = False
         remaining = []
@@ -5612,6 +5653,14 @@ def api_subscribe_submit():
     try:
         user_id = request.user['uid']
         user_email = request.user.get('email') or session.get('user_email', '')
+
+        # Admins have lifetime unrestricted access and cannot subscribe
+        sub = get_user_subscription(user_id)
+        if sub.get('role') == 'admin':
+            return jsonify({
+                'success': False,
+                'error': 'As the administrator and application owner, you have permanent unrestricted access and do not need a subscription.'
+            }), 403
 
         months_str = request.form.get('months', '1')
         try:
@@ -5784,6 +5833,8 @@ def subscribe_page():
         return redirect(url_for('auth_page'))
     user_id = session['user_id']
     sub = get_user_subscription(user_id)
+    if sub.get('role') == 'admin':
+        return redirect(url_for('admin_page'))
     return render_template('subscribe.html', user={
         'id': user_id,
         'uid': user_id,
