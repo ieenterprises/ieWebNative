@@ -55,8 +55,8 @@
 .auth-brand-logo {
     width: 32px;
     height: 32px;
-    border-radius: var(--radius-md);
-    object-fit: cover;
+    border-radius: 50% !important;
+    object-fit: cover !important;
 }
 
 .auth-brand-name {
@@ -156,7 +156,8 @@
 .auth-logo-img {
     width: 64px;
     height: 64px;
-    border-radius: var(--radius-lg);
+    border-radius: 50% !important;
+    object-fit: cover !important;
 }
 
 .auth-logo h1 {

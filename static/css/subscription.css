@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    ieWebNative - Subscription System & Admin Management Portal Stylesheet
    ========================================================================== */
 
@@ -86,7 +86,9 @@
 
 .sub-brand img {
     height: 36px;
-    width: auto;
+    width: 36px;
+    border-radius: 50% !important;
+    object-fit: cover !important;
 }
 
 .sub-brand-title {
@@ -522,6 +524,13 @@
     border-bottom: 1px solid #1e293b;
 }
 
+.admin-sidebar-header img {
+    width: 34px;
+    height: 34px;
+    border-radius: 50% !important;
+    object-fit: cover !important;
+}
+
 .admin-sidebar-nav {
     padding: 20px 12px;
     display: flex;
@@ -822,8 +831,12 @@
 }
 
 .admin-login-header img {
-    height: 44px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50% !important;
+    object-fit: cover !important;
     margin-bottom: 12px;
+    box-shadow: 0 4px 14px rgba(2, 164, 203, 0.25);
 }
 
 .admin-tabs {
