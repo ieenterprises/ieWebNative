@@ -656,7 +656,7 @@ def init_sqlite_db():
         except Exception as col_err:
             logger.debug(f"Column check notice: {col_err}")
 
-        # Ensure picture, role, subscription_status, subscription_expiry exist in users table
+        # Ensure picture, role, subscription_status, subscription_expiry, plan_id, plan_name, features_json exist in users table
         try:
             user_cols = [col[1] for col in cursor.execute('PRAGMA table_info(users)').fetchall()]
             if 'picture' not in user_cols:
@@ -667,6 +667,12 @@ def init_sqlite_db():
                 cursor.execute("ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'inactive'")
             if 'subscription_expiry' not in user_cols:
                 cursor.execute("ALTER TABLE users ADD COLUMN subscription_expiry INTEGER DEFAULT NULL")
+            if 'plan_id' not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN plan_id TEXT DEFAULT NULL")
+            if 'plan_name' not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN plan_name TEXT DEFAULT NULL")
+            if 'features_json' not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN features_json TEXT DEFAULT NULL")
         except Exception as user_col_err:
             logger.debug(f"User column check notice: {user_col_err}")
 
@@ -695,6 +701,17 @@ def init_sqlite_db():
                 created_at INTEGER NOT NULL
             )
         ''')
+        # Ensure plan_id, plan_name, features_json exist in subscription_requests
+        try:
+            req_cols = [col[1] for col in cursor.execute('PRAGMA table_info(subscription_requests)').fetchall()]
+            if 'plan_id' not in req_cols:
+                cursor.execute("ALTER TABLE subscription_requests ADD COLUMN plan_id TEXT DEFAULT NULL")
+            if 'plan_name' not in req_cols:
+                cursor.execute("ALTER TABLE subscription_requests ADD COLUMN plan_name TEXT DEFAULT NULL")
+            if 'features_json' not in req_cols:
+                cursor.execute("ALTER TABLE subscription_requests ADD COLUMN features_json TEXT DEFAULT NULL")
+        except Exception as req_col_err:
+            logger.debug(f"Req column check notice: {req_col_err}")
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS settings (
@@ -847,6 +864,83 @@ def save_payment_settings(settings_dict):
         except Exception as e:
             logger.error(f"Failed to save payment settings to Firestore: {e}")
 
+AVAILABLE_FEATURES = [
+    {
+        "id": "plat_android",
+        "name": "Android Application (.apk)",
+        "category": "Target Platforms",
+        "description": "Compile and download standalone Android APK package."
+    },
+    {
+        "id": "plat_android_aab",
+        "name": "Android App Bundle (.aab)",
+        "category": "Target Platforms",
+        "description": "Generate Google Play Store release App Bundle."
+    },
+    {
+        "id": "plat_ios",
+        "name": "iOS Application (.ipa / Xcode)",
+        "category": "Target Platforms",
+        "description": "Build native iOS package (.ipa) and full Xcode project."
+    },
+    {
+        "id": "plat_windows",
+        "name": "Windows Desktop App (.exe)",
+        "category": "Target Platforms",
+        "description": "Compile standalone Windows executable application."
+    },
+    {
+        "id": "plat_macos",
+        "name": "macOS Desktop App (.dmg / .app)",
+        "category": "Target Platforms",
+        "description": "Package native macOS desktop application."
+    },
+    {
+        "id": "plat_linux",
+        "name": "Linux Desktop App (.AppImage)",
+        "category": "Target Platforms",
+        "description": "Package standalone Linux AppImage application."
+    },
+    {
+        "id": "feat_webview_settings",
+        "name": "WebView Settings",
+        "category": "Builder Controls",
+        "description": "Configure how the WebView behaves in your app (Zoom, JavaScript, DOM Storage, Cache, Geolocation, Media Autoplay, etc.)."
+    },
+    {
+        "id": "feat_security",
+        "name": "Security & Biometrics",
+        "category": "Enterprise & Security",
+        "description": "SSL Certificate Pinning, Passcode PIN Lock, Face ID / Touch ID, Hardware Secure Storage."
+    },
+    {
+        "id": "feat_splash",
+        "name": "Custom Splash Screen & Branding",
+        "category": "Branding & Screens",
+        "description": "Upload branded launch splash screen with customized logo, tagline, background colors, and display duration."
+    },
+    {
+        "id": "feat_error_page",
+        "name": "Custom Offline & Error Screen",
+        "category": "Branding & Screens",
+        "description": "Custom branded offline illustration, custom connection failure messaging, and retry button."
+    },
+    {
+        "id": "feat_signing",
+        "name": "Custom Code Signing",
+        "category": "Publishing & Security",
+        "description": "Custom Android Keystore management and Apple Distribution Certificates (.p12) with Provisioning Profiles."
+    },
+    {
+        "id": "feat_store_publishing",
+        "name": "Direct Store Publishing",
+        "category": "Publishing",
+        "description": "Direct automated upload to Google Play Console and Apple App Store Connect / TestFlight."
+    }
+]
+
+ALL_FEATURE_IDS = [f["id"] for f in AVAILABLE_FEATURES]
+
 DEFAULT_SUBSCRIPTION_PLANS = [
     {
         "id": "plan_1m",
@@ -854,7 +948,8 @@ DEFAULT_SUBSCRIPTION_PLANS = [
         "months": 1,
         "price": 15000,
         "badge": "",
-        "subtitle": "Billed monthly"
+        "subtitle": "Billed monthly",
+        "features": list(ALL_FEATURE_IDS)
     },
     {
         "id": "plan_3m",
@@ -862,7 +957,8 @@ DEFAULT_SUBSCRIPTION_PLANS = [
         "months": 3,
         "price": 45000,
         "badge": "Popular",
-        "subtitle": "Quarterly access"
+        "subtitle": "Quarterly access",
+        "features": list(ALL_FEATURE_IDS)
     },
     {
         "id": "plan_6m",
@@ -870,7 +966,8 @@ DEFAULT_SUBSCRIPTION_PLANS = [
         "months": 6,
         "price": 81000,
         "badge": "Save 10%",
-        "subtitle": "Semi-annual access"
+        "subtitle": "Semi-annual access",
+        "features": list(ALL_FEATURE_IDS)
     },
     {
         "id": "plan_12m",
@@ -878,42 +975,59 @@ DEFAULT_SUBSCRIPTION_PLANS = [
         "months": 12,
         "price": 150000,
         "badge": "Best Value",
-        "subtitle": "Annual VIP access"
+        "subtitle": "Annual VIP access",
+        "features": list(ALL_FEATURE_IDS)
     }
 ]
 
 def get_subscription_plans():
-    """Retrieve all active subscription plans from Firestore or SQLite"""
+    """Retrieve all active subscription plans from Firestore or SQLite, normalizing features"""
+    plans = None
+
     # 1. Try Firestore
     if db:
         try:
             doc = db.collection('settings').document('plans').get()
             if doc.exists:
                 data = doc.to_dict() or {}
-                plans = data.get('plans')
-                if isinstance(plans, list) and len(plans) > 0:
-                    return plans
+                raw_plans = data.get('plans')
+                if isinstance(raw_plans, list) and len(raw_plans) > 0:
+                    plans = raw_plans
         except Exception as e:
             logger.debug(f"Firestore plans read notice: {e}")
 
     # 2. Try SQLite
-    try:
-        conn = get_db_connection()
-        row = conn.execute("SELECT value_json FROM settings WHERE key = 'plans'").fetchone()
-        conn.close()
-        if row and row['value_json']:
-            plans = json.loads(row['value_json'])
-            if isinstance(plans, list) and len(plans) > 0:
-                return plans
-    except Exception as e:
-        logger.debug(f"SQLite plans read notice: {e}")
+    if not plans:
+        try:
+            conn = get_db_connection()
+            row = conn.execute("SELECT value_json FROM settings WHERE key = 'plans'").fetchone()
+            conn.close()
+            if row and row['value_json']:
+                raw_plans = json.loads(row['value_json'])
+                if isinstance(raw_plans, list) and len(raw_plans) > 0:
+                    plans = raw_plans
+        except Exception as e:
+            logger.debug(f"SQLite plans read notice: {e}")
 
     # Fallback to defaults and seed
-    save_subscription_plans(DEFAULT_SUBSCRIPTION_PLANS)
-    return DEFAULT_SUBSCRIPTION_PLANS
+    if not plans:
+        save_subscription_plans(DEFAULT_SUBSCRIPTION_PLANS)
+        plans = DEFAULT_SUBSCRIPTION_PLANS
+
+    # Ensure every plan has a valid features list
+    for p in plans:
+        if not isinstance(p.get('features'), list) or len(p.get('features')) == 0:
+            p['features'] = list(ALL_FEATURE_IDS)
+
+    return plans
 
 def save_subscription_plans(plans):
     """Persist subscription plans to both SQLite and Firestore"""
+    # Ensure all plans have a valid features array
+    for p in plans:
+        if not isinstance(p.get('features'), list):
+            p['features'] = list(ALL_FEATURE_IDS)
+
     try:
         conn = get_db_connection()
         conn.execute("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('plans', ?)", (json.dumps(plans),))
@@ -930,15 +1044,18 @@ def save_subscription_plans(plans):
 
 def get_user_subscription(user_id):
     """
-    Get user subscription status, role, and expiry timestamp in milliseconds.
-    Returns: { 'role': 'admin'|'user', 'status': 'active'|'pending'|'inactive', 'expiry': ms or None, 'is_active': bool }
+    Get user subscription status, role, expiry timestamp, and granted features.
+    Returns: { 'role': 'admin'|'user', 'status': 'active'|'pending'|'inactive', 'expiry': ms or None, 'is_active': bool, 'planId': str, 'planName': str, 'features': list }
     """
     if not user_id:
-        return {'role': 'user', 'status': 'inactive', 'expiry': None, 'is_active': False}
+        return {'role': 'user', 'status': 'inactive', 'expiry': None, 'is_active': False, 'planId': None, 'planName': None, 'features': []}
 
     role = 'user'
     status = 'inactive'
     expiry = None
+    plan_id = None
+    plan_name = None
+    features = None
 
     if db:
         try:
@@ -948,12 +1065,15 @@ def get_user_subscription(user_id):
                 role = udata.get('role', 'user')
                 status = udata.get('subscriptionStatus', 'inactive')
                 expiry = udata.get('subscriptionExpiry')
+                plan_id = udata.get('planId')
+                plan_name = udata.get('planName')
+                features = udata.get('features')
         except Exception as e:
             logger.debug(f"Firestore subscription check error: {e}")
 
     try:
         conn = get_db_connection()
-        row = conn.execute('SELECT role, subscription_status, subscription_expiry FROM users WHERE id = ?', (user_id,)).fetchone()
+        row = conn.execute('SELECT role, subscription_status, subscription_expiry, plan_id, plan_name, features_json FROM users WHERE id = ?', (user_id,)).fetchone()
         conn.close()
         if row:
             if not db or not role or role == 'user':
@@ -965,16 +1085,28 @@ def get_user_subscription(user_id):
             if not db or expiry is None:
                 if row['subscription_expiry'] is not None:
                     expiry = row['subscription_expiry']
+            if not plan_id and 'plan_id' in row.keys() and row['plan_id']:
+                plan_id = row['plan_id']
+            if not plan_name and 'plan_name' in row.keys() and row['plan_name']:
+                plan_name = row['plan_name']
+            if features is None and 'features_json' in row.keys() and row['features_json']:
+                try:
+                    features = json.loads(row['features_json'])
+                except Exception:
+                    pass
     except Exception as e:
         logger.debug(f"SQLite subscription check error: {e}")
 
-    # Admins always have active status and lifetime access
+    # Admins always have active status, lifetime access, and ALL features unconditionally
     if role == 'admin':
         return {
             'role': 'admin',
             'status': 'active',
             'expiry': None,
-            'is_active': True
+            'is_active': True,
+            'planId': 'admin',
+            'planName': 'Master Admin',
+            'features': ['all'] + list(ALL_FEATURE_IDS)
         }
 
     now_ms = int(time.time() * 1000)
@@ -1000,12 +1132,46 @@ def get_user_subscription(user_id):
     else:
         is_active = False
 
+    # Resolve features for active user if not stored directly
+    if is_active:
+        if features is None or not isinstance(features, list) or len(features) == 0:
+            if plan_id:
+                for p in get_subscription_plans():
+                    if p.get('id') == plan_id:
+                        features = p.get('features')
+                        if not plan_name:
+                            plan_name = p.get('name')
+                        break
+            if features is None or not isinstance(features, list) or len(features) == 0:
+                features = ['all'] + list(ALL_FEATURE_IDS)
+    else:
+        features = []
+
     return {
         'role': role,
         'status': status,
         'expiry': expiry,
-        'is_active': is_active
+        'is_active': is_active,
+        'planId': plan_id,
+        'planName': plan_name,
+        'features': features
     }
+
+def user_has_feature(sub_or_uid, feature_id):
+    """Check if the user subscription permits a specific feature or platform (accepts sub_info dict or user_id string)"""
+    if isinstance(sub_or_uid, str):
+        sub_info = get_user_subscription(sub_or_uid)
+    else:
+        sub_info = sub_or_uid
+
+    if not sub_info or not sub_info.get('is_active', False):
+        return False
+    if sub_info.get('role') == 'admin':
+        return True
+    feats = sub_info.get('features', []) or []
+    if 'all' in feats:
+        return True
+    return feature_id in feats
 
 def admin_required(f):
     """Decorator requiring authenticated user with role == 'admin'"""
@@ -3568,9 +3734,12 @@ def api_login():
                 'name': user['name'],
                 'email': user['email'],
                 'picture': user_picture,
-                'role': sub.get('role', 'user'),
+                'role': user_role,
                 'subscriptionStatus': sub.get('status', 'inactive'),
-                'subscriptionExpiry': sub.get('expiry')
+                'subscriptionExpiry': sub.get('expiry'),
+                'planId': sub.get('planId'),
+                'planName': sub.get('planName'),
+                'features': sub.get('features', [])
             },
             'redirect': '/dashboard'
         })
@@ -3631,6 +3800,9 @@ def api_me():
         role = sub.get('role', 'user')
         sub_status = sub.get('status', 'inactive')
         sub_expiry = sub.get('expiry')
+        plan_id = sub.get('planId')
+        plan_name = sub.get('planName')
+        features = sub.get('features', [])
         session['user_role'] = role
         session['subscription_status'] = sub_status
         session['subscription_expiry'] = sub_expiry
@@ -3645,7 +3817,10 @@ def api_me():
                 'picture': picture,
                 'role': role,
                 'subscriptionStatus': sub_status,
-                'subscriptionExpiry': sub_expiry
+                'subscriptionExpiry': sub_expiry,
+                'planId': plan_id,
+                'planName': plan_name,
+                'features': features
             }
         })
     return jsonify({'authenticated': False, 'user': None})
@@ -3687,6 +3862,9 @@ def api_firebase_session():
         role = existing_sub.get('role', 'user')
         sub_status = existing_sub.get('status', 'inactive')
         sub_expiry = existing_sub.get('expiry')
+        plan_id = existing_sub.get('planId')
+        plan_name = existing_sub.get('planName')
+        features = existing_sub.get('features', [])
 
         # 1. Upsert user in Firestore if active
         if db:
@@ -3702,6 +3880,9 @@ def api_firebase_session():
                         'role': role,
                         'subscriptionStatus': sub_status,
                         'subscriptionExpiry': sub_expiry,
+                        'planId': plan_id,
+                        'planName': plan_name,
+                        'features': features,
                         'createdAt': firestore.SERVER_TIMESTAMP,
                         'lastLogin': firestore.SERVER_TIMESTAMP,
                         'updatedAt': firestore.SERVER_TIMESTAMP
@@ -3721,7 +3902,7 @@ def api_firebase_session():
         # 2. Upsert user in SQLite for local data continuity
         try:
             conn = get_db_connection()
-            existing = conn.execute('SELECT id, picture, role, subscription_status, subscription_expiry FROM users WHERE id = ? OR email = ?', (uid, email)).fetchone()
+            existing = conn.execute('SELECT id, picture, role, subscription_status, subscription_expiry, plan_id, plan_name, features_json FROM users WHERE id = ? OR email = ?', (uid, email)).fetchone()
             now = datetime.utcnow().isoformat()
             if existing:
                 conn.execute(
@@ -3731,10 +3912,19 @@ def api_firebase_session():
                 role = existing['role'] or role
                 sub_status = existing['subscription_status'] or sub_status
                 sub_expiry = existing['subscription_expiry'] if existing['subscription_expiry'] is not None else sub_expiry
+                if 'plan_id' in existing.keys() and existing['plan_id']:
+                    plan_id = existing['plan_id']
+                if 'plan_name' in existing.keys() and existing['plan_name']:
+                    plan_name = existing['plan_name']
+                if 'features_json' in existing.keys() and existing['features_json']:
+                    try:
+                        features = json.loads(existing['features_json'])
+                    except Exception:
+                        pass
             else:
                 conn.execute(
-                    'INSERT INTO users (id, name, email, password_hash, created_at, picture, role, subscription_status, subscription_expiry) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    (uid, name, email, 'FIREBASE_AUTH', now, picture, role, sub_status, sub_expiry)
+                    'INSERT INTO users (id, name, email, password_hash, created_at, picture, role, subscription_status, subscription_expiry, plan_id, plan_name, features_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (uid, name, email, 'FIREBASE_AUTH', now, picture, role, sub_status, sub_expiry, plan_id, plan_name, json.dumps(features) if features else None)
                 )
             conn.commit()
             conn.close()
@@ -3763,7 +3953,10 @@ def api_firebase_session():
                 'picture': picture,
                 'role': role,
                 'subscriptionStatus': sub_status,
-                'subscriptionExpiry': sub_expiry
+                'subscriptionExpiry': sub_expiry,
+                'planId': plan_id,
+                'planName': plan_name,
+                'features': features
             },
             'redirect': '/dashboard'
         })
@@ -4588,11 +4781,50 @@ def api_admin_approve_request(request_id):
         add_ms = months * 30 * 24 * 60 * 60 * 1000
         new_expiry = base_ms + add_ms
 
+        # Retrieve plan info from subscription request (SQLite or Firestore)
+        plan_id = None
+        plan_name = None
+        plan_features = None
+
+        if req_row:
+            if 'plan_id' in req_row.keys() and req_row['plan_id']:
+                plan_id = req_row['plan_id']
+            if 'plan_name' in req_row.keys() and req_row['plan_name']:
+                plan_name = req_row['plan_name']
+            if 'features_json' in req_row.keys() and req_row['features_json']:
+                try:
+                    plan_features = json.loads(req_row['features_json'])
+                except Exception:
+                    pass
+
+        if not plan_id and db:
+            try:
+                fdoc = db.collection('subscription_requests').document(request_id).get()
+                if fdoc.exists:
+                    fdata = fdoc.to_dict() or {}
+                    plan_id = fdata.get('planId')
+                    plan_name = fdata.get('planName')
+                    plan_features = fdata.get('features')
+            except Exception:
+                pass
+
+        # If plan_id exists but features not cached, resolve from plans
+        if plan_id and (not plan_features or not isinstance(plan_features, list) or len(plan_features) == 0):
+            for p in get_subscription_plans():
+                if p.get('id') == plan_id:
+                    plan_features = p.get('features')
+                    if not plan_name:
+                        plan_name = p.get('name')
+                    break
+
+        if not plan_features or not isinstance(plan_features, list):
+            plan_features = list(ALL_FEATURE_IDS)
+
         # Update SQLite
         conn.execute("UPDATE subscription_requests SET status = 'approved' WHERE id = ?", (request_id,))
         conn.execute(
-            "UPDATE users SET subscription_status = 'active', subscription_expiry = ? WHERE id = ?",
-            (new_expiry, user_id)
+            "UPDATE users SET subscription_status = 'active', subscription_expiry = ?, plan_id = ?, plan_name = ?, features_json = ? WHERE id = ?",
+            (new_expiry, plan_id, plan_name, json.dumps(plan_features), user_id)
         )
         conn.commit()
         conn.close()
@@ -4604,6 +4836,9 @@ def api_admin_approve_request(request_id):
                 db.collection('users').document(user_id).set({
                     'subscriptionStatus': 'active',
                     'subscriptionExpiry': new_expiry,
+                    'planId': plan_id,
+                    'planName': plan_name,
+                    'features': plan_features,
                     'updatedAt': firestore.SERVER_TIMESTAMP
                 }, merge=True)
             except Exception as fe:
@@ -4611,8 +4846,10 @@ def api_admin_approve_request(request_id):
 
         return jsonify({
             'success': True,
-            'message': f'Subscription approved successfully! Granted {months} month(s) access.',
-            'newExpiry': new_expiry
+            'message': f'Subscription approved successfully! Granted {months} month(s) access ({plan_name or "Active Plan"}).',
+            'newExpiry': new_expiry,
+            'planName': plan_name,
+            'features': plan_features
         })
     except Exception as e:
         logger.exception("Error approving subscription request")
@@ -4708,6 +4945,9 @@ def api_admin_get_users():
                         'role': role,
                         'subscriptionStatus': status,
                         'subscriptionExpiry': expiry,
+                        'planId': udata.get('planId'),
+                        'planName': udata.get('planName'),
+                        'features': udata.get('features') or (['all'] if role == 'admin' or status == 'active' else []),
                         'createdAt': created_str
                     }
             except Exception as fe:
@@ -4745,6 +4985,9 @@ def api_admin_get_users():
                             'role': 'admin' if (frole == 'admin' or sub_info.get('role') == 'admin') else sub_info.get('role', 'user'),
                             'subscriptionStatus': 'active' if frole == 'admin' else sub_info.get('status', 'inactive'),
                             'subscriptionExpiry': sub_info.get('expiry'),
+                            'planId': sub_info.get('planId'),
+                            'planName': sub_info.get('planName'),
+                            'features': sub_info.get('features', []),
                             'createdAt': created_str
                         }
             except Exception as ae:
@@ -4753,7 +4996,7 @@ def api_admin_get_users():
         # 3. Fetch from local SQLite users table
         try:
             conn = get_db_connection()
-            rows = conn.execute('SELECT id, name, email, role, subscription_status, subscription_expiry, created_at, picture FROM users').fetchall()
+            rows = conn.execute('SELECT id, name, email, role, subscription_status, subscription_expiry, created_at, picture, plan_id, plan_name, features_json FROM users').fetchall()
             for r in rows:
                 rid = r['id']
                 remail = r['email'] or ''
@@ -4762,6 +5005,15 @@ def api_admin_get_users():
                 role = r['role'] or 'user'
                 status = r['subscription_status'] or 'inactive'
                 expiry = r['subscription_expiry']
+                plan_id = r['plan_id'] if 'plan_id' in r.keys() else None
+                plan_name = r['plan_name'] if 'plan_name' in r.keys() else None
+                features = []
+                if 'features_json' in r.keys() and r['features_json']:
+                    try:
+                        features = json.loads(r['features_json'])
+                    except Exception:
+                        pass
+
                 if role != 'admin' and status == 'active' and expiry is not None and expiry < now_ms:
                     status = 'inactive'
 
@@ -4770,6 +5022,12 @@ def api_admin_get_users():
                         users_map[matched_key]['name'] = r['name']
                     if role == 'admin':
                         users_map[matched_key]['role'] = 'admin'
+                    if plan_id and not users_map[matched_key].get('planId'):
+                        users_map[matched_key]['planId'] = plan_id
+                    if plan_name and not users_map[matched_key].get('planName'):
+                        users_map[matched_key]['planName'] = plan_name
+                    if features and not users_map[matched_key].get('features'):
+                        users_map[matched_key]['features'] = features
                 else:
                     users_map[rid] = {
                         'id': rid,
@@ -4780,6 +5038,9 @@ def api_admin_get_users():
                         'role': role,
                         'subscriptionStatus': status,
                         'subscriptionExpiry': expiry,
+                        'planId': plan_id,
+                        'planName': plan_name,
+                        'features': features,
                         'createdAt': r['created_at']
                     }
 
@@ -4787,9 +5048,9 @@ def api_admin_get_users():
             for u in users_map.values():
                 try:
                     conn.execute('''
-                        INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, picture, role, subscription_status, subscription_expiry)
-                        VALUES (?, ?, ?, 'FIREBASE_AUTH', ?, ?, ?, ?, ?)
-                    ''', (u['id'], u['name'], u['email'], u['createdAt'], u['picture'], u['role'], u['subscriptionStatus'], u['subscriptionExpiry']))
+                        INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, picture, role, subscription_status, subscription_expiry, plan_id, plan_name, features_json)
+                        VALUES (?, ?, ?, 'FIREBASE_AUTH', ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (u['id'], u['name'], u['email'], u['createdAt'], u['picture'], u['role'], u['subscriptionStatus'], u['subscriptionExpiry'], u.get('planId'), u.get('planName'), json.dumps(u.get('features')) if u.get('features') else None))
                 except Exception:
                     pass
             conn.commit()
@@ -4915,6 +5176,12 @@ def api_admin_update_user_role(target_user_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/features', methods=['GET'])
+def api_get_features():
+    """Public read of all platform & builder feature descriptors"""
+    return jsonify({'success': True, 'features': AVAILABLE_FEATURES})
+
+
 @app.route('/api/plans', methods=['GET'])
 def api_get_plans():
     """Public read of all available subscription plans"""
@@ -4924,7 +5191,7 @@ def api_get_plans():
 @app.route('/api/admin/plans', methods=['POST'])
 @admin_required
 def api_admin_create_plan():
-    """Admin-only: Create a new subscription plan"""
+    """Admin-only: Create a new subscription plan with features"""
     try:
         data = request.json or {}
         name = str(data.get('name', '')).strip()
@@ -4932,6 +5199,7 @@ def api_admin_create_plan():
         price = data.get('price')
         badge = str(data.get('badge', '')).strip()
         subtitle = str(data.get('subtitle', '')).strip()
+        features = data.get('features')
 
         if not name:
             return jsonify({'success': False, 'error': 'Plan title/name is required.'}), 400
@@ -4950,6 +5218,9 @@ def api_admin_create_plan():
         except (ValueError, TypeError):
             return jsonify({'success': False, 'error': 'Valid price is required.'}), 400
 
+        if not isinstance(features, list) or len(features) == 0:
+            features = list(ALL_FEATURE_IDS)
+
         plans = list(get_subscription_plans())
         new_plan = {
             'id': 'plan_' + str(uuid.uuid4())[:8],
@@ -4957,7 +5228,8 @@ def api_admin_create_plan():
             'months': months,
             'price': price,
             'badge': badge,
-            'subtitle': subtitle
+            'subtitle': subtitle,
+            'features': features
         }
         plans.append(new_plan)
         save_subscription_plans(plans)
@@ -4970,6 +5242,74 @@ def api_admin_create_plan():
         })
     except Exception as e:
         logger.exception("Error creating subscription plan")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/plans/<plan_id>', methods=['PUT', 'POST'])
+@admin_required
+def api_admin_update_plan(plan_id):
+    """Admin-only: RE-EDIT an existing subscription plan (duration, amount, features)"""
+    try:
+        data = request.json or {}
+        name = str(data.get('name', '')).strip()
+        months = data.get('months')
+        price = data.get('price')
+        badge = str(data.get('badge', '')).strip()
+        subtitle = str(data.get('subtitle', '')).strip()
+        features = data.get('features')
+
+        if not name:
+            return jsonify({'success': False, 'error': 'Plan title/name is required.'}), 400
+
+        try:
+            months = int(months)
+            if months < 1 or months > 120:
+                return jsonify({'success': False, 'error': 'Duration must be between 1 and 120 months.'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'Valid duration in months is required.'}), 400
+
+        try:
+            price = int(price)
+            if price < 0:
+                return jsonify({'success': False, 'error': 'Price must be 0 or positive.'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'Valid price is required.'}), 400
+
+        if not isinstance(features, list) or len(features) == 0:
+            features = list(ALL_FEATURE_IDS)
+
+        plans = list(get_subscription_plans())
+        found = False
+        updated_plan = None
+
+        for i, p in enumerate(plans):
+            if p.get('id') == plan_id:
+                found = True
+                plans[i] = {
+                    'id': plan_id,
+                    'name': name,
+                    'months': months,
+                    'price': price,
+                    'badge': badge,
+                    'subtitle': subtitle,
+                    'features': features
+                }
+                updated_plan = plans[i]
+                break
+
+        if not found:
+            return jsonify({'success': False, 'error': 'Plan not found.'}), 404
+
+        save_subscription_plans(plans)
+
+        return jsonify({
+            'success': True,
+            'message': f'Subscription plan "{name}" updated successfully.',
+            'plan': updated_plan,
+            'plans': plans
+        })
+    except Exception as e:
+        logger.exception("Error updating subscription plan")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -5122,14 +5462,27 @@ def api_subscribe_submit():
             receipt_file.save(local_save_path)
             receipt_url = f"/static/uploads/receipts/{clean_filename}"
 
+        plan_id = request.form.get('planId', '').strip() or None
+        plan_name = request.form.get('planName', '').strip() or None
+        plan_features = None
+        if plan_id:
+            for p in get_subscription_plans():
+                if p.get('id') == plan_id:
+                    plan_features = p.get('features')
+                    if not plan_name:
+                        plan_name = p.get('name')
+                    break
+        if not plan_features or not isinstance(plan_features, list):
+            plan_features = list(ALL_FEATURE_IDS)
+
         # Record subscription request
         request_id = str(uuid.uuid4())
         created_at_ms = int(time.time() * 1000)
 
         conn = get_db_connection()
         conn.execute(
-            'INSERT INTO subscription_requests (id, user_id, email, months_requested, receipt_url, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            (request_id, user_id, user_email, months, receipt_url, 'pending', created_at_ms)
+            'INSERT INTO subscription_requests (id, user_id, email, months_requested, receipt_url, status, created_at, plan_id, plan_name, features_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (request_id, user_id, user_email, months, receipt_url, 'pending', created_at_ms, plan_id, plan_name, json.dumps(plan_features))
         )
         conn.execute("UPDATE users SET subscription_status = 'pending' WHERE id = ?", (user_id,))
         conn.commit()
@@ -5148,6 +5501,9 @@ def api_subscribe_submit():
                     'monthsRequested': months,
                     'receiptUrl': receipt_url,
                     'status': 'pending',
+                    'planId': plan_id,
+                    'planName': plan_name,
+                    'features': plan_features,
                     'createdAt': created_at_ms
                 })
                 db.collection('users').document(user_id).set({
@@ -5821,6 +6177,66 @@ def start_build():
                 'error': 'An active subscription is required to compile native applications. Please activate your subscription to continue.',
                 'redirect': '/subscribe'
             }), 403
+
+        # Granular Feature Access Gating: Verify platforms and features against user's plan
+        if sub.get('role') != 'admin':
+            user_features = sub.get('features', [])
+            if 'all' not in user_features:
+                # 1. Platform checks
+                platform_map = {
+                    'android': ('plat_android', 'Android APK (.apk)'),
+                    'android_aab': ('plat_android_aab', 'Android App Bundle (.aab)'),
+                    'ios': ('plat_ios', 'iOS Application (.ipa)'),
+                    'windows': ('plat_windows', 'Windows Desktop App (.exe)'),
+                    'macos': ('plat_macos', 'macOS Desktop App (.dmg / .app)'),
+                    'linux': ('plat_linux', 'Linux Desktop App (.AppImage)')
+                }
+                for plat in data.get('platforms', []):
+                    plat_lower = str(plat).lower().strip()
+                    if plat_lower in platform_map:
+                        feat_key, plat_name = platform_map[plat_lower]
+                        if feat_key not in user_features:
+                            return jsonify({
+                                'success': False,
+                                'error': f"Your subscription plan ({sub.get('planName') or 'Current Plan'}) does not include {plat_name} builds. Please upgrade your subscription plan to unlock this platform.",
+                                'redirect': '/subscribe'
+                            }), 403
+
+                # 2. Builder capability checks
+                if (data.get('enable_splash_screen') or data.get('splash_image_path') or data.get('splash_image_url')) and 'feat_splash' not in user_features:
+                    return jsonify({
+                        'success': False,
+                        'error': f"Custom Splash Screen & Branding is not included in your subscription plan. Please upgrade your plan to enable this feature.",
+                        'redirect': '/subscribe'
+                    }), 403
+
+                if (data.get('enable_error_page') or data.get('error_image_path') or data.get('error_image_url')) and 'feat_error_page' not in user_features:
+                    return jsonify({
+                        'success': False,
+                        'error': f"Custom Offline & Error Screen is not included in your subscription plan. Please upgrade your plan to enable this feature.",
+                        'redirect': '/subscribe'
+                    }), 403
+
+                if (data.get('enable_ssl_pinning') or data.get('enable_biometric_auth') or data.get('enable_biometrics') or data.get('enable_app_lock') or data.get('enable_secure_storage')) and 'feat_security' not in user_features:
+                    return jsonify({
+                        'success': False,
+                        'error': f"Enterprise Security & Biometrics features are not included in your subscription plan. Please upgrade your plan to enable this feature.",
+                        'redirect': '/subscribe'
+                    }), 403
+
+                if (data.get('keystore_path') or data.get('apple_certificate_path')) and 'feat_signing' not in user_features:
+                    return jsonify({
+                        'success': False,
+                        'error': f"Custom Code Signing is not included in your subscription plan. Please upgrade your plan to enable this feature.",
+                        'redirect': '/subscribe'
+                    }), 403
+
+                if (data.get('enable_google_play_publish') or data.get('enable_app_store_publish')) and 'feat_store_publishing' not in user_features:
+                    return jsonify({
+                        'success': False,
+                        'error': f"Direct Store Publishing is not included in your subscription plan. Please upgrade your plan to enable this feature.",
+                        'redirect': '/subscribe'
+                    }), 403
 
         project_id = data.get('project_id') or data.get('projectId')
         app_name = data.get('app_name', 'Untitled App')

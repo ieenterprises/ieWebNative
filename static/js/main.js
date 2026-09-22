@@ -130,6 +130,15 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function openSettingsDialog() {
+        if (typeof window.userHasFeature === 'function' && !window.userHasFeature('feat_webview_settings')) {
+            if (typeof window.promptFeatureUpgrade === 'function') {
+                window.promptFeatureUpgrade('WebView Settings');
+            } else {
+                showToast('WebView Settings are not included in your current subscription plan.', 'error');
+            }
+            return;
+        }
+
         // Sync dialog checkboxes with hidden form checkboxes
         for (const [formId, dialogId] of Object.entries(settingsMapping)) {
             const formCheckbox = document.getElementById(formId);
@@ -526,6 +535,26 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        if (typeof window.userHasFeature === 'function') {
+            const platFeatureMap = {
+                'android': 'plat_android',
+                'android_aab': 'plat_android_aab',
+                'ios': 'plat_ios',
+                'macos': 'plat_macos',
+                'windows': 'plat_windows',
+                'linux': 'plat_linux'
+            };
+            const reqPlatFeat = platFeatureMap[selectedPlatform];
+            if (reqPlatFeat && !window.userHasFeature(reqPlatFeat)) {
+                if (typeof window.promptFeatureUpgrade === 'function') {
+                    window.promptFeatureUpgrade(selectedPlatform.toUpperCase() + ' Platform Build');
+                } else {
+                    showToast(`Your subscription plan does not support ${selectedPlatform.toUpperCase()} builds.`, 'error');
+                }
+                return;
+            }
+        }
+
         // Collect form data
         const formData = {
             app_name: document.getElementById('app-name').value,
@@ -806,6 +835,7 @@ document.addEventListener('DOMContentLoaded', function() {
             modal.style.display = 'flex';
         }
     }
+    window.showSubscriptionRequiredModal = showSubscriptionRequiredModal;
 
     const closeSubModalBtn = document.getElementById('close-sub-required-modal');
     const dismissSubModalBtn = document.getElementById('dismiss-sub-required-btn');

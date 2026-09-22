@@ -70,7 +70,7 @@
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
                         </div>
                         <div class="sub-status-text">
-                            <h3>Active Subscription</h3>
+                            <h3>Active Subscription{% if user.planName %} — {{ user.planName }}{% endif %}</h3>
                             <p id="expiry-text">
                                 {% if user.subscriptionExpiry %}
                                 Valid until <strong id="expiry-date">calculating...</strong>
@@ -228,6 +228,21 @@
             return '₦' + Number(num || 0).toLocaleString();
         }
 
+        const FEATURE_TITLES = {
+            'plat_android': 'Android APK (.apk)',
+            'plat_android_aab': 'Google Play Bundle (.aab)',
+            'plat_ios': 'iOS Native (.ipa)',
+            'plat_windows': 'Windows Desktop (.exe)',
+            'plat_macos': 'macOS Desktop (.dmg)',
+            'plat_linux': 'Linux Desktop (.AppImage)',
+            'feat_webview_settings': 'WebView Settings',
+            'feat_security': 'Security & Biometrics',
+            'feat_splash': 'Custom Splash Screen',
+            'feat_error_page': 'Offline / Error Screen',
+            'feat_signing': 'Custom App Signing',
+            'feat_store_publishing': 'Direct Store Publishing'
+        };
+
         function renderPlans(plans) {
             const grid = document.getElementById('duration-grid');
             if (!grid) return;
@@ -251,12 +266,45 @@
                 const subHtml = p.subtitle ? `<div class="duration-sub">${p.subtitle}</div>` : '';
                 const priceFormatted = formatNaira(p.price);
 
+                const feats = Array.isArray(p.features) ? p.features : [];
+                let featuresListHtml = '';
+                if (feats.includes('all') || feats.length >= 12) {
+                    featuresListHtml = `
+                        <div class="plan-features-box" style="margin-top: 14px; border-top: 1px solid var(--sub-border); padding-top: 12px; text-align: left; font-size: 0.8rem; display: flex; flex-direction: column; gap: 6px;">
+                            <div style="display: flex; align-items: center; gap: 6px; color: #10b981; font-weight: 600;">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                <span>All Platforms (Android, iOS, PC)</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px; color: #10b981; font-weight: 600;">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                <span>All Builder Capabilities</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px; color: #10b981; font-weight: 600;">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                <span>Store Publishing & Signing</span>
+                            </div>
+                        </div>
+                    `;
+                } else if (feats.length > 0) {
+                    featuresListHtml = `
+                        <div class="plan-features-box" style="margin-top: 14px; border-top: 1px solid var(--sub-border); padding-top: 12px; text-align: left; font-size: 0.78rem; display: flex; flex-direction: column; gap: 5px;">
+                            ${feats.map(fid => `
+                                <div style="display: flex; align-items: center; gap: 6px; color: var(--sub-text);">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    <span>${FEATURE_TITLES[fid] || fid}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+
                 return `
                     <div class="duration-card ${isSelected ? 'selected' : ''}" data-plan-id="${p.id}">
                         ${badgeHtml}
                         <div class="duration-title">${p.name}</div>
                         <div class="duration-price">${priceFormatted}</div>
                         ${subHtml}
+                        ${featuresListHtml}
                     </div>
                 `;
             }).join('');
@@ -425,6 +473,9 @@
             if (selectedPlan && selectedPlan.id) {
                 formData.append('planId', selectedPlan.id);
                 formData.append('planName', selectedPlan.name);
+                if (selectedPlan.features && Array.isArray(selectedPlan.features)) {
+                    formData.append('features', JSON.stringify(selectedPlan.features));
+                }
             }
             formData.append('receipt', receiptInput.files[0]);
 

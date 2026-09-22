@@ -999,6 +999,151 @@
         window.currentProjectId = currentProjectId;
         window.currentProjectBuilds = {};
 
+        function userHasFeature(featureId) {
+            if (!currentUser) return true;
+            if (currentUser.role === 'admin') return true;
+            const feats = currentUser.features || [];
+            if (feats.includes('all')) return true;
+            return feats.includes(featureId);
+        }
+        window.userHasFeature = userHasFeature;
+
+        function promptFeatureUpgrade(featureName) {
+            const planName = (currentUser && currentUser.planName) ? currentUser.planName : 'Current Plan';
+            const msg = `"${featureName}" is not included in your ${planName} subscription. Please upgrade your subscription plan on the pricing page to access this feature and compile applications.`;
+            const modal = document.getElementById('subscription-required-modal');
+            const desc = document.getElementById('sub-required-msg');
+            if (modal) {
+                if (desc) desc.textContent = msg;
+                modal.style.display = 'flex';
+            } else {
+                alert(msg);
+            }
+        }
+        window.promptFeatureUpgrade = promptFeatureUpgrade;
+
+        function applyPlanFeatureGating() {
+            if (!currentUser || currentUser.role === 'admin') return;
+
+            const PLAT_MAP = {
+                'android': 'plat_android',
+                'android_aab': 'plat_android_aab',
+                'ios': 'plat_ios',
+                'windows': 'plat_windows',
+                'macos': 'plat_macos',
+                'linux': 'plat_linux'
+            };
+
+            const platSelect = document.getElementById('platform-select');
+            if (platSelect) {
+                Array.from(platSelect.options).forEach(opt => {
+                    if (!opt.value) return;
+                    const reqFeat = PLAT_MAP[opt.value];
+                    if (reqFeat && !userHasFeature(reqFeat)) {
+                        opt.disabled = true;
+                        if (!opt.text.includes('🔒')) {
+                            opt.text = opt.text + ' 🔒 (Upgrade Plan)';
+                        }
+                    }
+                });
+
+                platSelect.addEventListener('change', function() {
+                    const reqFeat = PLAT_MAP[this.value];
+                    if (reqFeat && !userHasFeature(reqFeat)) {
+                        promptFeatureUpgrade(this.options[this.selectedIndex].text.replace(' 🔒 (Upgrade Plan)', ''));
+                        this.value = '';
+                    }
+                });
+            }
+
+            // WebView Settings button
+            const settingsBtn = document.getElementById('settings-btn');
+            if (settingsBtn) {
+                settingsBtn.addEventListener('click', function(e) {
+                    if (!userHasFeature('feat_webview_settings')) {
+                        e.stopImmediatePropagation();
+                        e.preventDefault();
+                        promptFeatureUpgrade('WebView Settings');
+                        return false;
+                    }
+                }, true);
+            }
+
+            // Splash Screen
+            const splashCb = document.getElementById('enable-splash-screen');
+            if (splashCb) {
+                splashCb.addEventListener('click', function(e) {
+                    if (!userHasFeature('feat_splash')) {
+                        e.preventDefault();
+                        this.checked = false;
+                        promptFeatureUpgrade('Custom Splash Screen & Branding');
+                        return false;
+                    }
+                });
+            }
+
+            // Error Page
+            const errorCb = document.getElementById('enable-error-page');
+            if (errorCb) {
+                errorCb.addEventListener('click', function(e) {
+                    if (!userHasFeature('feat_error_page')) {
+                        e.preventDefault();
+                        this.checked = false;
+                        promptFeatureUpgrade('Custom Offline & Error Screens');
+                        return false;
+                    }
+                });
+            }
+
+            // Signing / Keystore Uploads
+            const keystoreFile = document.getElementById('keystore-file');
+            if (keystoreFile) {
+                keystoreFile.addEventListener('click', function(e) {
+                    if (!userHasFeature('feat_signing')) {
+                        e.preventDefault();
+                        promptFeatureUpgrade('Custom App Signing & Keystores');
+                        return false;
+                    }
+                });
+            }
+
+            const appleCertFile = document.getElementById('apple-certificate-file');
+            if (appleCertFile) {
+                appleCertFile.addEventListener('click', function(e) {
+                    if (!userHasFeature('feat_signing')) {
+                        e.preventDefault();
+                        promptFeatureUpgrade('Custom Apple Signing (.p12)');
+                        return false;
+                    }
+                });
+            }
+
+            // Store Publishing
+            const playPublishCb = document.getElementById('enable-google-play-publish');
+            if (playPublishCb) {
+                playPublishCb.addEventListener('click', function(e) {
+                    if (!userHasFeature('feat_store_publishing')) {
+                        e.preventDefault();
+                        this.checked = false;
+                        promptFeatureUpgrade('Direct Google Play Publishing');
+                        return false;
+                    }
+                });
+            }
+
+            const appStorePublishCb = document.getElementById('enable-app-store-publish');
+            if (appStorePublishCb) {
+                appStorePublishCb.addEventListener('click', function(e) {
+                    if (!userHasFeature('feat_store_publishing')) {
+                        e.preventDefault();
+                        this.checked = false;
+                        promptFeatureUpgrade('Direct Apple App Store Connect Publishing');
+                        return false;
+                    }
+                });
+            }
+        }
+
         // Check authentication state
         async function initBuilderAuth() {
             try {
@@ -1006,6 +1151,8 @@
                 const data = await res.json();
                 if (data.authenticated && data.user) {
                     currentUser = data.user;
+                    window.currentUser = currentUser;
+                    applyPlanFeatureGating();
                 } else {
                     window.location.href = '/auth';
                     return;
