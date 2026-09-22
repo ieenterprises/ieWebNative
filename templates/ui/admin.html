@@ -241,11 +241,34 @@
                     </div>
 
                     <form id="payment-settings-form">
-                        <div class="settings-form-grid">
+                        <div style="font-weight: 700; color: #38bdf8; font-size: 0.95rem; margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                            <span>Subscription Plans Pricing</span>
+                        </div>
+                        <div class="settings-form-grid" style="margin-bottom: 24px;">
                             <div class="form-group">
-                                <label class="form-label">Price Per Month (₦)</label>
-                                <input type="number" id="settings-price" class="form-input" placeholder="15000" min="0" required>
+                                <label class="form-label">1 Month Plan Price (₦)</label>
+                                <input type="number" id="settings-price-1m" class="form-input" placeholder="15000" min="0" required>
                             </div>
+                            <div class="form-group">
+                                <label class="form-label">3 Months Plan Price (₦)</label>
+                                <input type="number" id="settings-price-3m" class="form-input" placeholder="45000" min="0" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">6 Months Plan Price (₦)</label>
+                                <input type="number" id="settings-price-6m" class="form-input" placeholder="81000" min="0" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">12 Months Plan Price (₦)</label>
+                                <input type="number" id="settings-price-12m" class="form-input" placeholder="150000" min="0" required>
+                            </div>
+                        </div>
+
+                        <div style="font-weight: 700; color: #38bdf8; font-size: 0.95rem; margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+                            <span>Bank Account & Support Info</span>
+                        </div>
+                        <div class="settings-form-grid">
                             <div class="form-group">
                                 <label class="form-label">Bank Name</label>
                                 <input type="text" id="settings-bank-name" class="form-input" placeholder="Access Bank" required>
@@ -262,7 +285,7 @@
                                 <label class="form-label">Billing Support Email</label>
                                 <input type="email" id="settings-email" class="form-input" placeholder="billing@iewebnative.com">
                             </div>
-                            <div class="form-group">
+                            <div class="form-group full-width">
                                 <label class="form-label">Billing Support Phone</label>
                                 <input type="text" id="settings-phone" class="form-input" placeholder="+2348000000000">
                             </div>
@@ -707,7 +730,12 @@
                 const data = await res.json();
                 if (res.ok && data.success && data.settings) {
                     const s = data.settings;
-                    document.getElementById('settings-price').value = s.pricePerMonth || 15000;
+                    const p1 = s.price1Month || s.pricePerMonth || 15000;
+                    document.getElementById('settings-price-1m').value = p1;
+                    document.getElementById('settings-price-3m').value = s.price3Months || (p1 * 3);
+                    document.getElementById('settings-price-6m').value = s.price6Months || Math.round(p1 * 6 * 0.9);
+                    document.getElementById('settings-price-12m').value = s.price12Months || Math.round(p1 * 12 * 0.833333);
+
                     document.getElementById('settings-bank-name').value = s.bankName || '';
                     document.getElementById('settings-account-name').value = s.accountName || '';
                     document.getElementById('settings-account-no').value = s.accountNo || '';
@@ -724,8 +752,17 @@
             const btn = document.getElementById('save-settings-btn');
             btn.disabled = true;
 
+            const p1 = parseInt(document.getElementById('settings-price-1m').value) || 15000;
+            const p3 = parseInt(document.getElementById('settings-price-3m').value) || (p1 * 3);
+            const p6 = parseInt(document.getElementById('settings-price-6m').value) || Math.round(p1 * 6 * 0.9);
+            const p12 = parseInt(document.getElementById('settings-price-12m').value) || Math.round(p1 * 12 * 0.833333);
+
             const payload = {
-                pricePerMonth: parseInt(document.getElementById('settings-price').value) || 15000,
+                price1Month: p1,
+                price3Months: p3,
+                price6Months: p6,
+                price12Months: p12,
+                pricePerMonth: p1,
                 bankName: document.getElementById('settings-bank-name').value.trim(),
                 accountName: document.getElementById('settings-account-name').value.trim(),
                 accountNo: document.getElementById('settings-account-no').value.trim(),

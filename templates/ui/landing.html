@@ -970,12 +970,8 @@
                 {% if user %}
                     <li><a href="/dashboard" class="nav-link">Dashboard</a></li>
                     <li><a href="/builder" class="nav-link">App Builder</a></li>
-                    {% if user.role == 'admin' %}
-                        <li><a href="/admin" class="nav-link" style="color: #6366f1; font-weight: 600;"><i class="fa-solid fa-shield-halved"></i> <span>Admin Panel</span></a></li>
-                    {% endif %}
                 {% else %}
                     <li><a href="/auth" class="nav-link">Sign In</a></li>
-                    <li><a href="/admin/login" class="nav-link" style="color: #6366f1; font-weight: 600;"><i class="fa-solid fa-shield-halved"></i> <span>Admin</span></a></li>
                 {% endif %}
             </ul>
 
@@ -986,11 +982,6 @@
                     </span>
                 </button>
                 {% if user %}
-                    {% if user.role == 'admin' %}
-                        <a href="/admin" class="btn-nav-outline" style="border-color: #6366f1; color: #6366f1;" title="Admin Panel" aria-label="Admin Panel">
-                            <i class="fa-solid fa-shield-halved"></i> <span>Admin</span>
-                        </a>
-                    {% endif %}
                     <a href="/dashboard" class="btn-nav-outline" title="Dashboard" aria-label="Dashboard">
                         <i class="fa-solid fa-layer-group"></i> <span>Dashboard</span>
                     </a>
@@ -1001,9 +992,6 @@
                         <i class="fa-solid fa-right-from-bracket"></i> <span>Sign Out</span>
                     </a>
                 {% else %}
-                    <a href="/admin/login" class="btn-nav-outline" style="border-color: #6366f1; color: #6366f1;" title="Admin Portal" aria-label="Admin Portal">
-                        <i class="fa-solid fa-shield-halved"></i> <span>Admin</span>
-                    </a>
                     <a href="/auth" class="btn-nav-outline" title="Sign In" aria-label="Sign In">
                         <i class="fa-solid fa-right-to-bracket"></i> <span>Sign In</span>
                     </a>

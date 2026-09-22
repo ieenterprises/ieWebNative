@@ -247,13 +247,14 @@
             return '₦' + Number(num).toLocaleString();
         }
 
-        // Calculate Plan Price with duration discounts
-        function calculatePlanPrice(months, pricePerMonth) {
-            if (months === 1) return pricePerMonth;
-            if (months === 3) return pricePerMonth * 3;
-            if (months === 6) return Math.round(pricePerMonth * 6 * 0.9); // 10% discount
-            if (months === 12) return Math.round(pricePerMonth * 12 * 0.833333); // approx 2 months free
-            return pricePerMonth * months;
+        // Helper to retrieve the price for a selected duration
+        function getPlanPrice(months) {
+            const p1 = parseInt(paymentSettings.price1Month) || parseInt(paymentSettings.pricePerMonth) || basePrice;
+            if (months === 1) return p1;
+            if (months === 3) return parseInt(paymentSettings.price3Months) || (p1 * 3);
+            if (months === 6) return parseInt(paymentSettings.price6Months) || Math.round(p1 * 6 * 0.9);
+            if (months === 12) return parseInt(paymentSettings.price12Months) || Math.round(p1 * 12 * 0.833333);
+            return p1 * months;
         }
 
         // Load Payment Settings
@@ -263,7 +264,7 @@
                 const data = await res.json();
                 if (data.success && data.settings) {
                     paymentSettings = data.settings;
-                    basePrice = parseInt(paymentSettings.pricePerMonth) || 15000;
+                    basePrice = parseInt(paymentSettings.price1Month) || parseInt(paymentSettings.pricePerMonth) || 15000;
 
                     document.getElementById('bank-name').textContent = paymentSettings.bankName || 'Access Bank';
                     document.getElementById('account-name').textContent = paymentSettings.accountName || 'ieWebNative Inc';
@@ -277,11 +278,11 @@
                         }
                     }
 
-                    // Update Duration Cards
-                    document.getElementById('price-1m').textContent = formatNaira(calculatePlanPrice(1, basePrice));
-                    document.getElementById('price-3m').textContent = formatNaira(calculatePlanPrice(3, basePrice));
-                    document.getElementById('price-6m').textContent = formatNaira(calculatePlanPrice(6, basePrice));
-                    document.getElementById('price-12m').textContent = formatNaira(calculatePlanPrice(12, basePrice));
+                    // Update Duration Cards with admin-configured prices
+                    document.getElementById('price-1m').textContent = formatNaira(getPlanPrice(1));
+                    document.getElementById('price-3m').textContent = formatNaira(getPlanPrice(3));
+                    document.getElementById('price-6m').textContent = formatNaira(getPlanPrice(6));
+                    document.getElementById('price-12m').textContent = formatNaira(getPlanPrice(12));
 
                     updateTotalDisplay();
                 }
@@ -291,7 +292,7 @@
         }
 
         function updateTotalDisplay() {
-            const total = calculatePlanPrice(selectedMonths, basePrice);
+            const total = getPlanPrice(selectedMonths);
             document.getElementById('total-amount').textContent = formatNaira(total);
             document.getElementById('selected-duration-label').textContent = selectedMonths === 1 ? '1 Month' : selectedMonths + ' Months';
         }

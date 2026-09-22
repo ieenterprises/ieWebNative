@@ -130,6 +130,80 @@ def get_storage_bucket():
             logger.warning("Failed to get Firebase Storage bucket %s: %s", bucket_name, e)
     return None
 
+def sync_user_to_firebase_auth(uid, email, password=None, display_name=None, role='user'):
+    """
+    Synchronizes a user account into Firebase Authentication.
+    - If user does not exist in Firebase Auth, creates it with uid, email, display_name, and password.
+    - If user already exists in Firebase Auth, updates display_name and password (if provided).
+    - Sets custom claims for admin privileges if role is 'admin'.
+    Returns Firebase Auth UserRecord or None.
+    """
+    if not (firebase_initialized or (firebase_admin._apps and len(firebase_admin._apps) > 0)):
+        return None
+    try:
+        fb_user = None
+        # Try finding by UID first
+        if uid:
+            try:
+                fb_user = firebase_auth.get_user(uid)
+            except Exception:
+                fb_user = None
+
+        # Try finding by email if not found by UID
+        if not fb_user and email:
+            try:
+                fb_user = firebase_auth.get_user_by_email(email)
+            except Exception:
+                fb_user = None
+
+        target_uid = None
+        if fb_user:
+            update_kwargs = {}
+            if display_name and display_name != fb_user.display_name:
+                update_kwargs['display_name'] = display_name
+            if password and len(password) >= 6:
+                update_kwargs['password'] = password
+            if update_kwargs:
+                try:
+                    fb_user = firebase_auth.update_user(fb_user.uid, **update_kwargs)
+                except Exception as ue:
+                    logger.debug(f"Firebase Auth update_user notice for {email}: {ue}")
+            target_uid = fb_user.uid
+        else:
+            create_kwargs = {'email': email}
+            if uid:
+                create_kwargs['uid'] = uid
+            if display_name:
+                create_kwargs['display_name'] = display_name
+            if password and len(password) >= 6:
+                create_kwargs['password'] = password
+            try:
+                fb_user = firebase_auth.create_user(**create_kwargs)
+                target_uid = fb_user.uid
+                logger.info(f"Created user in Firebase Auth: {target_uid} ({email})")
+            except Exception as ce:
+                logger.debug(f"Firebase Auth create_user notice for {email}: {ce}")
+                # If creation failed because user exists, re-fetch
+                try:
+                    fb_user = firebase_auth.get_user_by_email(email)
+                    target_uid = fb_user.uid
+                except Exception:
+                    pass
+
+        # Set custom claims if target_uid is resolved
+        if target_uid:
+            try:
+                is_admin = (role == 'admin')
+                claims = {'admin': is_admin, 'role': role}
+                firebase_auth.set_custom_user_claims(target_uid, claims)
+            except Exception as cle:
+                logger.debug(f"Firebase Auth set_custom_user_claims notice for {email}: {cle}")
+
+        return fb_user
+    except Exception as e:
+        logger.warning(f"Error syncing user {email} to Firebase Auth: {e}")
+        return None
+
 # Authentication decorator supporting both Flask session & Bearer tokens
 def firebase_auth_required(f):
     @wraps(f)
@@ -629,10 +703,15 @@ def init_sqlite_db():
             )
         ''')
 
-        # Seed default payment settings if not present
+        # Seed or upgrade default payment settings if not present
         cursor.execute('SELECT value_json FROM settings WHERE key = ?', ('payment',))
-        if not cursor.fetchone():
+        row = cursor.fetchone()
+        if not row:
             default_payment = {
+                "price1Month": 15000,
+                "price3Months": 45000,
+                "price6Months": 81000,
+                "price12Months": 150000,
                 "pricePerMonth": 15000,
                 "bankName": "Access Bank",
                 "accountName": "ieWebNative Inc",
@@ -641,6 +720,30 @@ def init_sqlite_db():
                 "contactPhone": "+2348000000000"
             }
             cursor.execute('INSERT INTO settings (key, value_json) VALUES (?, ?)', ('payment', json.dumps(default_payment)))
+        else:
+            try:
+                existing_data = json.loads(row[0])
+                base_p = existing_data.get('price1Month') or existing_data.get('pricePerMonth') or 15000
+                needs_update = False
+                if 'price1Month' not in existing_data:
+                    existing_data['price1Month'] = int(base_p)
+                    needs_update = True
+                if 'price3Months' not in existing_data:
+                    existing_data['price3Months'] = int(base_p * 3)
+                    needs_update = True
+                if 'price6Months' not in existing_data:
+                    existing_data['price6Months'] = int(base_p * 6 * 0.9)
+                    needs_update = True
+                if 'price12Months' not in existing_data:
+                    existing_data['price12Months'] = int(base_p * 12 * 0.833333)
+                    needs_update = True
+                if 'pricePerMonth' not in existing_data:
+                    existing_data['pricePerMonth'] = int(base_p)
+                    needs_update = True
+                if needs_update:
+                    cursor.execute('UPDATE settings SET value_json = ? WHERE key = ?', (json.dumps(existing_data), 'payment'))
+            except Exception as ue:
+                logger.debug(f"Upgrade settings notice: {ue}")
 
         conn.commit()
         conn.close()
@@ -657,6 +760,10 @@ ADMIN_SETUP_KEY = os.getenv('ADMIN_SETUP_KEY', 'ieResearchAdmin2026!')
 def get_payment_settings():
     """Get current payment settings from Firestore or SQLite"""
     default_settings = {
+        "price1Month": 15000,
+        "price3Months": 45000,
+        "price6Months": 81000,
+        "price12Months": 150000,
         "pricePerMonth": 15000,
         "bankName": "Access Bank",
         "accountName": "ieWebNative Inc",
@@ -670,7 +777,6 @@ def get_payment_settings():
             if doc.exists:
                 data = doc.to_dict() or {}
                 default_settings.update(data)
-                return default_settings
         except Exception as e:
             logger.debug(f"Firestore payment settings read notice: {e}")
 
@@ -683,6 +789,34 @@ def get_payment_settings():
             default_settings.update(data)
     except Exception as e:
         logger.debug(f"SQLite payment settings read notice: {e}")
+
+    # Ensure all duration prices are valid positive integers
+    try:
+        base_p = int(default_settings.get('price1Month') or default_settings.get('pricePerMonth') or 15000)
+    except Exception:
+        base_p = 15000
+
+    try:
+        default_settings['price1Month'] = int(default_settings.get('price1Month', base_p))
+    except Exception:
+        default_settings['price1Month'] = base_p
+
+    try:
+        default_settings['price3Months'] = int(default_settings.get('price3Months', base_p * 3))
+    except Exception:
+        default_settings['price3Months'] = base_p * 3
+
+    try:
+        default_settings['price6Months'] = int(default_settings.get('price6Months', int(base_p * 6 * 0.9)))
+    except Exception:
+        default_settings['price6Months'] = int(base_p * 6 * 0.9)
+
+    try:
+        default_settings['price12Months'] = int(default_settings.get('price12Months', int(base_p * 12 * 0.833333)))
+    except Exception:
+        default_settings['price12Months'] = int(base_p * 12 * 0.833333)
+
+    default_settings['pricePerMonth'] = default_settings['price1Month']
 
     return default_settings
 
@@ -3269,6 +3403,9 @@ def api_signup():
             except Exception as fe:
                 logger.debug(f"Firestore user creation sync notice: {fe}")
 
+        # Firebase Auth sync if active
+        sync_user_to_firebase_auth(user_id, email, password=password, display_name=name, role=role)
+
         session.permanent = True
         session['user_id'] = user_id
         session['user_name'] = name
@@ -3322,9 +3459,13 @@ def api_login():
         session['user_picture'] = user_picture
 
         sub = get_user_subscription(user['id'])
-        session['user_role'] = sub.get('role', 'user')
+        user_role = sub.get('role', 'user')
+        session['user_role'] = user_role
         session['subscription_status'] = sub.get('status', 'inactive')
         session['subscription_expiry'] = sub.get('expiry')
+
+        # Ensure account is synced with Firebase Authentication
+        sync_user_to_firebase_auth(user['id'], email, password=password, display_name=user['name'], role=user_role)
 
         return jsonify({
             'success': True,
@@ -4163,6 +4304,9 @@ def api_admin_setup():
             except Exception as fe:
                 logger.warning(f"Could not sync admin to Firestore: {fe}")
 
+        # Sync with Firebase Authentication
+        sync_user_to_firebase_auth(user_id, email, password=password, display_name=name, role='admin')
+
         # Set session
         session.permanent = True
         session['user_id'] = user_id
@@ -4493,6 +4637,13 @@ def api_admin_update_user_role(target_user_id):
             except Exception as fe:
                 logger.warning(f"Error updating user role in Firestore: {fe}")
 
+        # Update Firebase Auth custom claims if active
+        if firebase_initialized or (firebase_admin._apps and len(firebase_admin._apps) > 0):
+            try:
+                firebase_auth.set_custom_user_claims(target_user_id, {'admin': (new_role == 'admin'), 'role': new_role})
+            except Exception as ae:
+                logger.debug(f"Firebase auth custom claims update notice: {ae}")
+
         return jsonify({'success': True, 'message': f'User role updated to {new_role}.', 'role': new_role})
     except Exception as e:
         logger.exception("Error updating user role")
@@ -4531,12 +4682,19 @@ def api_payment_settings():
         data = request.json or {}
         current_settings = get_payment_settings()
 
-        price_per_month = data.get('pricePerMonth')
-        if price_per_month is not None:
-            try:
-                current_settings['pricePerMonth'] = int(price_per_month)
-            except (ValueError, TypeError):
-                pass
+        # Update per-duration subscription prices
+        for key in ['price1Month', 'price3Months', 'price6Months', 'price12Months', 'pricePerMonth']:
+            if key in data and data[key] is not None:
+                try:
+                    val = int(data[key])
+                    if val >= 0:
+                        current_settings[key] = val
+                except (ValueError, TypeError):
+                    pass
+
+        # Keep pricePerMonth and price1Month synchronized
+        if 'price1Month' in current_settings:
+            current_settings['pricePerMonth'] = current_settings['price1Month']
 
         if 'bankName' in data:
             current_settings['bankName'] = str(data['bankName']).strip()
