@@ -121,29 +121,9 @@
             <div class="pricing-section">
                 <h2 class="section-heading">1. Select Subscription Duration</h2>
                 <p class="section-desc">Choose a billing cycle that suits your development workflow. All plans unlock unlimited native builds.</p>
-                <div class="duration-grid">
-                    <div class="duration-card selected" data-months="1">
-                        <div class="duration-title">1 Month</div>
-                        <div class="duration-price" id="price-1m">₦15,000</div>
-                        <div class="duration-sub">Billed monthly</div>
-                    </div>
-                    <div class="duration-card" data-months="3">
-                        <div class="duration-badge">Popular</div>
-                        <div class="duration-title">3 Months</div>
-                        <div class="duration-price" id="price-3m">₦45,000</div>
-                        <div class="duration-sub">Quarterly access</div>
-                    </div>
-                    <div class="duration-card" data-months="6">
-                        <div class="duration-badge">Save 10%</div>
-                        <div class="duration-title">6 Months</div>
-                        <div class="duration-price" id="price-6m">₦81,000</div>
-                        <div class="duration-sub">Semi-annual access</div>
-                    </div>
-                    <div class="duration-card" data-months="12">
-                        <div class="duration-badge">Best Value</div>
-                        <div class="duration-title">12 Months</div>
-                        <div class="duration-price" id="price-12m">₦150,000</div>
-                        <div class="duration-sub">Annual VIP access</div>
+                <div class="duration-grid" id="duration-grid">
+                    <div style="grid-column: 1 / -1; text-align: center; color: var(--sub-text-muted); padding: 30px;">
+                        Loading subscription plans...
                     </div>
                 </div>
             </div>
@@ -230,7 +210,8 @@
 
     <script>
         // State
-        let basePrice = 15000;
+        let availablePlans = [];
+        let selectedPlan = null;
         let selectedMonths = 1;
         let paymentSettings = {};
         const expiryMs = {{ user.subscriptionExpiry or 'null' }};
@@ -244,31 +225,87 @@
 
         // Format Currency
         function formatNaira(num) {
-            return '₦' + Number(num).toLocaleString();
+            return '₦' + Number(num || 0).toLocaleString();
         }
 
-        // Helper to retrieve the price for a selected duration
-        function getPlanPrice(months) {
-            const p1 = parseInt(paymentSettings.price1Month) || parseInt(paymentSettings.pricePerMonth) || basePrice;
-            if (months === 1) return p1;
-            if (months === 3) return parseInt(paymentSettings.price3Months) || (p1 * 3);
-            if (months === 6) return parseInt(paymentSettings.price6Months) || Math.round(p1 * 6 * 0.9);
-            if (months === 12) return parseInt(paymentSettings.price12Months) || Math.round(p1 * 12 * 0.833333);
-            return p1 * months;
+        function renderPlans(plans) {
+            const grid = document.getElementById('duration-grid');
+            if (!grid) return;
+
+            if (!plans || plans.length === 0) {
+                grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--sub-text-muted); padding: 30px;">No subscription plans currently active. Please check back shortly or contact billing support.</div>`;
+                return;
+            }
+
+            availablePlans = plans;
+
+            // Maintain selected plan or select first
+            if (!selectedPlan || !availablePlans.find(p => p.id === selectedPlan.id)) {
+                selectedPlan = availablePlans[0];
+                selectedMonths = selectedPlan.months;
+            }
+
+            grid.innerHTML = availablePlans.map(p => {
+                const isSelected = selectedPlan && p.id === selectedPlan.id;
+                const badgeHtml = p.badge ? `<div class="duration-badge">${p.badge}</div>` : '';
+                const subHtml = p.subtitle ? `<div class="duration-sub">${p.subtitle}</div>` : '';
+                const priceFormatted = formatNaira(p.price);
+
+                return `
+                    <div class="duration-card ${isSelected ? 'selected' : ''}" data-plan-id="${p.id}">
+                        ${badgeHtml}
+                        <div class="duration-title">${p.name}</div>
+                        <div class="duration-price">${priceFormatted}</div>
+                        ${subHtml}
+                    </div>
+                `;
+            }).join('');
+
+            // Card click handlers
+            grid.querySelectorAll('.duration-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    grid.querySelectorAll('.duration-card').forEach(c => c.classList.remove('selected'));
+                    card.classList.add('selected');
+                    const planId = card.getAttribute('data-plan-id');
+                    const plan = availablePlans.find(p => p.id === planId);
+                    if (plan) {
+                        selectedPlan = plan;
+                        selectedMonths = plan.months;
+                        updateTotalDisplay();
+                    }
+                });
+            });
+
+            updateTotalDisplay();
         }
 
-        // Load Payment Settings
+        function updateTotalDisplay() {
+            if (!selectedPlan && availablePlans.length > 0) {
+                selectedPlan = availablePlans[0];
+                selectedMonths = selectedPlan.months;
+            }
+            const total = selectedPlan ? selectedPlan.price : 15000;
+            const durationLabel = selectedPlan ? selectedPlan.name : (selectedMonths === 1 ? '1 Month' : selectedMonths + ' Months');
+            const totalEl = document.getElementById('total-amount');
+            const durEl = document.getElementById('selected-duration-label');
+            if (totalEl) totalEl.textContent = formatNaira(total);
+            if (durEl) durEl.textContent = durationLabel;
+        }
+
+        // Load Payment Settings and Subscription Plans
         async function loadPaymentSettings() {
             try {
                 const res = await fetch('/api/settings/payment');
                 const data = await res.json();
                 if (data.success && data.settings) {
                     paymentSettings = data.settings;
-                    basePrice = parseInt(paymentSettings.price1Month) || parseInt(paymentSettings.pricePerMonth) || 15000;
 
-                    document.getElementById('bank-name').textContent = paymentSettings.bankName || 'Access Bank';
-                    document.getElementById('account-name').textContent = paymentSettings.accountName || 'ieWebNative Inc';
-                    document.getElementById('account-no').textContent = paymentSettings.accountNo || '0123456789';
+                    const bankNameEl = document.getElementById('bank-name');
+                    const accNameEl = document.getElementById('account-name');
+                    const accNoEl = document.getElementById('account-no');
+                    if (bankNameEl) bankNameEl.textContent = paymentSettings.bankName || 'Access Bank';
+                    if (accNameEl) accNameEl.textContent = paymentSettings.accountName || 'ieWebNative Inc';
+                    if (accNoEl) accNoEl.textContent = paymentSettings.accountNo || '0123456789';
 
                     if (paymentSettings.contactEmail) {
                         const supLink = document.getElementById('support-email-link');
@@ -278,34 +315,32 @@
                         }
                     }
 
-                    // Update Duration Cards with admin-configured prices
-                    document.getElementById('price-1m').textContent = formatNaira(getPlanPrice(1));
-                    document.getElementById('price-3m').textContent = formatNaira(getPlanPrice(3));
-                    document.getElementById('price-6m').textContent = formatNaira(getPlanPrice(6));
-                    document.getElementById('price-12m').textContent = formatNaira(getPlanPrice(12));
-
-                    updateTotalDisplay();
+                    const plans = data.plans || (paymentSettings.plans && Array.isArray(paymentSettings.plans) ? paymentSettings.plans : null);
+                    if (plans && plans.length > 0) {
+                        renderPlans(plans);
+                    } else {
+                        loadPlansFallback();
+                    }
+                } else {
+                    loadPlansFallback();
                 }
             } catch (err) {
                 console.error('Failed to load payment settings:', err);
+                loadPlansFallback();
             }
         }
 
-        function updateTotalDisplay() {
-            const total = getPlanPrice(selectedMonths);
-            document.getElementById('total-amount').textContent = formatNaira(total);
-            document.getElementById('selected-duration-label').textContent = selectedMonths === 1 ? '1 Month' : selectedMonths + ' Months';
+        async function loadPlansFallback() {
+            try {
+                const res = await fetch('/api/plans');
+                const data = await res.json();
+                if (data.success && data.plans) {
+                    renderPlans(data.plans);
+                }
+            } catch (err) {
+                console.error('Failed to load plans:', err);
+            }
         }
-
-        // Duration Card Selection
-        document.querySelectorAll('.duration-card').forEach(card => {
-            card.addEventListener('click', () => {
-                document.querySelectorAll('.duration-card').forEach(c => c.classList.remove('selected'));
-                card.classList.add('selected');
-                selectedMonths = parseInt(card.getAttribute('data-months')) || 1;
-                updateTotalDisplay();
-            });
-        });
 
         // 1-Click Copy Account Number
         const copyBtn = document.getElementById('copy-acc-btn');
@@ -387,6 +422,10 @@
 
             const formData = new FormData();
             formData.append('months', selectedMonths);
+            if (selectedPlan && selectedPlan.id) {
+                formData.append('planId', selectedPlan.id);
+                formData.append('planName', selectedPlan.name);
+            }
             formData.append('receipt', receiptInput.files[0]);
 
             try {

@@ -134,6 +134,12 @@
                     <span class="nav-count" id="badge-users-count">0</span>
                 </button>
 
+                <button type="button" class="admin-nav-item" id="nav-plans-btn" title="Subscription Plans" aria-label="Subscription Plans">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    <span class="nav-text">Subscription Plans</span>
+                    <span class="nav-count" id="badge-plans-count">0</span>
+                </button>
+
                 <button type="button" class="admin-nav-item" id="nav-settings-btn" title="Payment Settings" aria-label="Payment Settings">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
                     <span class="nav-text">Payment Settings</span>
@@ -233,41 +239,56 @@
                 </div>
             </section>
 
-            <!-- Tab 3: Payment Settings -->
+            <!-- Tab 3: Subscription Plans -->
+            <section id="tab-plans" class="admin-tab-content" style="display: none;">
+                <div class="admin-card">
+                    <div class="admin-card-header">
+                        <div>
+                            <div class="admin-card-title">Manage Subscription Plans</div>
+                            <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">Create and delete subscription plans available to users on the pricing page.</div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" class="btn-xs btn-xs-emerald" onclick="openCreatePlanModal()" title="Create New Plan">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                <span class="btn-text">Create Plan</span>
+                            </button>
+                            <button type="button" class="btn-xs btn-xs-cyan" onclick="loadPlans()" title="Refresh plans list">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                <span class="btn-text">Refresh</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="admin-table-wrap">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Plan Name</th>
+                                    <th>Duration</th>
+                                    <th>Price (₦)</th>
+                                    <th>Badge</th>
+                                    <th>Subtitle / Note</th>
+                                    <th style="text-align: right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="plans-table-body">
+                                <tr>
+                                    <td colspan="6" style="text-align: center; color: #64748b; padding: 30px;">Loading subscription plans...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tab 4: Payment Settings -->
             <section id="tab-settings" class="admin-tab-content" style="display: none;">
                 <div class="admin-card">
                     <div class="admin-card-header">
-                        <div class="admin-card-title">Bank Transfer & Pricing Configuration</div>
+                        <div class="admin-card-title">Bank Transfer & Support Credentials</div>
                     </div>
 
                     <form id="payment-settings-form">
-                        <div style="font-weight: 700; color: #38bdf8; font-size: 0.95rem; margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-                            <span>Subscription Plans Pricing</span>
-                        </div>
-                        <div class="settings-form-grid" style="margin-bottom: 24px;">
-                            <div class="form-group">
-                                <label class="form-label">1 Month Plan Price (₦)</label>
-                                <input type="number" id="settings-price-1m" class="form-input" placeholder="15000" min="0" required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">3 Months Plan Price (₦)</label>
-                                <input type="number" id="settings-price-3m" class="form-input" placeholder="45000" min="0" required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">6 Months Plan Price (₦)</label>
-                                <input type="number" id="settings-price-6m" class="form-input" placeholder="81000" min="0" required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">12 Months Plan Price (₦)</label>
-                                <input type="number" id="settings-price-12m" class="form-input" placeholder="150000" min="0" required>
-                            </div>
-                        </div>
-
-                        <div style="font-weight: 700; color: #38bdf8; font-size: 0.95rem; margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
-                            <span>Bank Account & Support Info</span>
-                        </div>
                         <div class="settings-form-grid">
                             <div class="form-group">
                                 <label class="form-label">Bank Name</label>
@@ -347,6 +368,48 @@
         </div>
     </div>
 
+    <!-- Create Subscription Plan Modal -->
+    <div class="admin-modal-overlay" id="create-plan-modal">
+        <div class="admin-modal-container" style="max-width: 520px;">
+            <div class="admin-modal-header">
+                <h3 class="admin-modal-title">Create Subscription Plan</h3>
+                <button type="button" class="admin-modal-close" onclick="closeCreatePlanModal()">✕</button>
+            </div>
+            <form id="create-plan-form">
+                <div class="admin-modal-body">
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label class="form-label" style="display: block; font-size: 0.8rem; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Plan Title / Name *</label>
+                        <input type="text" id="plan-name-input" class="form-input" placeholder="e.g. 1 Month Access, Quarterly Pro, VIP Annual" required style="width: 100%; box-sizing: border-box;">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                        <div class="form-group">
+                            <label class="form-label" style="display: block; font-size: 0.8rem; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Duration (Months) *</label>
+                            <input type="number" id="plan-months-input" class="form-input" placeholder="1" min="1" max="120" required style="width: 100%; box-sizing: border-box;">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" style="display: block; font-size: 0.8rem; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Price in ₦ (NGN) *</label>
+                            <input type="number" id="plan-price-input" class="form-input" placeholder="15000" min="0" required style="width: 100%; box-sizing: border-box;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px;">
+                        <div class="form-group">
+                            <label class="form-label" style="display: block; font-size: 0.8rem; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Badge Tag (Optional)</label>
+                            <input type="text" id="plan-badge-input" class="form-input" placeholder="e.g. Popular, Best Value, Save 20%" style="width: 100%; box-sizing: border-box;">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" style="display: block; font-size: 0.8rem; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Subtitle / Note (Optional)</label>
+                            <input type="text" id="plan-sub-input" class="form-input" placeholder="e.g. Billed quarterly, VIP perks" style="width: 100%; box-sizing: border-box;">
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                        <button type="button" class="btn-xs" onclick="closeCreatePlanModal()" style="padding: 8px 14px;">Cancel</button>
+                        <button type="submit" class="btn-xs btn-xs-emerald" id="submit-create-plan-btn" style="padding: 8px 18px;">Create Plan</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div id="admin-toast" class="admin-toast">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -355,6 +418,7 @@
 
     <script>
         let allUsers = [];
+        let allPlans = [];
         let pendingRequestsCount = 0;
         let deleteTargetUid = null;
         const currentAdminUid = "{{ user.id }}";
@@ -362,9 +426,11 @@
         // Navigation
         const navRequests = document.getElementById('nav-requests-btn');
         const navUsers = document.getElementById('nav-users-btn');
+        const navPlans = document.getElementById('nav-plans-btn');
         const navSettings = document.getElementById('nav-settings-btn');
         const tabRequests = document.getElementById('tab-requests');
         const tabUsers = document.getElementById('tab-users');
+        const tabPlans = document.getElementById('tab-plans');
         const tabSettings = document.getElementById('tab-settings');
         const pageHeading = document.getElementById('page-heading');
         const pageSubheading = document.getElementById('page-subheading');
@@ -372,9 +438,11 @@
         function switchAdminTab(tab) {
             navRequests.classList.remove('active');
             navUsers.classList.remove('active');
+            if (navPlans) navPlans.classList.remove('active');
             navSettings.classList.remove('active');
             tabRequests.style.display = 'none';
             tabUsers.style.display = 'none';
+            if (tabPlans) tabPlans.style.display = 'none';
             tabSettings.style.display = 'none';
 
             if (tab === 'requests') {
@@ -387,19 +455,26 @@
                 navUsers.classList.add('active');
                 tabUsers.style.display = 'block';
                 pageHeading.textContent = 'Manage Users';
-                pageSubheading.textContent = 'View registered users, grant access durations, or manage account roles.';
+                pageSubheading.textContent = 'View registered users and manage active subscriptions.';
                 loadUsers();
+            } else if (tab === 'plans') {
+                if (navPlans) navPlans.classList.add('active');
+                if (tabPlans) tabPlans.style.display = 'block';
+                pageHeading.textContent = 'Manage Subscription Plans';
+                pageSubheading.textContent = 'Create and delete subscription plans available to users on the pricing page.';
+                loadPlans();
             } else if (tab === 'settings') {
                 navSettings.classList.add('active');
                 tabSettings.style.display = 'block';
                 pageHeading.textContent = 'Payment Settings';
-                pageSubheading.textContent = 'Configure bank transfer credentials and monthly billing rates.';
+                pageSubheading.textContent = 'Configure bank transfer credentials and support contacts.';
                 loadSettings();
             }
         }
 
         navRequests.addEventListener('click', () => switchAdminTab('requests'));
         navUsers.addEventListener('click', () => switchAdminTab('users'));
+        if (navPlans) navPlans.addEventListener('click', () => switchAdminTab('plans'));
         navSettings.addEventListener('click', () => switchAdminTab('settings'));
 
         function showToast(msg) {
@@ -563,10 +638,12 @@
             }
 
             tbody.innerHTML = users.map(u => {
-                const roleBadge = u.role === 'admin' ? `<span class="badge badge-admin">Admin</span>` : `<span class="badge badge-user">User</span>`;
+                const isAdmin = u.role === 'admin';
+                const isSelf = u.id === currentAdminUid;
+                const roleBadge = isAdmin ? `<span class="badge badge-admin">Admin</span>` : `<span class="badge badge-user">User</span>`;
                 
                 let subBadge = `<span class="badge badge-inactive">Inactive</span>`;
-                if (u.role === 'admin') {
+                if (isAdmin) {
                     subBadge = `<span class="badge badge-active">Unlimited</span>`;
                 } else if (u.subscriptionStatus === 'active') {
                     subBadge = `<span class="badge badge-active">Active</span>`;
@@ -575,16 +652,50 @@
                 }
 
                 let expiryStr = '<span style="color: #64748b;">—</span>';
-                if (u.role === 'admin' || (u.subscriptionStatus === 'active' && !u.subscriptionExpiry)) {
+                if (isAdmin || (u.subscriptionStatus === 'active' && !u.subscriptionExpiry)) {
                     expiryStr = '<strong style="color: #38bdf8;">Lifetime</strong>';
                 } else if (u.subscriptionExpiry) {
                     const d = new Date(u.subscriptionExpiry);
                     expiryStr = `<span style="font-size: 0.82rem; color: #94a3b8;">${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>`;
                 }
 
-                const isSelf = u.id === currentAdminUid;
-                const toggleRoleText = u.role === 'admin' ? 'Demote' : 'Make Admin';
-                const nextRole = u.role === 'admin' ? 'user' : 'admin';
+                // Action Column Logic:
+                // 1. Admin rows have ZERO quick action buttons (Admin is like a god in the application)
+                // 2. Regular user rows have subscription modifiers and delete user, but NO promotion to admin button
+                let actionHtml = '';
+                if (isAdmin) {
+                    actionHtml = `
+                        <div style="display: flex; justify-content: flex-end; align-items: center;">
+                            <span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); font-weight: 700; padding: 5px 12px; border-radius: 9999px; display: inline-flex; align-items: center; gap: 6px;">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5m14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/></svg>
+                                Master Admin
+                            </span>
+                        </div>
+                    `;
+                } else {
+                    actionHtml = `
+                        <div class="action-btns" style="justify-content: flex-end;">
+                            <button type="button" class="btn-xs btn-xs-emerald" onclick="updateSubscription('${u.id}', 'add_1_month')" title="Add 1 Month Access">
+                                <span class="btn-text">+1 Mo</span>
+                            </button>
+                            <button type="button" class="btn-xs btn-xs-cyan" onclick="updateSubscription('${u.id}', 'add_3_months')" title="Add 3 Months Access">
+                                <span class="btn-text">+3 Mo</span>
+                            </button>
+                            <button type="button" class="btn-xs btn-xs-purple" onclick="updateSubscription('${u.id}', 'add_1_year')" title="Add 1 Year Access">
+                                <span class="btn-text">+1 Yr</span>
+                            </button>
+                            <button type="button" class="btn-xs btn-xs-cyan" onclick="updateSubscription('${u.id}', 'lifetime')" title="Grant Lifetime Access">
+                                <span class="btn-text">Lifetime</span>
+                            </button>
+                            <button type="button" class="btn-xs btn-xs-rose" onclick="updateSubscription('${u.id}', 'deactivate')" title="Deactivate Subscription">
+                                <span class="btn-text">Deactivate</span>
+                            </button>
+                            <button type="button" class="btn-xs btn-xs-rose" onclick="openDeleteModal('${u.id}', '${u.email}')" title="Delete User Permanently">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    `;
+                }
 
                 return `
                     <tr>
@@ -602,33 +713,7 @@
                         <td>${roleBadge}</td>
                         <td>${subBadge}</td>
                         <td>${expiryStr}</td>
-                        <td style="text-align: right;">
-                            <div class="action-btns" style="justify-content: flex-end;">
-                                <button type="button" class="btn-xs btn-xs-emerald" onclick="updateSubscription('${u.id}', 'add_1_month')" title="Add 1 Month Access">
-                                    <span class="btn-text">+1 Mo</span>
-                                </button>
-                                <button type="button" class="btn-xs btn-xs-cyan" onclick="updateSubscription('${u.id}', 'add_3_months')" title="Add 3 Months Access">
-                                    <span class="btn-text">+3 Mo</span>
-                                </button>
-                                <button type="button" class="btn-xs btn-xs-purple" onclick="updateSubscription('${u.id}', 'add_1_year')" title="Add 1 Year Access">
-                                    <span class="btn-text">+1 Yr</span>
-                                </button>
-                                <button type="button" class="btn-xs btn-xs-cyan" onclick="updateSubscription('${u.id}', 'lifetime')" title="Grant Lifetime Access">
-                                    <span class="btn-text">Lifetime</span>
-                                </button>
-                                <button type="button" class="btn-xs btn-xs-rose" onclick="updateSubscription('${u.id}', 'deactivate')" title="Deactivate Subscription">
-                                    <span class="btn-text">Deactivate</span>
-                                </button>
-                                ${!isSelf ? `
-                                    <button type="button" class="btn-xs" onclick="toggleRole('${u.id}', '${nextRole}')" title="Toggle Admin Role">
-                                        <span class="btn-text">${toggleRoleText}</span>
-                                    </button>
-                                    <button type="button" class="btn-xs btn-xs-rose" onclick="openDeleteModal('${u.id}', '${u.email}')" title="Delete User Permanently">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                    </button>
-                                ` : ''}
-                            </div>
-                        </td>
+                        <td style="text-align: right;">${actionHtml}</td>
                     </tr>
                 `;
             }).join('');
@@ -660,26 +745,6 @@
                     loadUsers();
                 } else {
                     alert(data.error || 'Failed to update subscription');
-                }
-            } catch (err) {
-                alert('Connection error: ' + err.message);
-            }
-        }
-
-        async function toggleRole(userId, newRole) {
-            if (!confirm(`Are you sure you want to change this user's role to ${newRole.toUpperCase()}?`)) return;
-            try {
-                const res = await fetch(`/api/admin/users/${userId}/role`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ role: newRole })
-                });
-                const data = await res.json();
-                if (res.ok && data.success) {
-                    showToast(`Role updated to ${newRole}.`);
-                    loadUsers();
-                } else {
-                    alert(data.error || 'Failed to change user role');
                 }
             } catch (err) {
                 alert('Connection error: ' + err.message);
@@ -722,7 +787,128 @@
             }
         });
 
-        // ==================== TAB 3: PAYMENT SETTINGS ====================
+        // ==================== TAB 3: SUBSCRIPTION PLANS ====================
+
+        async function loadPlans() {
+            const tbody = document.getElementById('plans-table-body');
+            try {
+                const res = await fetch('/api/plans');
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Failed to load plans: ${data.error || 'Unknown error'}</td></tr>`;
+                    return;
+                }
+
+                allPlans = data.plans || [];
+                const badgeEl = document.getElementById('badge-plans-count');
+                if (badgeEl) badgeEl.textContent = allPlans.length;
+                renderPlansTable(allPlans);
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444; padding: 20px;">Error: ${err.message}</td></tr>`;
+            }
+        }
+
+        function renderPlansTable(plans) {
+            const tbody = document.getElementById('plans-table-body');
+            if (!tbody) return;
+
+            if (plans.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #64748b; padding: 30px;">No subscription plans configured yet. Click "Create Plan" above to add one.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = plans.map(p => {
+                const badgeTag = p.badge ? `<span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">${p.badge}</span>` : '<span style="color: #64748b;">—</span>';
+                const subtitle = p.subtitle ? `<span style="font-size: 0.82rem; color: #94a3b8;">${p.subtitle}</span>` : '<span style="color: #64748b;">—</span>';
+                const priceFormatted = '₦' + Number(p.price || 0).toLocaleString();
+                const durationText = `${p.months} Month${p.months > 1 ? 's' : ''}`;
+                const safeName = (p.name || 'Plan').replace(/'/g, "\\'");
+
+                return `
+                    <tr>
+                        <td><strong style="color: #f1f5f9; font-size: 0.9rem;">${p.name}</strong></td>
+                        <td><span style="font-weight: 700; color: #38bdf8;">${durationText}</span></td>
+                        <td><strong style="color: #10b981; font-size: 0.95rem;">${priceFormatted}</strong></td>
+                        <td>${badgeTag}</td>
+                        <td>${subtitle}</td>
+                        <td style="text-align: right;">
+                            <button type="button" class="btn-xs btn-xs-rose" onclick="deletePlan('${p.id}', '${safeName}')" title="Delete Plan">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                <span class="btn-text">Delete</span>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function openCreatePlanModal() {
+            document.getElementById('plan-name-input').value = '';
+            document.getElementById('plan-months-input').value = '1';
+            document.getElementById('plan-price-input').value = '';
+            document.getElementById('plan-badge-input').value = '';
+            document.getElementById('plan-sub-input').value = '';
+            document.getElementById('create-plan-modal').style.display = 'flex';
+        }
+
+        function closeCreatePlanModal() {
+            document.getElementById('create-plan-modal').style.display = 'none';
+        }
+
+        document.getElementById('create-plan-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submit-create-plan-btn');
+            btn.disabled = true;
+
+            const payload = {
+                name: document.getElementById('plan-name-input').value.trim(),
+                months: parseInt(document.getElementById('plan-months-input').value),
+                price: parseInt(document.getElementById('plan-price-input').value),
+                badge: document.getElementById('plan-badge-input').value.trim(),
+                subtitle: document.getElementById('plan-sub-input').value.trim()
+            };
+
+            try {
+                const res = await fetch('/api/admin/plans', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(data.message || 'Subscription plan created successfully!');
+                    closeCreatePlanModal();
+                    loadPlans();
+                } else {
+                    alert(data.error || 'Failed to create plan');
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        async function deletePlan(planId, planName) {
+            if (!confirm(`Are you sure you want to delete the plan "${planName}"?`)) return;
+            try {
+                const res = await fetch(`/api/admin/plans/${planId}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast(data.message || 'Plan deleted.');
+                    loadPlans();
+                } else {
+                    alert(data.error || 'Failed to delete plan');
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+            }
+        }
+
+        // ==================== TAB 4: PAYMENT SETTINGS ====================
 
         async function loadSettings() {
             try {
@@ -730,12 +916,6 @@
                 const data = await res.json();
                 if (res.ok && data.success && data.settings) {
                     const s = data.settings;
-                    const p1 = s.price1Month || s.pricePerMonth || 15000;
-                    document.getElementById('settings-price-1m').value = p1;
-                    document.getElementById('settings-price-3m').value = s.price3Months || (p1 * 3);
-                    document.getElementById('settings-price-6m').value = s.price6Months || Math.round(p1 * 6 * 0.9);
-                    document.getElementById('settings-price-12m').value = s.price12Months || Math.round(p1 * 12 * 0.833333);
-
                     document.getElementById('settings-bank-name').value = s.bankName || '';
                     document.getElementById('settings-account-name').value = s.accountName || '';
                     document.getElementById('settings-account-no').value = s.accountNo || '';
@@ -752,17 +932,7 @@
             const btn = document.getElementById('save-settings-btn');
             btn.disabled = true;
 
-            const p1 = parseInt(document.getElementById('settings-price-1m').value) || 15000;
-            const p3 = parseInt(document.getElementById('settings-price-3m').value) || (p1 * 3);
-            const p6 = parseInt(document.getElementById('settings-price-6m').value) || Math.round(p1 * 6 * 0.9);
-            const p12 = parseInt(document.getElementById('settings-price-12m').value) || Math.round(p1 * 12 * 0.833333);
-
             const payload = {
-                price1Month: p1,
-                price3Months: p3,
-                price6Months: p6,
-                price12Months: p12,
-                pricePerMonth: p1,
                 bankName: document.getElementById('settings-bank-name').value.trim(),
                 accountName: document.getElementById('settings-account-name').value.trim(),
                 accountNo: document.getElementById('settings-account-no').value.trim(),
@@ -791,6 +961,8 @@
 
         // Initial Load
         loadRequests();
+        loadPlans();
+        loadUsers();
     </script>
 </body>
 </html>

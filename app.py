@@ -745,6 +745,17 @@ def init_sqlite_db():
             except Exception as ue:
                 logger.debug(f"Upgrade settings notice: {ue}")
 
+        # Seed default subscription plans if not present
+        cursor.execute("SELECT value_json FROM settings WHERE key = 'plans'")
+        if not cursor.fetchone():
+            default_plans = [
+                {"id": "plan_1m", "name": "1 Month", "months": 1, "price": 15000, "badge": "", "subtitle": "Billed monthly"},
+                {"id": "plan_3m", "name": "3 Months", "months": 3, "price": 45000, "badge": "Popular", "subtitle": "Quarterly access"},
+                {"id": "plan_6m", "name": "6 Months", "months": 6, "price": 81000, "badge": "Save 10%", "subtitle": "Semi-annual access"},
+                {"id": "plan_12m", "name": "12 Months", "months": 12, "price": 150000, "badge": "Best Value", "subtitle": "Annual VIP access"}
+            ]
+            cursor.execute("INSERT INTO settings (key, value_json) VALUES ('plans', ?)", (json.dumps(default_plans),))
+
         conn.commit()
         conn.close()
         logger.info("SQLite database initialized at %s", SQLITE_DB_PATH)
@@ -835,6 +846,87 @@ def save_payment_settings(settings_dict):
             db.collection('settings').document('payment').set(settings_dict, merge=True)
         except Exception as e:
             logger.error(f"Failed to save payment settings to Firestore: {e}")
+
+DEFAULT_SUBSCRIPTION_PLANS = [
+    {
+        "id": "plan_1m",
+        "name": "1 Month",
+        "months": 1,
+        "price": 15000,
+        "badge": "",
+        "subtitle": "Billed monthly"
+    },
+    {
+        "id": "plan_3m",
+        "name": "3 Months",
+        "months": 3,
+        "price": 45000,
+        "badge": "Popular",
+        "subtitle": "Quarterly access"
+    },
+    {
+        "id": "plan_6m",
+        "name": "6 Months",
+        "months": 6,
+        "price": 81000,
+        "badge": "Save 10%",
+        "subtitle": "Semi-annual access"
+    },
+    {
+        "id": "plan_12m",
+        "name": "12 Months",
+        "months": 12,
+        "price": 150000,
+        "badge": "Best Value",
+        "subtitle": "Annual VIP access"
+    }
+]
+
+def get_subscription_plans():
+    """Retrieve all active subscription plans from Firestore or SQLite"""
+    # 1. Try Firestore
+    if db:
+        try:
+            doc = db.collection('settings').document('plans').get()
+            if doc.exists:
+                data = doc.to_dict() or {}
+                plans = data.get('plans')
+                if isinstance(plans, list) and len(plans) > 0:
+                    return plans
+        except Exception as e:
+            logger.debug(f"Firestore plans read notice: {e}")
+
+    # 2. Try SQLite
+    try:
+        conn = get_db_connection()
+        row = conn.execute("SELECT value_json FROM settings WHERE key = 'plans'").fetchone()
+        conn.close()
+        if row and row['value_json']:
+            plans = json.loads(row['value_json'])
+            if isinstance(plans, list) and len(plans) > 0:
+                return plans
+    except Exception as e:
+        logger.debug(f"SQLite plans read notice: {e}")
+
+    # Fallback to defaults and seed
+    save_subscription_plans(DEFAULT_SUBSCRIPTION_PLANS)
+    return DEFAULT_SUBSCRIPTION_PLANS
+
+def save_subscription_plans(plans):
+    """Persist subscription plans to both SQLite and Firestore"""
+    try:
+        conn = get_db_connection()
+        conn.execute("INSERT OR REPLACE INTO settings (key, value_json) VALUES ('plans', ?)", (json.dumps(plans),))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to save plans to SQLite: {e}")
+
+    if db:
+        try:
+            db.collection('settings').document('plans').set({'plans': plans, 'updatedAt': firestore.SERVER_TIMESTAMP}, merge=True)
+        except Exception as e:
+            logger.error(f"Failed to save plans to Firestore: {e}")
 
 def get_user_subscription(user_id):
     """
@@ -4614,15 +4706,15 @@ def api_admin_update_user_role(target_user_id):
         if new_role not in ['admin', 'user']:
             return jsonify({'success': False, 'error': "Role must be 'admin' or 'user'."}), 400
 
+        if new_role == 'admin':
+            return jsonify({'success': False, 'error': 'Promoting accounts to administrator is disabled. Only the designated administrator possesses administrator privileges.'}), 403
+
         if target_user_id == admin_uid and new_role != 'admin':
             return jsonify({'success': False, 'error': 'You cannot demote yourself from admin.'}), 400
 
         # Update SQLite
         conn = get_db_connection()
-        if new_role == 'admin':
-            conn.execute("UPDATE users SET role = 'admin', subscription_status = 'active', subscription_expiry = NULL WHERE id = ?", (target_user_id,))
-        else:
-            conn.execute("UPDATE users SET role = 'user' WHERE id = ?", (target_user_id,))
+        conn.execute("UPDATE users SET role = 'user' WHERE id = ?", (target_user_id,))
         conn.commit()
         conn.close()
 
@@ -4630,9 +4722,6 @@ def api_admin_update_user_role(target_user_id):
         if db:
             try:
                 update_fields = {'role': new_role, 'updatedAt': firestore.SERVER_TIMESTAMP}
-                if new_role == 'admin':
-                    update_fields['subscriptionStatus'] = 'active'
-                    update_fields['subscriptionExpiry'] = None
                 db.collection('users').document(target_user_id).set(update_fields, merge=True)
             except Exception as fe:
                 logger.warning(f"Error updating user role in Firestore: {fe}")
@@ -4640,13 +4729,102 @@ def api_admin_update_user_role(target_user_id):
         # Update Firebase Auth custom claims if active
         if firebase_initialized or (firebase_admin._apps and len(firebase_admin._apps) > 0):
             try:
-                firebase_auth.set_custom_user_claims(target_user_id, {'admin': (new_role == 'admin'), 'role': new_role})
+                firebase_auth.set_custom_user_claims(target_user_id, {'admin': False, 'role': 'user'})
             except Exception as ae:
                 logger.debug(f"Firebase auth custom claims update notice: {ae}")
 
         return jsonify({'success': True, 'message': f'User role updated to {new_role}.', 'role': new_role})
     except Exception as e:
         logger.exception("Error updating user role")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/plans', methods=['GET'])
+def api_get_plans():
+    """Public read of all available subscription plans"""
+    return jsonify({'success': True, 'plans': get_subscription_plans()})
+
+
+@app.route('/api/admin/plans', methods=['POST'])
+@admin_required
+def api_admin_create_plan():
+    """Admin-only: Create a new subscription plan"""
+    try:
+        data = request.json or {}
+        name = str(data.get('name', '')).strip()
+        months = data.get('months')
+        price = data.get('price')
+        badge = str(data.get('badge', '')).strip()
+        subtitle = str(data.get('subtitle', '')).strip()
+
+        if not name:
+            return jsonify({'success': False, 'error': 'Plan title/name is required.'}), 400
+
+        try:
+            months = int(months)
+            if months < 1 or months > 120:
+                return jsonify({'success': False, 'error': 'Duration must be between 1 and 120 months.'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'Valid duration in months is required.'}), 400
+
+        try:
+            price = int(price)
+            if price < 0:
+                return jsonify({'success': False, 'error': 'Price must be 0 or positive.'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'Valid price is required.'}), 400
+
+        plans = list(get_subscription_plans())
+        new_plan = {
+            'id': 'plan_' + str(uuid.uuid4())[:8],
+            'name': name,
+            'months': months,
+            'price': price,
+            'badge': badge,
+            'subtitle': subtitle
+        }
+        plans.append(new_plan)
+        save_subscription_plans(plans)
+
+        return jsonify({
+            'success': True,
+            'message': f'Subscription plan "{name}" created successfully.',
+            'plan': new_plan,
+            'plans': plans
+        })
+    except Exception as e:
+        logger.exception("Error creating subscription plan")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/plans/<plan_id>', methods=['DELETE'])
+@admin_required
+def api_admin_delete_plan(plan_id):
+    """Admin-only: Delete an existing subscription plan"""
+    try:
+        plans = list(get_subscription_plans())
+        found = False
+        remaining = []
+        deleted_name = ''
+
+        for p in plans:
+            if p.get('id') == plan_id:
+                found = True
+                deleted_name = p.get('name', 'Plan')
+            else:
+                remaining.append(p)
+
+        if not found:
+            return jsonify({'success': False, 'error': 'Plan not found.'}), 404
+
+        save_subscription_plans(remaining)
+        return jsonify({
+            'success': True,
+            'message': f'Subscription plan "{deleted_name}" deleted successfully.',
+            'plans': remaining
+        })
+    except Exception as e:
+        logger.exception("Error deleting subscription plan")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -4658,7 +4836,8 @@ def api_payment_settings():
     """
     if request.method == 'GET':
         settings_data = get_payment_settings()
-        return jsonify({'success': True, 'settings': settings_data})
+        settings_data['plans'] = get_subscription_plans()
+        return jsonify({'success': True, 'settings': settings_data, 'plans': settings_data['plans']})
 
     # POST - Admin only
     auth_user_id = session.get('user_id')
@@ -4725,7 +4904,7 @@ def api_subscribe_submit():
         months_str = request.form.get('months', '1')
         try:
             months = int(months_str)
-            if months not in [1, 3, 6, 12]:
+            if months < 1:
                 months = 1
         except Exception:
             months = 1
