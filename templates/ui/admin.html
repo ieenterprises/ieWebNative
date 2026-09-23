@@ -166,19 +166,11 @@
                     <h1 id="page-heading">Subscription Requests</h1>
                     <p id="page-subheading">Verify and approve proof of payment receipts submitted by users.</p>
                 </div>
-                <div class="admin-topbar-actions">
-                    <div class="admin-user-badge">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="font-size: 0.85rem; color: #94a3b8; text-align: right;">
                         <div style="font-weight: 700; color: #f8fafc;">{{ user.name }}</div>
                         <div style="font-size: 0.75rem; color: #38bdf8;">Administrator</div>
                     </div>
-                    <a href="/dashboard" class="topbar-btn topbar-btn-dash" title="Return to Dashboard">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                        <span>Dashboard</span>
-                    </a>
-                    <a href="/api/auth/logout" class="topbar-btn topbar-btn-logout" title="Sign Out">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                        <span>Sign Out</span>
-                    </a>
                 </div>
             </div>
 
@@ -234,7 +226,7 @@
                                     <th>Role</th>
                                     <th>Subscription</th>
                                     <th>Expiry Date</th>
-                                    <th style="text-align: right;">Quick Actions</th>
+                                    <th style="text-align: right;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="users-table-body">
@@ -691,19 +683,32 @@
                     
                     let statusBadge = `<span class="badge badge-pending">Pending</span>`;
                     if (r.status === 'approved') statusBadge = `<span class="badge badge-active">Approved</span>`;
-                    if (r.status === 'rejected') statusBadge = `<span class="badge badge-inactive">Rejected</span>`;
+                    if (r.status === 'rejected') statusBadge = `<span class="badge badge-inactive">Cancelled</span>`;
 
-                    let actionsHtml = `<span style="color: #64748b; font-size: 0.8rem;">Completed</span>`;
+                    let actionsHtml = '';
                     if (r.status === 'pending') {
                         actionsHtml = `
-                            <div class="action-btns" style="justify-content: flex-end;">
-                                <button type="button" class="btn-xs btn-xs-emerald" onclick="approveRequest('${r.id}', ${r.monthsRequested})" title="Approve Request">
+                            <div class="action-btns" style="justify-content: flex-end; gap: 6px;">
+                                <button type="button" class="btn-xs btn-xs-emerald" onclick="approveRequest('${r.id}', ${r.monthsRequested})" title="Activate Subscription">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                    <span class="btn-text">Approve (+${r.monthsRequested} Mo)</span>
+                                    <span class="btn-text">Activate</span>
                                 </button>
-                                <button type="button" class="btn-xs btn-xs-rose" onclick="rejectRequest('${r.id}')" title="Reject Request">
+                                <button type="button" class="btn-xs btn-xs-amber" onclick="rejectRequest('${r.id}')" title="Cancel Request">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                    <span class="btn-text">Reject</span>
+                                    <span class="btn-text">Cancel</span>
+                                </button>
+                                <button type="button" class="btn-xs btn-xs-rose" onclick="deleteRequest('${r.id}')" title="Delete Payment Proof Record">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    <span class="btn-text">Delete</span>
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        actionsHtml = `
+                            <div class="action-btns" style="justify-content: flex-end; align-items: center; gap: 8px;">
+                                <button type="button" class="btn-xs btn-xs-rose" onclick="deleteRequest('${r.id}')" title="Delete Payment Proof Record">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    <span class="btn-text">Delete</span>
                                 </button>
                             </div>
                         `;
@@ -746,15 +751,31 @@
         }
 
         async function rejectRequest(reqId) {
-            if (!confirm('Are you sure you want to reject this subscription request?')) return;
+            if (!confirm('Are you sure you want to cancel this subscription request?')) return;
             try {
                 const res = await fetch(`/api/admin/requests/${reqId}/reject`, { method: 'POST' });
                 const data = await res.json();
                 if (res.ok && data.success) {
-                    showToast('Subscription request rejected.');
+                    showToast('Subscription request cancelled.');
                     loadRequests();
                 } else {
-                    alert(data.error || 'Failed to reject request');
+                    alert(data.error || 'Failed to cancel request');
+                }
+            } catch (err) {
+                alert('Connection error: ' + err.message);
+            }
+        }
+
+        async function deleteRequest(reqId) {
+            if (!confirm('Are you sure you want to permanently delete this payment proof record?')) return;
+            try {
+                const res = await fetch(`/api/admin/requests/${reqId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showToast('Payment proof record deleted successfully.');
+                    loadRequests();
+                } else {
+                    alert(data.error || 'Failed to delete request');
                 }
             } catch (err) {
                 alert('Connection error: ' + err.message);
@@ -823,9 +844,11 @@
                 if (isAdmin) {
                     subBadge = `<span class="badge badge-active">Unlimited</span>`;
                 } else if (u.subscriptionStatus === 'active') {
-                    subBadge = `<span class="badge badge-active">Active</span>`;
+                    const planText = u.planName ? `Active (${u.planName})` : 'Active';
+                    subBadge = `<span class="badge badge-active">${planText}</span>`;
                 } else if (u.subscriptionStatus === 'pending') {
-                    subBadge = `<span class="badge badge-pending">Pending</span>`;
+                    const planText = u.planName ? `Pending (${u.planName})` : 'Pending';
+                    subBadge = `<span class="badge badge-pending">${planText}</span>`;
                 }
 
                 let expiryStr = '<span style="color: #64748b;">—</span>';
@@ -837,8 +860,8 @@
                 }
 
                 // Action Column Logic:
-                // 1. Admin rows have ZERO quick action buttons (Admin is like a god in the application)
-                // 2. Regular user rows have subscription modifiers and delete user, but NO promotion to admin button
+                // 1. Admin rows have ZERO action buttons (Admin is master admin in the application)
+                // 2. Regular user rows have ONLY Deactivate and Delete User buttons
                 let actionHtml = '';
                 if (isAdmin) {
                     actionHtml = `
@@ -850,25 +873,16 @@
                         </div>
                     `;
                 } else {
+                    const isDeactivatable = u.subscriptionStatus === 'active' || u.subscriptionStatus === 'pending';
                     actionHtml = `
-                        <div class="action-btns" style="justify-content: flex-end;">
-                            <button type="button" class="btn-xs btn-xs-emerald" onclick="updateSubscription('${u.id}', 'add_1_month')" title="Add 1 Month Access">
-                                <span class="btn-text">+1 Mo</span>
-                            </button>
-                            <button type="button" class="btn-xs btn-xs-cyan" onclick="updateSubscription('${u.id}', 'add_3_months')" title="Add 3 Months Access">
-                                <span class="btn-text">+3 Mo</span>
-                            </button>
-                            <button type="button" class="btn-xs btn-xs-purple" onclick="updateSubscription('${u.id}', 'add_1_year')" title="Add 1 Year Access">
-                                <span class="btn-text">+1 Yr</span>
-                            </button>
-                            <button type="button" class="btn-xs btn-xs-cyan" onclick="updateSubscription('${u.id}', 'lifetime')" title="Grant Lifetime Access">
-                                <span class="btn-text">Lifetime</span>
-                            </button>
-                            <button type="button" class="btn-xs btn-xs-rose" onclick="updateSubscription('${u.id}', 'deactivate')" title="Deactivate Subscription">
+                        <div class="action-btns" style="justify-content: flex-end; gap: 8px;">
+                            <button type="button" class="btn-xs btn-xs-rose" onclick="updateSubscription('${u.id}', 'deactivate')" title="Deactivate Subscription" ${!isDeactivatable ? 'disabled style="opacity: 0.45; cursor: not-allowed;"' : ''}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
                                 <span class="btn-text">Deactivate</span>
                             </button>
                             <button type="button" class="btn-xs btn-xs-rose" onclick="openDeleteModal('${u.id}', '${u.email}')" title="Delete User Permanently">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                <span class="btn-text">Delete</span>
                             </button>
                         </div>
                     `;

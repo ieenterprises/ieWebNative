@@ -5123,9 +5123,32 @@ def api_admin_reject_request(request_id):
             except Exception as fe:
                 logger.warning(f"Error updating Firestore on rejection: {fe}")
 
-        return jsonify({'success': True, 'message': 'Subscription request rejected.'})
+        return jsonify({'success': True, 'message': 'Subscription request cancelled / rejected.'})
     except Exception as e:
         logger.exception("Error rejecting subscription request")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/requests/<request_id>', methods=['DELETE', 'POST'])
+@app.route('/api/admin/requests/<request_id>/delete', methods=['DELETE', 'POST'])
+@admin_required
+def api_admin_delete_request(request_id):
+    """Admin-only: Permanently delete a subscription payment request record"""
+    try:
+        conn = get_db_connection()
+        conn.execute("DELETE FROM subscription_requests WHERE id = ?", (request_id,))
+        conn.commit()
+        conn.close()
+
+        if db:
+            try:
+                db.collection('subscription_requests').document(request_id).delete()
+            except Exception as fe:
+                logger.warning(f"Error deleting subscription request from Firestore: {fe}")
+
+        return jsonify({'success': True, 'message': 'Subscription request deleted successfully.'})
+    except Exception as e:
+        logger.exception("Error deleting subscription request")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

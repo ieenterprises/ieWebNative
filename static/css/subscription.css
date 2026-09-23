@@ -647,58 +647,6 @@
     color: #94a3b8;
 }
 
-.admin-topbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-}
-
-.admin-user-badge {
-    font-size: 0.85rem;
-    color: #94a3b8;
-    text-align: right;
-    margin-right: 4px;
-}
-
-.topbar-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    border-radius: 9px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    text-decoration: none;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-    cursor: pointer;
-}
-
-.topbar-btn-dash {
-    background: rgba(56, 189, 248, 0.12);
-    color: #38bdf8;
-    border: 1px solid rgba(56, 189, 248, 0.3);
-}
-
-.topbar-btn-dash:hover {
-    background: rgba(56, 189, 248, 0.22);
-    border-color: #38bdf8;
-    color: #fff;
-}
-
-.topbar-btn-logout {
-    background: rgba(239, 68, 68, 0.12);
-    color: #f87171;
-    border: 1px solid rgba(239, 68, 68, 0.3);
-}
-
-.topbar-btn-logout:hover {
-    background: rgba(239, 68, 68, 0.22);
-    border-color: #ef4444;
-    color: #fff;
-}
-
 /* Admin Card & Tables */
 .admin-card {
     background: #131b2e;
@@ -826,6 +774,17 @@
 
 .btn-xs-rose:hover {
     background: #ef4444;
+    color: #ffffff;
+}
+
+.btn-xs-amber {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.btn-xs-amber:hover {
+    background: #f59e0b;
     color: #ffffff;
 }
 
@@ -1020,13 +979,6 @@
         margin-bottom: 20px;
     }
 
-    .admin-topbar-actions {
-        width: 100%;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-
     .admin-main {
         padding: 16px 12px;
     }
@@ -1042,23 +994,6 @@
 }
 
 @media (max-width: 480px) {
-    .admin-user-badge {
-        display: none;
-    }
-
-    .admin-topbar-actions {
-        width: 100%;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-    }
-
-    .topbar-btn {
-        justify-content: center;
-        padding: 8px 10px;
-        font-size: 0.78rem;
-    }
-
     .duration-grid {
         grid-template-columns: 1fr;
     }
