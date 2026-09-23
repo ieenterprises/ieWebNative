@@ -5315,12 +5315,12 @@ def api_admin_get_users():
 @app.route('/api/admin/users/<target_user_id>/subscription', methods=['POST'])
 @admin_required
 def api_admin_update_user_subscription(target_user_id):
-    """Admin-only: Modify user subscription (+1 Mo, +3 Mo, +1 Yr, Lifetime, Deactivate)"""
+    """Admin-only: Modify user subscription (+1 Mo, +3 Mo, +1 Yr, Lifetime, Deactivate, Reactivate)"""
     try:
         data = request.json or {}
-        action = data.get('action') # 'add_1_month', 'add_3_months', 'add_1_year', 'lifetime', 'deactivate'
+        action = data.get('action') # 'add_1_month', 'add_3_months', 'add_1_year', 'lifetime', 'deactivate', 'reactivate'
 
-        valid_actions = ['add_1_month', 'add_3_months', 'add_1_year', 'lifetime', 'deactivate']
+        valid_actions = ['add_1_month', 'add_3_months', 'add_1_year', 'lifetime', 'deactivate', 'reactivate']
         if action not in valid_actions:
             return jsonify({'success': False, 'error': f'Invalid action. Must be one of: {", ".join(valid_actions)}'}), 400
 
@@ -5332,6 +5332,27 @@ def api_admin_update_user_subscription(target_user_id):
         new_status = 'active'
         new_expiry = None
 
+        # Fetch current record from SQLite and/or Firestore to preserve plan metadata
+        plan_id = current_sub.get('planId')
+        plan_name = current_sub.get('planName')
+        features = current_sub.get('features')
+
+        conn = get_db_connection()
+        row = conn.execute('SELECT subscription_status, subscription_expiry, plan_id, plan_name, features_json FROM users WHERE id = ?', (target_user_id,)).fetchone()
+        if row:
+            if not plan_id and 'plan_id' in row.keys() and row['plan_id']:
+                plan_id = row['plan_id']
+            if not plan_name and 'plan_name' in row.keys() and row['plan_name']:
+                plan_name = row['plan_name']
+            if (not features or len(features) == 0) and 'features_json' in row.keys() and row['features_json']:
+                try:
+                    features = json.loads(row['features_json'])
+                except Exception:
+                    pass
+            if curr_expiry is None and row['subscription_expiry'] is not None:
+                curr_expiry = row['subscription_expiry']
+                base_ms = curr_expiry if (curr_expiry and curr_expiry > now_ms) else now_ms
+
         if action == 'add_1_month':
             new_expiry = base_ms + (30 * 24 * 60 * 60 * 1000)
         elif action == 'add_3_months':
@@ -5342,34 +5363,83 @@ def api_admin_update_user_subscription(target_user_id):
             new_expiry = None
             new_status = 'active'
         elif action == 'deactivate':
-            new_expiry = None
             new_status = 'inactive'
+            new_expiry = curr_expiry # Preserve existing expiry timestamp so reactivation can resume if valid
+        elif action == 'reactivate':
+            new_status = 'active'
+            plans = get_subscription_plans()
+            matched_plan = next((p for p in plans if p.get('id') == plan_id), None) if plan_id else None
+            if not matched_plan and plans:
+                matched_plan = plans[0]
+                if not plan_id:
+                    plan_id = matched_plan.get('id')
+                if not plan_name:
+                    plan_name = matched_plan.get('name')
+
+            if matched_plan:
+                if not plan_name:
+                    plan_name = matched_plan.get('name')
+                if not features or len(features) == 0:
+                    features = matched_plan.get('features', list(ALL_FEATURE_IDS))
+
+            if not features or len(features) == 0:
+                features = list(ALL_FEATURE_IDS)
+
+            if curr_expiry and curr_expiry > now_ms:
+                new_expiry = curr_expiry
+            else:
+                months = matched_plan.get('months', 1) if matched_plan else 1
+                if months == 0 or plan_id == 'lifetime':
+                    new_expiry = None
+                else:
+                    new_expiry = now_ms + (months * 30 * 24 * 60 * 60 * 1000)
 
         # Update SQLite
-        conn = get_db_connection()
-        conn.execute(
-            'UPDATE users SET subscription_status = ?, subscription_expiry = ? WHERE id = ?',
-            (new_status, new_expiry, target_user_id)
-        )
+        features_json = json.dumps(features) if features else None
+        conn.execute('''
+            UPDATE users 
+            SET subscription_status = ?, subscription_expiry = ?,
+                plan_id = COALESCE(?, plan_id),
+                plan_name = COALESCE(?, plan_name),
+                features_json = COALESCE(?, features_json)
+            WHERE id = ?
+        ''', (new_status, new_expiry, plan_id, plan_name, features_json, target_user_id))
         conn.commit()
         conn.close()
 
         # Update Firestore
         if db:
             try:
-                db.collection('users').document(target_user_id).set({
+                fs_data = {
                     'subscriptionStatus': new_status,
                     'subscriptionExpiry': new_expiry,
                     'updatedAt': firestore.SERVER_TIMESTAMP
-                }, merge=True)
+                }
+                if plan_id:
+                    fs_data['planId'] = plan_id
+                if plan_name:
+                    fs_data['planName'] = plan_name
+                if features:
+                    fs_data['features'] = features
+                db.collection('users').document(target_user_id).set(fs_data, merge=True)
             except Exception as fe:
                 logger.warning(f"Error updating subscription in Firestore: {fe}")
 
+        action_messages = {
+            'add_1_month': 'Added 1 month to user subscription.',
+            'add_3_months': 'Added 3 months to user subscription.',
+            'add_1_year': 'Added 1 year to user subscription.',
+            'lifetime': 'User granted lifetime subscription.',
+            'deactivate': 'User subscription has been deactivated.',
+            'reactivate': 'User subscription has been reactivated successfully.'
+        }
+
         return jsonify({
             'success': True,
-            'message': f'Subscription updated successfully ({action}).',
+            'message': action_messages.get(action, f'Subscription updated successfully ({action}).'),
             'status': new_status,
-            'expiry': new_expiry
+            'expiry': new_expiry,
+            'planName': plan_name
         })
     except Exception as e:
         logger.exception("Error updating user subscription")
@@ -6973,6 +7043,14 @@ def start_build():
             'errorImagePath': config.get('error_image_path', existing_s.get('errorImagePath', '')),
             'errorImageUrl': config.get('error_image_url', existing_s.get('errorImageUrl', ''))
         }
+        has_security_build = (sub.get('role') == 'admin') or ('all' in sub.get('features', [])) or ('feat_security' in sub.get('features', []))
+        if not has_security_build:
+            settings_dict['enableSslPinning'] = False
+            settings_dict['sslPins'] = ''
+            settings_dict['enableBiometrics'] = False
+            settings_dict['enableAppLock'] = False
+            settings_dict['appLockPin'] = ''
+            settings_dict['enableSecureStorage'] = False
         settings_json = json.dumps(settings_dict)
 
         # Auto-record or associate project if user is authenticated
@@ -8290,6 +8368,17 @@ def create_project():
             'appLockPin': '',
             'enableSecureStorage': True
         })
+        user_sub = get_user_subscription(user_id)
+        is_admin = user_sub.get('role') == 'admin'
+        user_features = user_sub.get('features', [])
+        has_security = is_admin or ('all' in user_features) or ('feat_security' in user_features)
+        if not has_security:
+            settings_data['enableSslPinning'] = False
+            settings_data['sslPins'] = ''
+            settings_data['enableBiometrics'] = False
+            settings_data['enableAppLock'] = False
+            settings_data['appLockPin'] = ''
+            settings_data['enableSecureStorage'] = False
         settings_json = json.dumps(settings_data)
         keystore_json = json.dumps(data.get('keystoreData', {}))
         apple_json = json.dumps(data.get('appleData', {}))
@@ -8438,6 +8527,18 @@ def update_project(project_id):
         allowed_fields = ['name', 'webUrl', 'description', 'appVersion', 'buildNumber',
                           'packageName', 'iconUrl', 'splashUrl', 'errorUrl', 'settings', 'keystoreData', 'appleData', 'publishingData',
                           'builds', 'iconStoragePath', 'splashStoragePath', 'errorStoragePath', 'keystoreStoragePath', 'appleCertStoragePath', 'appleProfileStoragePath']
+
+        user_sub = get_user_subscription(user_id)
+        is_admin = user_sub.get('role') == 'admin'
+        user_features = user_sub.get('features', [])
+        has_security = is_admin or ('all' in user_features) or ('feat_security' in user_features)
+        if not has_security and 'settings' in data and isinstance(data['settings'], dict):
+            data['settings']['enableSslPinning'] = False
+            data['settings']['sslPins'] = ''
+            data['settings']['enableBiometrics'] = False
+            data['settings']['enableAppLock'] = False
+            data['settings']['appLockPin'] = ''
+            data['settings']['enableSecureStorage'] = False
 
         now = datetime.utcnow().isoformat()
 

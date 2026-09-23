@@ -919,7 +919,7 @@
                     </label>
 
                     <!-- Security & Authentication Section -->
-                    <div style="grid-column: 1 / -1; margin-top: 14px; margin-bottom: 6px; border-top: 1px solid var(--border); padding-top: 14px;">
+                    <div id="security-auth-section" style="grid-column: 1 / -1; margin-top: 14px; margin-bottom: 6px; border-top: 1px solid var(--border); padding-top: 14px;">
                         <h4 style="color: var(--text-primary); font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 6px 0;">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
@@ -1149,6 +1149,63 @@
                     }
                 });
             }
+
+            // Security & Authentication Gating
+            if (!userHasFeature('feat_security')) {
+                const secSection = document.getElementById('security-auth-section');
+                if (secSection && !secSection.querySelector('.sec-lock-badge')) {
+                    const badge = document.createElement('span');
+                    badge.className = 'sec-lock-badge';
+                    badge.style.cssText = 'background: rgba(244, 63, 94, 0.15); color: #f43f5e; border: 1px solid rgba(244, 63, 94, 0.3); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; margin-left: auto; display: inline-flex; align-items: center; gap: 4px;';
+                    badge.innerHTML = '🔒 Upgrade Required';
+                    const h4 = secSection.querySelector('h4');
+                    if (h4) {
+                        h4.style.display = 'flex';
+                        h4.style.alignItems = 'center';
+                        h4.style.width = '100%';
+                        h4.appendChild(badge);
+                    }
+                }
+
+                const secIds = [
+                    'setting-enable-ssl-pinning',
+                    'setting-enable-biometrics',
+                    'setting-enable-app-lock',
+                    'setting-enable-secure-storage'
+                ];
+                secIds.forEach(id => {
+                    const cb = document.getElementById(id);
+                    if (cb) {
+                        cb.checked = false;
+                        cb.disabled = true;
+                        const parentLabel = cb.closest('label');
+                        if (parentLabel && !parentLabel._secGated) {
+                            parentLabel._secGated = true;
+                            parentLabel.style.opacity = '0.55';
+                            parentLabel.style.cursor = 'not-allowed';
+                            parentLabel.addEventListener('click', function(e) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                promptFeatureUpgrade('Security & Authentication (Biometrics, SSL Pinning, App Lock)');
+                                return false;
+                            }, true);
+                        }
+                    }
+                });
+
+                ['enable-ssl-pinning', 'enable-biometrics', 'enable-app-lock', 'enable-secure-storage'].forEach(hid => {
+                    const h = document.getElementById(hid);
+                    if (h) h.checked = false;
+                });
+                const spHidden = document.getElementById('ssl-pins');
+                if (spHidden) spHidden.value = '';
+                const alpHidden = document.getElementById('app-lock-pin');
+                if (alpHidden) alpHidden.value = '';
+                const sslGrp = document.getElementById('ssl-pinning-group');
+                if (sslGrp) sslGrp.style.display = 'none';
+                const alpGrp = document.getElementById('app-lock-group');
+                if (alpGrp) alpGrp.style.display = 'none';
+            }
         }
 
         // Check authentication state
@@ -1218,12 +1275,13 @@
                 document.getElementById('enable-media-autoplay').checked = settings.enableMediaAutoplay === true;
                 document.getElementById('enable-camera').checked = settings.enableCamera === true;
                 document.getElementById('enable-microphone').checked = settings.enableMicrophone === true;
-                document.getElementById('enable-ssl-pinning').checked = settings.enableSslPinning === true;
-                document.getElementById('ssl-pins').value = settings.sslPins || '';
-                document.getElementById('enable-biometrics').checked = settings.enableBiometrics === true;
-                document.getElementById('enable-app-lock').checked = settings.enableAppLock === true;
-                document.getElementById('app-lock-pin').value = settings.appLockPin || '';
-                document.getElementById('enable-secure-storage').checked = settings.enableSecureStorage === true;
+                const hasSec = (currentUser && currentUser.role === 'admin') || (typeof userHasFeature === 'function' && userHasFeature('feat_security'));
+                document.getElementById('enable-ssl-pinning').checked = hasSec && settings.enableSslPinning === true;
+                document.getElementById('ssl-pins').value = hasSec ? (settings.sslPins || '') : '';
+                document.getElementById('enable-biometrics').checked = hasSec && settings.enableBiometrics === true;
+                document.getElementById('enable-app-lock').checked = hasSec && settings.enableAppLock === true;
+                document.getElementById('app-lock-pin').value = hasSec ? (settings.appLockPin || '') : '';
+                document.getElementById('enable-secure-storage').checked = hasSec && settings.enableSecureStorage === true;
 
                 // Sync settings checkboxes
                 syncSettingsFromHidden();
@@ -1532,6 +1590,22 @@
                 appLockPinSetting.value = appLockPinHidden.value;
             }
 
+            const hasSecSync = (currentUser && currentUser.role === 'admin') || (typeof userHasFeature === 'function' && userHasFeature('feat_security'));
+            if (!hasSecSync) {
+                ['setting-enable-ssl-pinning', 'setting-enable-biometrics', 'setting-enable-app-lock', 'setting-enable-secure-storage', 'enable-ssl-pinning', 'enable-biometrics', 'enable-app-lock', 'enable-secure-storage'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.checked = false;
+                });
+                const s1 = document.getElementById('setting-ssl-pins');
+                if (s1) s1.value = '';
+                const s2 = document.getElementById('ssl-pins');
+                if (s2) s2.value = '';
+                const a1 = document.getElementById('setting-app-lock-pin');
+                if (a1) a1.value = '';
+                const a2 = document.getElementById('app-lock-pin');
+                if (a2) a2.value = '';
+            }
+
             const sslGroup = document.getElementById('ssl-pinning-group');
             const sslCheck = document.getElementById('setting-enable-ssl-pinning');
             if (sslGroup && sslCheck) {
@@ -1639,6 +1713,8 @@
                     cloudAppleProfileUrl = await uploadFileToStorage(profileFile, profilePath);
                 }
 
+                const hasSecCloud = (currentUser && currentUser.role === 'admin') || (typeof userHasFeature === 'function' && userHasFeature('feat_security'));
+
                 // Build project data with file URLs
                 const projectData = {
                     name: document.getElementById('app-name').value,
@@ -1659,12 +1735,12 @@
                         enableMediaAutoplay: document.getElementById('enable-media-autoplay').checked,
                         enableCamera: document.getElementById('enable-camera').checked,
                         enableMicrophone: document.getElementById('enable-microphone').checked,
-                        enableSslPinning: document.getElementById('enable-ssl-pinning').checked,
-                        sslPins: document.getElementById('ssl-pins').value,
-                        enableBiometrics: document.getElementById('enable-biometrics').checked,
-                        enableAppLock: document.getElementById('enable-app-lock').checked,
-                        appLockPin: document.getElementById('app-lock-pin').value,
-                        enableSecureStorage: document.getElementById('enable-secure-storage').checked,
+                        enableSslPinning: hasSecCloud && document.getElementById('enable-ssl-pinning').checked,
+                        sslPins: hasSecCloud ? document.getElementById('ssl-pins').value : '',
+                        enableBiometrics: hasSecCloud && document.getElementById('enable-biometrics').checked,
+                        enableAppLock: hasSecCloud && document.getElementById('enable-app-lock').checked,
+                        appLockPin: hasSecCloud ? document.getElementById('app-lock-pin').value : '',
+                        enableSecureStorage: hasSecCloud && document.getElementById('enable-secure-storage').checked,
                         enableGooglePlayPublish: document.getElementById('enable-google-play-publish')?.checked || false,
                         playTrack: document.getElementById('play-track')?.value || 'internal',
                         playStatus: document.getElementById('play-status')?.value || 'draft',

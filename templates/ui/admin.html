@@ -840,7 +840,7 @@
                 const isSelf = u.id === currentAdminUid;
                 const roleBadge = isAdmin ? `<span class="badge badge-admin">Admin</span>` : `<span class="badge badge-user">User</span>`;
                 
-                let subBadge = `<span class="badge badge-inactive">Inactive</span>`;
+                let subBadge = `<span class="badge badge-inactive">${u.planName ? `Inactive (${u.planName})` : 'Inactive'}</span>`;
                 if (isAdmin) {
                     subBadge = `<span class="badge badge-active">Unlimited</span>`;
                 } else if (u.subscriptionStatus === 'active') {
@@ -861,7 +861,7 @@
 
                 // Action Column Logic:
                 // 1. Admin rows have ZERO action buttons (Admin is master admin in the application)
-                // 2. Regular user rows have ONLY Deactivate and Delete User buttons
+                // 2. Regular user rows have Deactivate / Reactivate toggle and Delete User buttons
                 let actionHtml = '';
                 if (isAdmin) {
                     actionHtml = `
@@ -873,13 +873,21 @@
                         </div>
                     `;
                 } else {
-                    const isDeactivatable = u.subscriptionStatus === 'active' || u.subscriptionStatus === 'pending';
+                    const isActiveOrPending = u.subscriptionStatus === 'active' || u.subscriptionStatus === 'pending';
+                    const toggleBtn = isActiveOrPending ? `
+                        <button type="button" class="btn-xs btn-xs-rose" onclick="updateSubscription('${u.id}', 'deactivate')" title="Deactivate Subscription">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+                            <span class="btn-text">Deactivate</span>
+                        </button>
+                    ` : `
+                        <button type="button" class="btn-xs btn-xs-emerald" onclick="updateSubscription('${u.id}', 'reactivate')" title="Reactivate Subscription">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                            <span class="btn-text">Reactivate</span>
+                        </button>
+                    `;
                     actionHtml = `
                         <div class="action-btns" style="justify-content: flex-end; gap: 8px;">
-                            <button type="button" class="btn-xs btn-xs-rose" onclick="updateSubscription('${u.id}', 'deactivate')" title="Deactivate Subscription" ${!isDeactivatable ? 'disabled style="opacity: 0.45; cursor: not-allowed;"' : ''}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
-                                <span class="btn-text">Deactivate</span>
-                            </button>
+                            ${toggleBtn}
                             <button type="button" class="btn-xs btn-xs-rose" onclick="openDeleteModal('${u.id}', '${u.email}')" title="Delete User Permanently">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                                 <span class="btn-text">Delete</span>

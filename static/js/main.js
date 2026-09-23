@@ -165,6 +165,19 @@ document.addEventListener('DOMContentLoaded', function() {
             appLockGroup.style.display = settingAppLock.checked ? 'block' : 'none';
         }
 
+        const hasSecModal = (window.currentUser && window.currentUser.role === 'admin') || (typeof window.userHasFeature !== 'function') || window.userHasFeature('feat_security');
+        if (!hasSecModal) {
+            ['setting-enable-ssl-pinning', 'setting-enable-biometrics', 'setting-enable-app-lock', 'setting-enable-secure-storage'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.checked = false;
+                    el.disabled = true;
+                }
+            });
+            if (sslPinningGroup) sslPinningGroup.style.display = 'none';
+            if (appLockGroup) appLockGroup.style.display = 'none';
+        }
+
         settingsOverlay.style.display = 'flex';
         document.body.style.overflow = 'hidden';
     }
@@ -193,6 +206,22 @@ document.addEventListener('DOMContentLoaded', function() {
         const appLockPinSetting = document.getElementById('setting-app-lock-pin');
         if (appLockPinHidden && appLockPinSetting) {
             appLockPinHidden.value = appLockPinSetting.value;
+        }
+
+        const hasSecSave = (window.currentUser && window.currentUser.role === 'admin') || (typeof window.userHasFeature !== 'function') || window.userHasFeature('feat_security');
+        if (!hasSecSave) {
+            ['enable-ssl-pinning', 'enable-biometrics', 'enable-app-lock', 'enable-secure-storage', 'setting-enable-ssl-pinning', 'setting-enable-biometrics', 'setting-enable-app-lock', 'setting-enable-secure-storage'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.checked = false;
+            });
+            const p1 = document.getElementById('ssl-pins');
+            if (p1) p1.value = '';
+            const p2 = document.getElementById('setting-ssl-pins');
+            if (p2) p2.value = '';
+            const p3 = document.getElementById('app-lock-pin');
+            if (p3) p3.value = '';
+            const p4 = document.getElementById('setting-app-lock-pin');
+            if (p4) p4.value = '';
         }
 
         closeSettingsDialog();
@@ -2238,17 +2267,18 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('setting-enable-media-autoplay').checked = project.enable_media_autoplay === true;
             document.getElementById('setting-enable-camera').checked = project.enable_camera === true;
             document.getElementById('setting-enable-microphone').checked = project.enable_microphone === true;
-            document.getElementById('setting-enable-ssl-pinning').checked = project.enable_ssl_pinning === true;
-            document.getElementById('setting-ssl-pins').value = project.ssl_pins || '';
-            document.getElementById('setting-enable-biometrics').checked = project.enable_biometrics === true;
-            document.getElementById('setting-enable-app-lock').checked = project.enable_app_lock === true;
-            document.getElementById('setting-app-lock-pin').value = project.app_lock_pin || '';
-            document.getElementById('setting-enable-secure-storage').checked = project.enable_secure_storage === true;
+            const hasSecLoad = (window.currentUser && window.currentUser.role === 'admin') || (typeof window.userHasFeature !== 'function') || window.userHasFeature('feat_security');
+            document.getElementById('setting-enable-ssl-pinning').checked = hasSecLoad && project.enable_ssl_pinning === true;
+            document.getElementById('setting-ssl-pins').value = hasSecLoad ? (project.ssl_pins || '') : '';
+            document.getElementById('setting-enable-biometrics').checked = hasSecLoad && project.enable_biometrics === true;
+            document.getElementById('setting-enable-app-lock').checked = hasSecLoad && project.enable_app_lock === true;
+            document.getElementById('setting-app-lock-pin').value = hasSecLoad ? (project.app_lock_pin || '') : '';
+            document.getElementById('setting-enable-secure-storage').checked = hasSecLoad && project.enable_secure_storage === true;
 
             const openedSslGrp = document.getElementById('ssl-pinning-group');
-            if (openedSslGrp) openedSslGrp.style.display = project.enable_ssl_pinning ? 'block' : 'none';
+            if (openedSslGrp) openedSslGrp.style.display = (hasSecLoad && project.enable_ssl_pinning) ? 'block' : 'none';
             const openedLockGrp = document.getElementById('app-lock-group');
-            if (openedLockGrp) openedLockGrp.style.display = project.enable_app_lock ? 'block' : 'none';
+            if (openedLockGrp) openedLockGrp.style.display = (hasSecLoad && project.enable_app_lock) ? 'block' : 'none';
 
             // Keystore info
             if (project.keystore_password) {
