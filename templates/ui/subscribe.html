@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/subscription.css">
     <script src="/static/js/theme.js"></script>
+    <script src="https://js.paystack.co/v1/inline.js"></script>
     <style>
         html, body {
             overflow-x: hidden !important;
@@ -119,7 +120,7 @@
 
             <!-- Pricing / Duration Selection -->
             <div class="pricing-section">
-                <h2 class="section-heading">1. Select Subscription Duration</h2>
+                <h2 class="section-heading">1. Select Subscription Plan</h2>
                 <p class="section-desc">Choose a billing cycle that suits your development workflow. All plans unlock unlimited native builds.</p>
                 <div class="duration-grid" id="duration-grid">
                     <div style="grid-column: 1 / -1; text-align: center; color: var(--sub-text-muted); padding: 30px;">
@@ -128,76 +129,201 @@
                 </div>
             </div>
 
-            <!-- Billing Details & Receipt Upload Split -->
-            <div class="billing-split">
-                <!-- Left: Bank Card -->
-                <div class="bank-card">
-                    <div class="bank-card-header">
-                        <span class="bank-card-title">Direct Bank Transfer</span>
-                        <div class="bank-chip"></div>
+            <!-- Payment Method Selection -->
+            <div class="payment-method-selector-section" style="margin-top: 36px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 12px;">
+                    <div>
+                        <h2 class="section-heading" style="margin-bottom: 4px;">2. Choose Payment Method</h2>
+                        <p class="section-desc" style="margin-bottom: 0;">Select automated instant payment or direct bank transfer.</p>
                     </div>
-                    <div class="bank-row">
-                        <div class="bank-label">Bank Name</div>
-                        <div class="bank-val" id="bank-name">Loading...</div>
+                    <!-- Payment Methods Switcher Tabs -->
+                    <div class="payment-tabs-bar" style="display: inline-flex; background: var(--sub-card); padding: 5px; border-radius: 14px; border: 1px solid var(--sub-border); gap: 6px;">
+                        <button type="button" class="pay-tab-btn active" id="tab-btn-instant" onclick="switchPaymentTab('instant')">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                            <span>Instant Pay (Paystack)</span>
+                            <span class="pay-tab-badge">Instant</span>
+                        </button>
+                        <button type="button" class="pay-tab-btn" id="tab-btn-bank" onclick="switchPaymentTab('bank')">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+                            <span>Direct Bank Transfer</span>
+                        </button>
                     </div>
-                    <div class="bank-row">
-                        <div class="bank-label">Account Name</div>
-                        <div class="bank-val" id="account-name">Loading...</div>
-                    </div>
-                    <div class="bank-row">
-                        <div class="bank-label">Account Number</div>
-                        <div class="bank-val">
-                            <span id="account-no">Loading...</span>
-                            <button type="button" class="copy-btn" id="copy-acc-btn" title="Copy account number">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                <span id="copy-text">Copy</span>
-                            </button>
+                </div>
+            </div>
+
+            <!-- Panel 1: Instant Online Payment (Paystack) -->
+            <div id="payment-panel-instant" class="payment-method-panel" style="display: block;">
+                <div class="billing-split">
+                    <!-- Left: Instant Checkout Summary Card -->
+                    <div class="bank-card" style="background: linear-gradient(135deg, #091e3a 0%, #0d2b4d 100%); border-color: rgba(56, 189, 248, 0.35);">
+                        <div class="bank-card-header">
+                            <span class="bank-card-title" style="display: flex; align-items: center; gap: 8px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                                Instant Online Checkout
+                            </span>
+                            <span style="background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px;">AUTOMATED</span>
+                        </div>
+
+                        <div class="bank-row">
+                            <div class="bank-label">Payment Gateway</div>
+                            <div class="bank-val" style="display: flex; align-items: center; gap: 6px; font-weight: 700; color: #fff;">
+                                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
+                                Paystack Secured Checkout
+                            </div>
+                        </div>
+
+                        <div class="bank-row">
+                            <div class="bank-label">Accepted Channels</div>
+                            <div class="bank-val" style="font-size: 0.85rem; color: #cbd5e1;">
+                                Cards, Bank Transfer, USSD, Apple Pay
+                            </div>
+                        </div>
+
+                        <div class="bank-row">
+                            <div class="bank-label">Activation Speed</div>
+                            <div class="bank-val" style="color: #38bdf8; font-weight: 600;">
+                                Instant (Under 5 Seconds)
+                            </div>
+                        </div>
+
+                        <div class="bank-total-box">
+                            <div>
+                                <div class="bank-label">Selected Plan</div>
+                                <div style="font-weight: 700;" id="instant-selected-plan-label"><span style="color: #94a3b8; font-weight: 500; font-size: 0.92rem;">No plan selected</span></div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div class="bank-label">Total Amount</div>
+                                <div class="total-amount-display" id="instant-total-amount">—</div>
+                            </div>
                         </div>
                     </div>
-                    <div class="bank-total-box">
+
+                    <!-- Right: Instant Pay Action Card -->
+                    <div class="receipt-upload-card" style="display: flex; flex-direction: column; justify-content: space-between;">
                         <div>
-                            <div class="bank-label">Selected Plan</div>
-                            <div style="font-weight: 700;" id="selected-duration-label"><span style="color: #94a3b8; font-weight: 500; font-size: 0.92rem;">No plan selected</span></div>
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0;">Instant Automated Activation</h3>
+                                <span style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● No receipt needed</span>
+                            </div>
+                            <p style="font-size: 0.85rem; color: var(--sub-text-muted); margin-bottom: 18px;">
+                                Pay securely online through Paystack. Once your payment is completed, our system automatically verifies the transaction and instantly unlocks your chosen plan!
+                            </p>
+
+                            <!-- Alert Box for Instant Pay -->
+                            <div id="instant-alert" style="display: none; padding: 12px; border-radius: 10px; margin-bottom: 16px; font-size: 0.88rem;"></div>
+
+                            <!-- Channel Badges -->
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--sub-border); border-radius: 10px;">
+                                <span style="font-size: 0.78rem; font-weight: 600; color: var(--sub-text-muted); margin-right: 4px;">Accepted:</span>
+                                <span style="font-size: 0.75rem; font-weight: 600; background: var(--sub-card); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--sub-border);">💳 Debit / Credit Card</span>
+                                <span style="font-size: 0.75rem; font-weight: 600; background: var(--sub-card); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--sub-border);">🏦 Bank Transfer</span>
+                                <span style="font-size: 0.75rem; font-weight: 600; background: var(--sub-card); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--sub-border);">📱 USSD</span>
+                                <span style="font-size: 0.75rem; font-weight: 600; background: var(--sub-card); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--sub-border);">🍏 Apple Pay</span>
+                            </div>
                         </div>
-                        <div style="text-align: right;">
-                            <div class="bank-label">Total Amount</div>
-                            <div class="total-amount-display" id="total-amount">—</div>
+
+                        <div>
+                            <button type="button" class="btn-paystack-checkout" id="btn-paystack-instant" onclick="initiatePaystackPayment()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                                <span id="paystack-btn-label">Pay Instantly with Paystack</span>
+                            </button>
+
+                            <!-- Secondary links: Direct hosted page & Verify Reference -->
+                            <div style="margin-top: 14px; display: flex; align-items: center; justify-content: space-between; font-size: 0.8rem; color: var(--sub-text-muted); flex-wrap: wrap; gap: 8px;">
+                                <a href="https://paystack.shop/pay/51llaemz1j" id="paystack-page-link" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                                    <span>Open Hosted Paystack Page</span>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                </a>
+                                <button type="button" onclick="toggleRefVerificationBox()" style="background: none; border: none; color: var(--sub-text-muted); cursor: pointer; text-decoration: underline; font-size: 0.8rem;">
+                                    Already paid? Verify Reference
+                                </button>
+                            </div>
+
+                            <!-- Manual Reference Verification Box (Hidden by default) -->
+                            <div id="ref-verify-box" style="display: none; margin-top: 14px; padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--sub-border); border-radius: 10px;">
+                                <div style="font-size: 0.82rem; font-weight: 600; margin-bottom: 6px;">Enter Paystack Transaction Reference:</div>
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="text" id="manual-paystack-ref" placeholder="e.g. ref code or transaction ID" style="flex: 1; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--sub-border); background: var(--sub-card); color: var(--sub-text); font-size: 0.85rem;">
+                                    <button type="button" onclick="submitManualReference()" class="btn-xs btn-xs-cyan" style="padding: 8px 16px; font-weight: 600; border-radius: 8px; cursor: pointer; background: #0284c7; color: #fff; border: none;">Verify</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <!-- Right: Receipt Upload Form -->
-                <div class="receipt-upload-card">
-                    <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 8px;">2. Upload Proof of Payment</h3>
-                    <p style="font-size: 0.85rem; color: var(--sub-text-muted); margin-bottom: 16px;">
-                        Transfer the exact amount to the account on the left, then upload your transaction receipt or screenshot below.
-                    </p>
-
-                    <form id="subscribe-form">
-                        <input type="file" id="receipt-input" name="receipt" accept="image/*,.pdf" style="display: none;" required>
-                        
-                        <div class="dropzone" id="dropzone">
-                            <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                            <div class="dropzone-text">Click to browse or drag & drop receipt</div>
-                            <div class="dropzone-sub">Supports PNG, JPG, JPEG, WEBP or PDF (Max 15MB)</div>
+            <!-- Panel 2: Direct Bank Transfer (Preserved existing flow) -->
+            <div id="payment-panel-bank" class="payment-method-panel" style="display: none;">
+                <div class="billing-split">
+                    <!-- Left: Bank Card -->
+                    <div class="bank-card">
+                        <div class="bank-card-header">
+                            <span class="bank-card-title">Direct Bank Transfer</span>
+                            <div class="bank-chip"></div>
                         </div>
-
-                        <div id="file-info" class="selected-file-info" style="display: none;">
-                            <span id="file-name" style="word-break: break-all;">receipt.png</span>
-                            <button type="button" class="remove-file-btn" id="remove-file-btn">Remove</button>
+                        <div class="bank-row">
+                            <div class="bank-label">Bank Name</div>
+                            <div class="bank-val" id="bank-name">Loading...</div>
                         </div>
+                        <div class="bank-row">
+                            <div class="bank-label">Account Name</div>
+                            <div class="bank-val" id="account-name">Loading...</div>
+                        </div>
+                        <div class="bank-row">
+                            <div class="bank-label">Account Number</div>
+                            <div class="bank-val">
+                                <span id="account-no">Loading...</span>
+                                <button type="button" class="copy-btn" id="copy-acc-btn" title="Copy account number">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                    <span id="copy-text">Copy</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="bank-total-box">
+                            <div>
+                                <div class="bank-label">Selected Plan</div>
+                                <div style="font-weight: 700;" id="selected-duration-label"><span style="color: #94a3b8; font-weight: 500; font-size: 0.92rem;">No plan selected</span></div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div class="bank-label">Total Amount</div>
+                                <div class="total-amount-display" id="total-amount">—</div>
+                            </div>
+                        </div>
+                    </div>
 
-                        <div id="form-alert" style="display: none; padding: 12px; border-radius: 10px; margin-bottom: 16px; font-size: 0.88rem;"></div>
+                    <!-- Right: Receipt Upload Form -->
+                    <div class="receipt-upload-card">
+                        <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 8px;">Upload Proof of Payment</h3>
+                        <p style="font-size: 0.85rem; color: var(--sub-text-muted); margin-bottom: 16px;">
+                            Transfer the exact amount to the account on the left, then upload your transaction receipt or screenshot below.
+                        </p>
 
-                        <button type="submit" class="btn-submit-payment" id="submit-btn">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                            <span id="submit-text">Submit Payment Proof</span>
-                        </button>
-                    </form>
+                        <form id="subscribe-form">
+                            <input type="file" id="receipt-input" name="receipt" accept="image/*,.pdf" style="display: none;" required>
+                            
+                            <div class="dropzone" id="dropzone">
+                                <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                                <div class="dropzone-text">Click to browse or drag & drop receipt</div>
+                                <div class="dropzone-sub">Supports PNG, JPG, JPEG, WEBP or PDF (Max 15MB)</div>
+                            </div>
+
+                            <div id="file-info" class="selected-file-info" style="display: none;">
+                                <span id="file-name" style="word-break: break-all;">receipt.png</span>
+                                <button type="button" class="remove-file-btn" id="remove-file-btn">Remove</button>
+                            </div>
+
+                            <div id="form-alert" style="display: none; padding: 12px; border-radius: 10px; margin-bottom: 16px; font-size: 0.88rem;"></div>
+
+                            <button type="submit" class="btn-submit-payment" id="submit-btn">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                <span id="submit-text">Submit Payment Proof</span>
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
 
@@ -330,18 +456,220 @@
             updateTotalDisplay();
         }
 
+        function switchPaymentTab(tab) {
+            const instantTabBtn = document.getElementById('tab-btn-instant');
+            const bankTabBtn = document.getElementById('tab-btn-bank');
+            const instantPanel = document.getElementById('payment-panel-instant');
+            const bankPanel = document.getElementById('payment-panel-bank');
+
+            if (tab === 'instant') {
+                if (instantTabBtn) instantTabBtn.classList.add('active');
+                if (bankTabBtn) bankTabBtn.classList.remove('active');
+                if (instantPanel) instantPanel.style.display = 'block';
+                if (bankPanel) bankPanel.style.display = 'none';
+            } else {
+                if (bankTabBtn) bankTabBtn.classList.add('active');
+                if (instantTabBtn) instantTabBtn.classList.remove('active');
+                if (bankPanel) bankPanel.style.display = 'block';
+                if (instantPanel) instantPanel.style.display = 'none';
+            }
+        }
+
+        function showInstantAlert(msg, isSuccess) {
+            const alertBox = document.getElementById('instant-alert');
+            if (!alertBox) return;
+            alertBox.style.display = 'block';
+            if (isSuccess === true) {
+                alertBox.style.background = 'rgba(16, 185, 129, 0.15)';
+                alertBox.style.border = '1px solid #10b981';
+                alertBox.style.color = '#10b981';
+            } else if (isSuccess === false) {
+                alertBox.style.background = 'rgba(239, 68, 68, 0.15)';
+                alertBox.style.border = '1px solid #ef4444';
+                alertBox.style.color = '#ef4444';
+            } else {
+                alertBox.style.background = 'rgba(56, 189, 248, 0.15)';
+                alertBox.style.border = '1px solid #38bdf8';
+                alertBox.style.color = '#38bdf8';
+            }
+            alertBox.textContent = msg;
+        }
+
+        function toggleRefVerificationBox(forceOpen) {
+            const box = document.getElementById('ref-verify-box');
+            if (!box) return;
+            if (forceOpen === true) {
+                box.style.display = 'block';
+            } else {
+                box.style.display = (box.style.display === 'none' || !box.style.display) ? 'block' : 'none';
+            }
+        }
+
+        async function submitManualReference() {
+            const input = document.getElementById('manual-paystack-ref');
+            const ref = input ? input.value.trim() : '';
+            if (!ref) {
+                showInstantAlert('Please enter your Paystack transaction reference.', false);
+                return;
+            }
+            const planId = selectedPlan ? selectedPlan.id : '';
+            verifyAndActivatePaystack(ref, planId);
+        }
+
         function updateTotalDisplay() {
             const totalEl = document.getElementById('total-amount');
             const durEl = document.getElementById('selected-duration-label');
+            const instantTotalEl = document.getElementById('instant-total-amount');
+            const instantPlanEl = document.getElementById('instant-selected-plan-label');
+            const paystackBtnLabel = document.getElementById('paystack-btn-label');
+            const paystackPageLink = document.getElementById('paystack-page-link');
+
             if (!selectedPlan) {
-                if (durEl) durEl.innerHTML = '<span style="color: #94a3b8; font-weight: 500; font-size: 0.92rem;">No plan selected</span>';
+                const placeholder = '<span style="color: #94a3b8; font-weight: 500; font-size: 0.92rem;">No plan selected</span>';
+                if (durEl) durEl.innerHTML = placeholder;
                 if (totalEl) totalEl.textContent = '—';
+                if (instantPlanEl) instantPlanEl.innerHTML = placeholder;
+                if (instantTotalEl) instantTotalEl.textContent = '—';
+                if (paystackBtnLabel) paystackBtnLabel.textContent = 'Pay Instantly with Paystack';
                 return;
             }
+
             const total = selectedPlan.price;
             const durationLabel = selectedPlan.name || (selectedPlan.months === 1 ? '1 Month' : selectedPlan.months + ' Months');
+
             if (totalEl) totalEl.textContent = formatNaira(total);
             if (durEl) durEl.textContent = durationLabel;
+            if (instantTotalEl) instantTotalEl.textContent = formatNaira(total);
+            if (instantPlanEl) instantPlanEl.textContent = durationLabel;
+            if (paystackBtnLabel) paystackBtnLabel.textContent = 'Pay Instantly with Paystack (' + formatNaira(total) + ')';
+
+            if (paystackPageLink) {
+                const userEmail = encodeURIComponent('{{ user.email }}');
+                const baseUrl = paymentSettings.paystackPaymentUrl || 'https://paystack.shop/pay/51llaemz1j';
+                paystackPageLink.href = baseUrl + '?amount=' + total + '&email=' + userEmail + '&read-only=amount,email';
+            }
+        }
+
+        function initiatePaystackPayment() {
+            if (!selectedPlan || !selectedPlan.id) {
+                showInstantAlert('Please select a subscription plan above before proceeding to payment.', false);
+                const grid = document.getElementById('duration-grid');
+                if (grid) grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+
+            const btn = document.getElementById('btn-paystack-instant');
+            const btnLabel = document.getElementById('paystack-btn-label');
+            if (btn) btn.disabled = true;
+            if (btnLabel) btnLabel.textContent = 'Opening Secure Checkout...';
+
+            const pubKey = paymentSettings.paystackPublicKey || 'pk_live_3322678923d97b73b294073e508e125e843c4909';
+            const userEmail = '{{ user.email }}' || 'billing@iewebnative.com';
+            const planPriceKobo = Math.round(Number(selectedPlan.price) * 100);
+            const ref = 'IWN_' + Date.now() + '_' + Math.floor(Math.random() * 1000000);
+
+            if (typeof PaystackPop === 'undefined') {
+                console.warn('PaystackPop inline library not available. Redirecting to hosted link.');
+                const targetUrl = (paymentSettings.paystackPaymentUrl || 'https://paystack.shop/pay/51llaemz1j') +
+                    '?amount=' + selectedPlan.price +
+                    '&email=' + encodeURIComponent(userEmail) +
+                    '&read-only=amount,email';
+                window.open(targetUrl, '_blank');
+                if (btn) btn.disabled = false;
+                if (btnLabel) btnLabel.textContent = 'Pay Instantly with Paystack (' + formatNaira(selectedPlan.price) + ')';
+                showInstantAlert('Opened Paystack checkout in a new window. Once completed, enter your reference below to activate.', true);
+                toggleRefVerificationBox(true);
+                return;
+            }
+
+            try {
+                const handler = PaystackPop.setup({
+                    key: pubKey,
+                    email: userEmail,
+                    amount: planPriceKobo,
+                    currency: 'NGN',
+                    ref: ref,
+                    metadata: {
+                        custom_fields: [
+                            { display_name: "Plan Name", variable_name: "plan_name", value: selectedPlan.name },
+                            { display_name: "Plan ID", variable_name: "plan_id", value: selectedPlan.id },
+                            { display_name: "User ID", variable_name: "user_id", value: '{{ user.id }}' }
+                        ]
+                    },
+                    callback: function(response) {
+                        if (btnLabel) btnLabel.textContent = 'Verifying Transaction...';
+                        verifyAndActivatePaystack(response.reference, selectedPlan.id);
+                    },
+                    onClose: function() {
+                        if (btn) btn.disabled = false;
+                        if (btnLabel && selectedPlan) btnLabel.textContent = 'Pay Instantly with Paystack (' + formatNaira(selectedPlan.price) + ')';
+                    }
+                });
+                handler.openIframe();
+            } catch (err) {
+                console.error('Error opening Paystack modal:', err);
+                if (btn) btn.disabled = false;
+                if (btnLabel && selectedPlan) btnLabel.textContent = 'Pay Instantly with Paystack (' + formatNaira(selectedPlan.price) + ')';
+                const targetUrl = (paymentSettings.paystackPaymentUrl || 'https://paystack.shop/pay/51llaemz1j') +
+                    '?amount=' + selectedPlan.price +
+                    '&email=' + encodeURIComponent(userEmail) +
+                    '&read-only=amount,email';
+                window.open(targetUrl, '_blank');
+                toggleRefVerificationBox(true);
+            }
+        }
+
+        async function verifyAndActivatePaystack(reference, planId) {
+            showInstantAlert('Verifying your payment with Paystack and activating account...', null);
+
+            try {
+                const res = await fetch('/api/paystack/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reference: reference, planId: planId })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    showInstantAlert('🎉 ' + (data.message || 'Payment confirmed! Subscription active.'), true);
+
+                    const statusCardContainer = document.getElementById('status-card-container');
+                    if (statusCardContainer) {
+                        statusCardContainer.innerHTML = `
+                            <div class="sub-status-card status-active">
+                                <div class="sub-status-info">
+                                    <div class="sub-status-icon-wrap">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    </div>
+                                    <div class="sub-status-text">
+                                        <h3>Active Subscription — ${data.activation ? data.activation.plan_name : 'Activated'}</h3>
+                                        <p>Your subscription is active and all features have been unlocked!</p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <span class="badge badge-active">Active</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
+                    }, 2200);
+                } else {
+                    showInstantAlert(data.error || 'Payment verification failed.', false);
+                    const btn = document.getElementById('btn-paystack-instant');
+                    const btnLabel = document.getElementById('paystack-btn-label');
+                    if (btn) btn.disabled = false;
+                    if (btnLabel && selectedPlan) btnLabel.textContent = 'Pay Instantly with Paystack (' + formatNaira(selectedPlan.price) + ')';
+                }
+            } catch (err) {
+                showInstantAlert('Network error during verification: ' + err.message, false);
+                const btn = document.getElementById('btn-paystack-instant');
+                const btnLabel = document.getElementById('paystack-btn-label');
+                if (btn) btn.disabled = false;
+                if (btnLabel && selectedPlan) btnLabel.textContent = 'Pay Instantly with Paystack (' + formatNaira(selectedPlan.price) + ')';
+            }
         }
 
         // Load Payment Settings and Subscription Plans
@@ -365,6 +693,12 @@
                             supLink.href = 'mailto:' + paymentSettings.contactEmail;
                             supLink.textContent = paymentSettings.contactEmail;
                         }
+                    }
+
+                    if (paymentSettings.instantPaymentEnabled === false) {
+                        const instantTab = document.getElementById('tab-btn-instant');
+                        if (instantTab) instantTab.style.display = 'none';
+                        switchPaymentTab('bank');
                     }
 
                     const plans = data.plans || (paymentSettings.plans && Array.isArray(paymentSettings.plans) ? paymentSettings.plans : null);

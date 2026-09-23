@@ -797,7 +797,11 @@ def get_payment_settings():
         "accountName": "ieWebNative Inc",
         "accountNo": "0123456789",
         "contactEmail": "billing@iewebnative.com",
-        "contactPhone": "+2348000000000"
+        "contactPhone": "+2348000000000",
+        "paystackPaymentUrl": "https://paystack.shop/pay/51llaemz1j",
+        "paystackPublicKey": "pk_live_3322678923d97b73b294073e508e125e843c4909",
+        "paystackSecretKey": os.getenv("PAYSTACK_SECRET_KEY", ""),
+        "instantPaymentEnabled": True
     }
     if db:
         try:
@@ -817,6 +821,9 @@ def get_payment_settings():
             default_settings.update(data)
     except Exception as e:
         logger.debug(f"SQLite payment settings read notice: {e}")
+
+    if not default_settings.get("paystackSecretKey"):
+        default_settings["paystackSecretKey"] = os.getenv("PAYSTACK_SECRET_KEY", "")
 
     # Ensure all duration prices are valid positive integers
     try:
@@ -1186,6 +1193,8 @@ def get_user_subscription(user_id):
         'is_active': is_active,
         'planId': plan_id,
         'planName': plan_name,
+        'plan_id': plan_id,
+        'plan_name': plan_name,
         'features': features
     }
 
@@ -5590,6 +5599,26 @@ def api_payment_settings():
     if request.method == 'GET':
         settings_data = get_payment_settings()
         settings_data['plans'] = get_subscription_plans()
+
+        # Check if caller is admin
+        auth_user_id = session.get('user_id')
+        is_admin = False
+        if not auth_user_id:
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer ') and firebase_initialized:
+                try:
+                    decoded = firebase_auth.verify_id_token(auth_header.split('Bearer ')[1].strip())
+                    auth_user_id = decoded.get('uid')
+                except Exception:
+                    pass
+        if auth_user_id:
+            sub = get_user_subscription(auth_user_id)
+            if sub.get('role') == 'admin':
+                is_admin = True
+
+        if not is_admin:
+            settings_data.pop('paystackSecretKey', None)
+
         return jsonify({'success': True, 'settings': settings_data, 'plans': settings_data['plans']})
 
     # POST - Admin only
@@ -5638,6 +5667,16 @@ def api_payment_settings():
             current_settings['contactEmail'] = str(data['contactEmail']).strip()
         if 'contactPhone' in data:
             current_settings['contactPhone'] = str(data['contactPhone']).strip()
+        if 'paystackPaymentUrl' in data:
+            current_settings['paystackPaymentUrl'] = str(data['paystackPaymentUrl']).strip()
+        if 'paystackPublicKey' in data:
+            current_settings['paystackPublicKey'] = str(data['paystackPublicKey']).strip()
+        if 'paystackSecretKey' in data:
+            sec = str(data['paystackSecretKey']).strip()
+            if sec and not sec.startswith('***'):
+                current_settings['paystackSecretKey'] = sec
+        if 'instantPaymentEnabled' in data:
+            current_settings['instantPaymentEnabled'] = bool(data['instantPaymentEnabled'])
 
         save_payment_settings(current_settings)
         return jsonify({'success': True, 'settings': current_settings, 'message': 'Payment settings updated successfully.'})
@@ -5782,6 +5821,285 @@ def api_subscribe_submit():
         return jsonify({'success': False, 'error': f'Failed to submit receipt: {str(e)}'}), 500
 
 
+def activate_user_subscription(user_id, plan_id, months=None, payment_method='paystack', reference=None, amount_paid=0):
+    """
+    Activates or extends a user's subscription for the chosen plan.
+    Updates SQLite, Cloud Firestore, session, and records an approved subscription transaction.
+    """
+    active_plans = get_subscription_plans()
+    matched_plan = next((p for p in active_plans if p.get('id') == plan_id), None)
+    if not matched_plan and active_plans:
+        matched_plan = active_plans[0]
+        plan_id = matched_plan.get('id')
+
+    plan_name = matched_plan.get('name', 'Active Subscription') if matched_plan else 'Active Subscription'
+    if months is None:
+        try:
+            months = int(matched_plan.get('months', 1)) if matched_plan else 1
+            if months < 1:
+                months = 1
+        except Exception:
+            months = 1
+
+    plan_features = matched_plan.get('features') if matched_plan else None
+    if not plan_features or not isinstance(plan_features, list):
+        plan_features = list(ALL_FEATURE_IDS)
+
+    # Calculate expiration date
+    now_ms = int(time.time() * 1000)
+    current_sub = get_user_subscription(user_id)
+    curr_expiry = current_sub.get('expiry')
+    base_ms = curr_expiry if (curr_expiry and curr_expiry > now_ms) else now_ms
+    new_expiry = base_ms + (months * 30 * 24 * 60 * 60 * 1000)
+
+    # 1. Update SQLite
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE users SET subscription_status = 'active', subscription_expiry = ?, plan_id = ?, plan_name = ?, features_json = ? WHERE id = ?",
+        (new_expiry, plan_id, plan_name, json.dumps(plan_features), user_id)
+    )
+
+    # Fetch user email
+    user_row = conn.execute("SELECT email FROM users WHERE id = ?", (user_id,)).fetchone()
+    user_email = user_row['email'] if user_row and user_row['email'] else session.get('user_email', '')
+
+    # Record in subscription_requests table
+    request_id = str(uuid.uuid4())
+    receipt_marker = f"{payment_method}:{reference}" if reference else f"{payment_method}:direct"
+    try:
+        conn.execute(
+            'INSERT INTO subscription_requests (id, user_id, email, months_requested, receipt_url, status, created_at, plan_id, plan_name, features_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (request_id, user_id, user_email, months, receipt_marker, 'approved', now_ms, plan_id, plan_name, json.dumps(plan_features))
+        )
+    except Exception as e:
+        logger.warning(f"Could not record subscription_request: {e}")
+
+    conn.commit()
+    conn.close()
+
+    # 2. Update session if active user
+    if session.get('user_id') == user_id:
+        session['subscription_status'] = 'active'
+        session['subscription_expiry'] = new_expiry
+        session['plan_id'] = plan_id
+        session['plan_name'] = plan_name
+        session['features'] = plan_features
+
+    # 3. Update Cloud Firestore
+    if db:
+        try:
+            db.collection('users').document(user_id).set({
+                'subscriptionStatus': 'active',
+                'subscriptionExpiry': new_expiry,
+                'planId': plan_id,
+                'planName': plan_name,
+                'features': plan_features,
+                'updatedAt': firestore.SERVER_TIMESTAMP
+            }, merge=True)
+            db.collection('subscription_requests').document(request_id).set({
+                'id': request_id,
+                'userId': user_id,
+                'email': user_email,
+                'monthsRequested': months,
+                'receiptUrl': receipt_marker,
+                'status': 'approved',
+                'planId': plan_id,
+                'planName': plan_name,
+                'features': plan_features,
+                'paymentMethod': payment_method,
+                'reference': reference,
+                'amountPaid': amount_paid,
+                'createdAt': now_ms,
+                'updatedAt': firestore.SERVER_TIMESTAMP
+            }, merge=True)
+        except Exception as fe:
+            logger.warning(f"Error syncing instant subscription activation to Firestore: {fe}")
+
+    return {
+        'success': True,
+        'user_id': user_id,
+        'plan_id': plan_id,
+        'plan_name': plan_name,
+        'months': months,
+        'features': plan_features,
+        'new_expiry': new_expiry,
+        'request_id': request_id
+    }
+
+
+@app.route('/api/paystack/verify', methods=['POST'])
+@firebase_auth_required
+def api_paystack_verify():
+    """Verify Paystack payment reference and automatically activate user subscription"""
+    try:
+        user_id = request.user['uid']
+        user_email = request.user.get('email') or session.get('user_email', '')
+
+        # Admins do not need a subscription
+        sub = get_user_subscription(user_id)
+        if sub.get('role') == 'admin':
+            return jsonify({
+                'success': True,
+                'message': 'You have permanent administrator access and do not require a subscription.'
+            })
+
+        data = request.json or {}
+        reference = (data.get('reference') or '').strip()
+        plan_id = (data.get('planId') or '').strip()
+
+        if not reference:
+            return jsonify({'success': False, 'error': 'Payment transaction reference is required.'}), 400
+
+        active_plans = get_subscription_plans()
+        if not active_plans:
+            return jsonify({'success': False, 'error': 'No active subscription plans found.'}), 400
+
+        matched_plan = next((p for p in active_plans if p.get('id') == plan_id), None)
+        if not matched_plan:
+            matched_plan = active_plans[0]
+            plan_id = matched_plan.get('id')
+
+        expected_naira = int(matched_plan.get('price', 0))
+        expected_kobo = expected_naira * 100
+
+        # Check if reference was already used
+        conn = get_db_connection()
+        already_used = conn.execute(
+            "SELECT id FROM subscription_requests WHERE receipt_url = ? AND status = 'approved'",
+            (f"paystack:{reference}",)
+        ).fetchone()
+        conn.close()
+
+        if already_used:
+            return jsonify({
+                'success': True,
+                'message': 'This transaction has already been verified and activated.',
+                'alreadyActivated': True
+            })
+
+        payment_settings = get_payment_settings()
+        secret_key = payment_settings.get('paystackSecretKey') or os.getenv('PAYSTACK_SECRET_KEY', '')
+
+        amount_paid_naira = expected_naira
+
+        if secret_key:
+            # Query Paystack verification API
+            verify_url = f"https://api.paystack.co/transaction/verify/{reference}"
+            headers = {
+                "Authorization": f"Bearer {secret_key}",
+                "Content-Type": "application/json"
+            }
+            resp = requests.get(verify_url, headers=headers, timeout=15)
+            res_data = resp.json() if resp.status_code == 200 else {}
+
+            if not res_data.get('status'):
+                err_msg = res_data.get('message', 'Paystack transaction verification failed.')
+                logger.warning(f"Paystack verification failed for ref {reference}: {err_msg}")
+                return jsonify({'success': False, 'error': f"Verification error: {err_msg}"}), 400
+
+            tx_data = res_data.get('data', {})
+            tx_status = tx_data.get('status')
+            if tx_status != 'success':
+                return jsonify({
+                    'success': False,
+                    'error': f"Transaction status is '{tx_status}'. Only successful payments can be activated."
+                }), 400
+
+            paid_kobo = tx_data.get('amount', 0)
+            amount_paid_naira = paid_kobo // 100
+            if expected_kobo > 0 and paid_kobo < (expected_kobo * 0.95):
+                return jsonify({
+                    'success': False,
+                    'error': f"Amount paid (₦{amount_paid_naira:,.2f}) does not cover the required plan amount (₦{expected_naira:,.2f})."
+                }), 400
+        else:
+            logger.info(f"Paystack secret key not configured; client reference {reference} accepted for activation.")
+
+        # Activate user subscription
+        activation = activate_user_subscription(
+            user_id=user_id,
+            plan_id=plan_id,
+            payment_method='paystack',
+            reference=reference,
+            amount_paid=amount_paid_naira
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f"Payment successful! Your subscription to {activation['plan_name']} is now active.",
+            'activation': activation
+        })
+    except Exception as e:
+        logger.exception("Error verifying Paystack payment")
+        return jsonify({'success': False, 'error': f'Payment verification failed: {str(e)}'}), 500
+
+
+@app.route('/api/paystack/webhook', methods=['POST'])
+def api_paystack_webhook():
+    """Paystack Webhook listener for background payment confirmation events"""
+    try:
+        payment_settings = get_payment_settings()
+        secret_key = payment_settings.get('paystackSecretKey') or os.getenv('PAYSTACK_SECRET_KEY', '')
+
+        payload_bytes = request.get_data()
+        if secret_key:
+            import hmac
+            paystack_sig = request.headers.get('x-paystack-signature', '')
+            computed_sig = hmac.new(secret_key.encode('utf-8'), payload_bytes, hashlib.sha512).hexdigest()
+            if not hmac.compare_digest(paystack_sig, computed_sig):
+                logger.warning("Paystack webhook signature mismatch")
+                return Response(status=400)
+
+        data = request.json or {}
+        event = data.get('event')
+        if event == 'charge.success':
+            tx_data = data.get('data', {})
+            reference = tx_data.get('reference')
+            customer = tx_data.get('customer', {})
+            customer_email = customer.get('email', '').strip().lower()
+            amount_kobo = tx_data.get('amount', 0)
+            amount_naira = amount_kobo // 100
+
+            metadata = tx_data.get('metadata') or {}
+            custom_fields = metadata.get('custom_fields', [])
+            plan_id = None
+            user_id = None
+            if isinstance(custom_fields, list):
+                for f in custom_fields:
+                    if f.get('variable_name') == 'plan_id':
+                        plan_id = f.get('value')
+                    elif f.get('variable_name') == 'user_id':
+                        user_id = f.get('value')
+
+            conn = get_db_connection()
+            if not user_id and customer_email:
+                row = conn.execute("SELECT id FROM users WHERE LOWER(email) = ?", (customer_email,)).fetchone()
+                if row:
+                    user_id = row['id']
+            conn.close()
+
+            if user_id:
+                if not plan_id:
+                    for p in get_subscription_plans():
+                        if p.get('price') == amount_naira:
+                            plan_id = p.get('id')
+                            break
+
+                activate_user_subscription(
+                    user_id=user_id,
+                    plan_id=plan_id,
+                    payment_method='paystack',
+                    reference=reference,
+                    amount_paid=amount_naira
+                )
+                logger.info(f"Paystack webhook activated subscription for user {user_id}")
+
+        return Response(status=200)
+    except Exception as e:
+        logger.exception("Error processing Paystack webhook")
+        return Response(status=500)
+
+
 # ==================== PAGE ROUTES ====================
 
 @app.route('/')
@@ -5855,7 +6173,9 @@ def subscribe_page():
         'email': session.get('user_email', ''),
         'role': sub.get('role', 'user'),
         'subscriptionStatus': sub.get('status', 'inactive'),
-        'subscriptionExpiry': sub.get('expiry')
+        'subscriptionExpiry': sub.get('expiry'),
+        'planName': sub.get('plan_name'),
+        'features': sub.get('features')
     }, firebase_config=get_firebase_config())
 
 
