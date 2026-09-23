@@ -166,11 +166,19 @@
                     <h1 id="page-heading">Subscription Requests</h1>
                     <p id="page-subheading">Verify and approve proof of payment receipts submitted by users.</p>
                 </div>
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <div style="font-size: 0.85rem; color: #94a3b8; text-align: right;">
+                <div class="admin-topbar-actions">
+                    <div class="admin-user-badge">
                         <div style="font-weight: 700; color: #f8fafc;">{{ user.name }}</div>
                         <div style="font-size: 0.75rem; color: #38bdf8;">Administrator</div>
                     </div>
+                    <a href="/dashboard" class="topbar-btn topbar-btn-dash" title="Return to Dashboard">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="/api/auth/logout" class="topbar-btn topbar-btn-logout" title="Sign Out">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                        <span>Sign Out</span>
+                    </a>
                 </div>
             </div>
 

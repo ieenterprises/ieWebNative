@@ -301,14 +301,14 @@
                         <form id="subscribe-form">
                             <input type="file" id="receipt-input" name="receipt" accept="image/*,.pdf" style="display: none;" required>
                             
-                            <div class="dropzone" id="dropzone">
-                                <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <div class="dropzone disabled" id="dropzone" title="Select a plan above to enable payment proof upload">
+                                <svg class="dropzone-icon" id="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                                     <polyline points="17 8 12 3 7 8"></polyline>
                                     <line x1="12" y1="3" x2="12" y2="15"></line>
                                 </svg>
-                                <div class="dropzone-text">Click to browse or drag & drop receipt</div>
-                                <div class="dropzone-sub">Supports PNG, JPG, JPEG, WEBP or PDF (Max 15MB)</div>
+                                <div class="dropzone-text" id="dropzone-text">Select a plan above to upload payment proof</div>
+                                <div class="dropzone-sub" id="dropzone-sub">Choose a subscription tier first to unlock receipt upload</div>
                             </div>
 
                             <div id="file-info" class="selected-file-info" style="display: none;">
@@ -318,7 +318,7 @@
 
                             <div id="form-alert" style="display: none; padding: 12px; border-radius: 10px; margin-bottom: 16px; font-size: 0.88rem;"></div>
 
-                            <button type="submit" class="btn-submit-payment" id="submit-btn">
+                            <button type="submit" class="btn-submit-payment" id="submit-btn" disabled style="opacity: 0.55; cursor: not-allowed;">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                                 <span id="submit-text">Submit Payment Proof</span>
                             </button>
@@ -523,6 +523,11 @@
             const instantPlanEl = document.getElementById('instant-selected-plan-label');
             const paystackBtnLabel = document.getElementById('paystack-btn-label');
             const paystackPageLink = document.getElementById('paystack-page-link');
+            const dropzone = document.getElementById('dropzone');
+            const dropzoneText = document.getElementById('dropzone-text');
+            const dropzoneSub = document.getElementById('dropzone-sub');
+            const receiptInput = document.getElementById('receipt-input');
+            const submitBtn = document.getElementById('submit-btn');
 
             if (!selectedPlan) {
                 const placeholder = '<span style="color: #94a3b8; font-weight: 500; font-size: 0.92rem;">No plan selected</span>';
@@ -531,6 +536,26 @@
                 if (instantPlanEl) instantPlanEl.innerHTML = placeholder;
                 if (instantTotalEl) instantTotalEl.textContent = '—';
                 if (paystackBtnLabel) paystackBtnLabel.textContent = 'Pay Instantly with Paystack';
+
+                // Lock direct transfer dropzone & clear any file
+                if (dropzone) {
+                    dropzone.classList.add('disabled');
+                    dropzone.setAttribute('title', 'Select a plan above to enable payment proof upload');
+                }
+                if (dropzoneText) dropzoneText.textContent = 'Select a plan above to upload payment proof';
+                if (dropzoneSub) dropzoneSub.textContent = 'Choose a subscription tier first to unlock receipt upload';
+                if (receiptInput) {
+                    receiptInput.disabled = true;
+                    receiptInput.value = '';
+                }
+                const fileInfo = document.getElementById('file-info');
+                if (fileInfo) fileInfo.style.display = 'none';
+                if (dropzone) dropzone.style.display = 'flex';
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.style.opacity = '0.55';
+                    submitBtn.style.cursor = 'not-allowed';
+                }
                 return;
             }
 
@@ -547,6 +572,23 @@
                 const userEmail = encodeURIComponent('{{ user.email }}');
                 const baseUrl = paymentSettings.paystackPaymentUrl || 'https://paystack.shop/pay/51llaemz1j';
                 paystackPageLink.href = baseUrl + '?amount=' + total + '&email=' + userEmail + '&read-only=amount,email';
+            }
+
+            // Unlock dropzone
+            if (dropzone) {
+                dropzone.classList.remove('disabled');
+                dropzone.setAttribute('title', 'Click or drag & drop to upload payment receipt');
+            }
+            if (dropzoneText) dropzoneText.textContent = 'Click to browse or drag & drop receipt';
+            if (dropzoneSub) dropzoneSub.textContent = 'Supports PNG, JPG, JPEG, WEBP or PDF (Max 15MB)';
+            if (receiptInput) receiptInput.disabled = false;
+
+            // Submit button state
+            const hasFile = receiptInput && receiptInput.files && receiptInput.files.length > 0;
+            if (submitBtn) {
+                submitBtn.disabled = !hasFile;
+                submitBtn.style.opacity = hasFile ? '1' : '0.55';
+                submitBtn.style.cursor = hasFile ? 'pointer' : 'not-allowed';
             }
         }
 
@@ -750,10 +792,23 @@
         const fileName = document.getElementById('file-name');
         const removeFileBtn = document.getElementById('remove-file-btn');
 
-        dropzone.addEventListener('click', () => receiptInput.click());
+        dropzone.addEventListener('click', () => {
+            if (!selectedPlan || !selectedPlan.id) {
+                showAlert('Please select a subscription plan above before uploading your payment proof.', false);
+                const grid = document.getElementById('duration-grid');
+                if (grid) {
+                    grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    grid.classList.add('highlight-pulse');
+                    setTimeout(() => grid.classList.remove('highlight-pulse'), 1500);
+                }
+                return;
+            }
+            receiptInput.click();
+        });
 
         dropzone.addEventListener('dragover', (e) => {
             e.preventDefault();
+            if (!selectedPlan || !selectedPlan.id) return;
             dropzone.classList.add('dragover');
         });
 
@@ -764,6 +819,16 @@
         dropzone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropzone.classList.remove('dragover');
+            if (!selectedPlan || !selectedPlan.id) {
+                showAlert('Please select a subscription plan above before uploading your payment proof.', false);
+                const grid = document.getElementById('duration-grid');
+                if (grid) {
+                    grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    grid.classList.add('highlight-pulse');
+                    setTimeout(() => grid.classList.remove('highlight-pulse'), 1500);
+                }
+                return;
+            }
             if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                 receiptInput.files = e.dataTransfer.files;
                 updateFileDisplay();
@@ -773,14 +838,27 @@
         receiptInput.addEventListener('change', updateFileDisplay);
 
         function updateFileDisplay() {
+            const submitBtn = document.getElementById('submit-btn');
             if (receiptInput.files && receiptInput.files[0]) {
                 const f = receiptInput.files[0];
                 fileName.textContent = f.name + ' (' + (f.size / (1024 * 1024)).toFixed(2) + ' MB)';
                 fileInfo.style.display = 'flex';
                 dropzone.style.display = 'none';
+                if (selectedPlan && selectedPlan.id) {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.style.opacity = '1';
+                        submitBtn.style.cursor = 'pointer';
+                    }
+                }
             } else {
                 fileInfo.style.display = 'none';
                 dropzone.style.display = 'flex';
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.style.opacity = '0.55';
+                    submitBtn.style.cursor = 'not-allowed';
+                }
             }
         }
 
@@ -803,6 +881,8 @@
                 const grid = document.getElementById('duration-grid');
                 if (grid) {
                     grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    grid.classList.add('highlight-pulse');
+                    setTimeout(() => grid.classList.remove('highlight-pulse'), 1500);
                 }
                 return;
             }
@@ -865,7 +945,11 @@
             } catch (err) {
                 showAlert('Network error: ' + err.message, false);
             } finally {
-                submitBtn.disabled = false;
+                const hasFile = receiptInput && receiptInput.files && receiptInput.files.length > 0;
+                const canSubmit = !!(selectedPlan && selectedPlan.id && hasFile);
+                submitBtn.disabled = !canSubmit;
+                submitBtn.style.opacity = canSubmit ? '1' : '0.55';
+                submitBtn.style.cursor = canSubmit ? 'pointer' : 'not-allowed';
                 submitText.textContent = 'Submit Payment Proof';
             }
         });

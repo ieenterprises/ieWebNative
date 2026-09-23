@@ -427,6 +427,36 @@
     background: rgba(2, 164, 203, 0.04);
 }
 
+.dropzone.disabled {
+    opacity: 0.6;
+    cursor: not-allowed !important;
+    background: rgba(15, 23, 42, 0.45);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dropzone.disabled:hover {
+    border-color: rgba(239, 68, 68, 0.4) !important;
+    background: rgba(239, 68, 68, 0.04) !important;
+}
+
+.dropzone.disabled .dropzone-icon {
+    color: #64748b;
+}
+
+.dropzone.disabled .dropzone-text {
+    color: #94a3b8;
+}
+
+.highlight-pulse {
+    animation: highlightPulse 1.5s ease;
+}
+
+@keyframes highlightPulse {
+    0% { outline: 2px solid transparent; }
+    50% { outline: 2px solid #38bdf8; box-shadow: 0 0 24px rgba(56, 189, 248, 0.35); }
+    100% { outline: 2px solid transparent; }
+}
+
 .dropzone-icon {
     width: 44px;
     height: 44px;
@@ -615,6 +645,58 @@
 .admin-title-area p {
     font-size: 0.88rem;
     color: #94a3b8;
+}
+
+.admin-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.admin-user-badge {
+    font-size: 0.85rem;
+    color: #94a3b8;
+    text-align: right;
+    margin-right: 4px;
+}
+
+.topbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 9px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.topbar-btn-dash {
+    background: rgba(56, 189, 248, 0.12);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.topbar-btn-dash:hover {
+    background: rgba(56, 189, 248, 0.22);
+    border-color: #38bdf8;
+    color: #fff;
+}
+
+.topbar-btn-logout {
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.topbar-btn-logout:hover {
+    background: rgba(239, 68, 68, 0.22);
+    border-color: #ef4444;
+    color: #fff;
 }
 
 /* Admin Card & Tables */
@@ -876,10 +958,10 @@
    ========================================================================== */
 
 @media (max-width: 768px) {
-    /* Buttons with text collapse to icon-only */
+    /* Buttons with text collapse to icon-only for table actions and horizontal nav */
     .btn .btn-text,
     .btn-xs .btn-text,
-    .admin-nav-item .nav-text {
+    .admin-sidebar-nav .admin-nav-item .nav-text {
         display: none !important;
     }
 
@@ -902,6 +984,7 @@
         flex-direction: row;
         overflow-x: auto;
         padding: 8px 12px;
+        gap: 6px;
     }
 
     .admin-nav-item {
@@ -909,8 +992,39 @@
         padding: 8px 12px;
     }
 
+    /* Keep Admin Sidebar Footer visible with Dashboard & Logout buttons */
     .admin-sidebar-footer {
-        display: none;
+        display: flex;
+        flex-direction: row;
+        padding: 8px 12px;
+        gap: 8px;
+        border-top: 1px solid #1e293b;
+        background: rgba(15, 23, 42, 0.6);
+    }
+
+    .admin-sidebar-footer .admin-nav-item {
+        flex: 1;
+        justify-content: center;
+        padding: 8px 12px;
+    }
+
+    .admin-sidebar-footer .admin-nav-item .nav-text {
+        display: inline !important;
+        font-size: 0.82rem;
+    }
+
+    .admin-topbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 14px;
+        margin-bottom: 20px;
+    }
+
+    .admin-topbar-actions {
+        width: 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
     }
 
     .admin-main {
@@ -928,6 +1042,23 @@
 }
 
 @media (max-width: 480px) {
+    .admin-user-badge {
+        display: none;
+    }
+
+    .admin-topbar-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+    .topbar-btn {
+        justify-content: center;
+        padding: 8px 10px;
+        font-size: 0.78rem;
+    }
+
     .duration-grid {
         grid-template-columns: 1fr;
     }
