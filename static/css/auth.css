@@ -286,15 +286,18 @@
 
 .password-input-wrapper {
     position: relative;
+    display: flex;
+    align-items: center;
 }
 
 .password-input-wrapper input {
+    width: 100%;
     padding-right: 48px !important;
 }
 
 .password-toggle {
     position: absolute;
-    right: 12px;
+    right: 8px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
@@ -305,11 +308,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color var(--transition-fast);
+    border-radius: 6px;
+    z-index: 10;
+    transition: color var(--transition-fast), background-color var(--transition-fast);
 }
 
 .password-toggle:hover {
-    color: var(--text-primary);
+    color: var(--primary);
+    background-color: rgba(2, 164, 203, 0.08);
+}
+
+.password-toggle:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
 }
 
 /* Password Strength */

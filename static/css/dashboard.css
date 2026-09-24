@@ -1652,6 +1652,7 @@
 .profile-input-wrapper input {
     width: 100%;
     padding: 10px 14px;
+    padding-right: 44px !important;
     background: var(--bg-input);
     border: 1px solid var(--border-secondary);
     border-radius: var(--radius-md);
@@ -1669,18 +1670,30 @@
 
 .password-toggle-btn {
     position: absolute;
-    right: 12px;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     background: none;
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    padding: 4px;
+    padding: 7px;
     display: flex;
     align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    z-index: 10;
+    transition: color var(--transition-fast), background-color var(--transition-fast);
 }
 
 .password-toggle-btn:hover {
-    color: var(--text-primary);
+    color: var(--primary);
+    background-color: rgba(2, 164, 203, 0.08);
+}
+
+.password-toggle-btn:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
 }
 
 .profile-card-actions {

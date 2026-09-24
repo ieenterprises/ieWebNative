@@ -102,7 +102,7 @@
                         <label for="login-password">Password</label>
                         <div class="password-input-wrapper">
                             <input type="password" id="login-password" name="password" placeholder="Enter your password" required>
-                            <button type="button" class="password-toggle" data-target="login-password">
+                            <button type="button" class="password-toggle" data-target="login-password" title="Show password" aria-label="Toggle password visibility">
                                 <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                                     <circle cx="12" cy="12" r="3"/>
@@ -166,7 +166,7 @@
                         <label for="signup-password">Password</label>
                         <div class="password-input-wrapper">
                             <input type="password" id="signup-password" name="password" placeholder="Create a strong password" required minlength="8">
-                            <button type="button" class="password-toggle" data-target="signup-password">
+                            <button type="button" class="password-toggle" data-target="signup-password" title="Show password" aria-label="Toggle password visibility">
                                 <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                                     <circle cx="12" cy="12" r="3"/>
@@ -186,7 +186,7 @@
                         <label for="signup-confirm-password">Confirm Password</label>
                         <div class="password-input-wrapper">
                             <input type="password" id="signup-confirm-password" name="confirm_password" placeholder="Confirm your password" required>
-                            <button type="button" class="password-toggle" data-target="signup-confirm-password">
+                            <button type="button" class="password-toggle" data-target="signup-confirm-password" title="Show password" aria-label="Toggle password visibility">
                                 <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                                     <circle cx="12" cy="12" r="3"/>
@@ -389,14 +389,18 @@
                 const eyeIcon = btn.querySelector('.eye-icon');
                 const eyeOffIcon = btn.querySelector('.eye-off-icon');
 
-                if (input.type === 'password') {
-                    input.type = 'text';
-                    eyeIcon.style.display = 'none';
-                    eyeOffIcon.style.display = 'block';
-                } else {
-                    input.type = 'password';
-                    eyeIcon.style.display = 'block';
-                    eyeOffIcon.style.display = 'none';
+                if (input) {
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        eyeIcon.style.display = 'none';
+                        eyeOffIcon.style.display = 'block';
+                        btn.setAttribute('title', 'Hide password');
+                    } else {
+                        input.type = 'password';
+                        eyeIcon.style.display = 'block';
+                        eyeOffIcon.style.display = 'none';
+                        btn.setAttribute('title', 'Show password');
+                    }
                 }
             });
         });
