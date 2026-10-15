@@ -1680,7 +1680,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
               const Text('Site Navigation', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             ],
           ),
-          content: SizedBox(
+          content: Container(
             width: 360,
             constraints: const BoxConstraints(maxHeight: 380),
             child: Column(
