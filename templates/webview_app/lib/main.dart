@@ -38,7 +38,14 @@ Future<void> main() async {
           userDataDir.createSync(recursive: true);
         }
         webViewEnvironment = await WebViewEnvironment.create(
-          settings: WebViewEnvironmentSettings(userDataFolder: userDataDir.path),
+          settings: WebViewEnvironmentSettings(
+            userDataFolder: userDataDir.path,
+            additionalBrowserArguments:
+                '--enable-features=msPlayReady,WidevineCdm,PlatformHEVCDecoderSupport '
+                '--autoplay-policy=no-user-gesture-required '
+                '--enable-gpu-rasterization '
+                '--ignore-gpu-blocklist',
+          ),
         );
       }
     } catch (e) {
