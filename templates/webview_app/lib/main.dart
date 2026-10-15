@@ -117,6 +117,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   static const bool ENABLE_GEOLOCATION = false;
   static const bool ENABLE_PULL_TO_REFRESH = false;
   static const bool SHOW_NAVIGATION_BAR = false;
+  static const bool SHOW_NAVIGATION_BAR_2 = false;
   static const bool ENABLE_FILE_ACCESS = false;
   static const bool ENABLE_CACHE = false;
   static const bool ENABLE_MEDIA_AUTOPLAY = false;
@@ -621,6 +622,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                           }
                         ''',
                       );
+                    }
+                    if (SHOW_NAVIGATION_BAR_2) {
+                      await _injectFloatingNavbar2(controller);
                     }
                     await _updateNavigationState();
                   },
@@ -1168,4 +1172,616 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       ),
     );
   }
+
+  Future<void> _injectFloatingNavbar2(InAppWebViewController controller) async {
+    try {
+      await controller.evaluateJavascript(source: r"""
+(function() {
+  if (window.__iewn_nav2_initialized) {
+    if (window.__iewn_nav2_refresh) window.__iewn_nav2_refresh();
+    return;
+  }
+  window.__iewn_nav2_initialized = true;
+
+  // 1. Detect adaptive color scheme & theme
+  function getAdaptiveTheme() {
+    let accent = '#02a4cb';
+    try {
+      const metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (metaTheme && metaTheme.content) {
+        accent = metaTheme.content.trim();
+      } else {
+        const header = document.querySelector('header, nav, .navbar');
+        if (header) {
+          const bg = window.getComputedStyle(header).backgroundColor;
+          if (bg && bg !== 'transparent' && !bg.includes('rgba(0, 0, 0, 0)')) {
+            accent = bg;
+          }
+        }
+      }
+    } catch(e) {}
+
+    let isDark = false;
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        isDark = true;
+      }
+      const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+      if (bodyBg && bodyBg.startsWith('rgb')) {
+        const rgb = bodyBg.match(/\d+/g);
+        if (rgb && rgb.length >= 3) {
+          const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
+          if (brightness < 128) isDark = true;
+        }
+      }
+    } catch(e) {}
+
+    return {
+      accent: accent || '#02a4cb',
+      isDark: isDark,
+      bg: isDark ? 'rgba(24, 30, 42, 0.96)' : '#ffffff',
+      color: isDark ? '#f1f5f9' : '#1e293b',
+      border: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
+      shadow: isDark ? '0 16px 40px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.4)' : '0 16px 40px rgba(0,0,0,0.14), 0 4px 12px rgba(0,0,0,0.06)'
+    };
+  }
+
+  // 2. Scan and extract dynamic navigation links from the webpage
+  function scanSiteNavigation() {
+    const items = [];
+    const seen = new Set();
+    const currentOrigin = window.location.origin;
+
+    let siteMenuBtn = document.querySelector('button[aria-label*="menu" i], .navbar-toggler, .menu-toggle, .hamburger, [data-bs-toggle="collapse"], [data-drawer-toggle], [aria-controls*="nav" i], [aria-controls*="menu" i]');
+
+    const selectors = [
+      'nav a[href]',
+      'header a[href]',
+      'aside a[href]',
+      '.navbar a[href]',
+      '.sidebar a[href]',
+      '[role="navigation"] a[href]',
+      '[role="menubar"] a[href]',
+      '.nav a[href]',
+      '.menu a[href]'
+    ];
+    let candidateLinks = document.querySelectorAll(selectors.join(', '));
+    if (!candidateLinks || candidateLinks.length === 0) {
+      candidateLinks = document.querySelectorAll('a[href]');
+    }
+
+    candidateLinks.forEach(a => {
+      try {
+        const href = a.getAttribute('href');
+        if (!href || href === '#' || href.startsWith('javascript:') || href.startsWith('tel:') || href.startsWith('mailto:')) return;
+        const fullUrl = a.href;
+        if (!fullUrl || !fullUrl.startsWith('http')) return;
+        try {
+          const u = new URL(fullUrl);
+          if (u.origin !== currentOrigin && !u.hostname.endsWith(window.location.hostname)) return;
+        } catch(e) { return; }
+
+        let text = (a.innerText || a.getAttribute('aria-label') || a.getAttribute('title') || '').trim();
+        text = text.replace(/\s+/g, ' ');
+        if (!text || text.length < 2 || text.length > 50) return;
+
+        const key = text.toLowerCase() + '|' + fullUrl;
+        if (!seen.has(key)) {
+          seen.add(key);
+          items.push({ text: text, href: fullUrl });
+        }
+      } catch(e) {}
+    });
+
+    return {
+      links: items.slice(0, 25),
+      hasSiteMenuToggle: !!siteMenuBtn,
+      triggerSiteMenu: function() {
+        if (siteMenuBtn) {
+          siteMenuBtn.click();
+          return true;
+        }
+        return false;
+      }
+    };
+  }
+
+  // 3. Create Container
+  let theme = getAdaptiveTheme();
+  let root = document.getElementById('__iewn_nav2_root');
+  if (root) root.remove();
+
+  root = document.createElement('div');
+  root.id = '__iewn_nav2_root';
+  root.style.cssText = 'position:fixed; z-index:2147483647; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; user-select:none; -webkit-user-select:none;';
+  document.body.appendChild(root);
+
+  let savedPos = null;
+  try {
+    savedPos = JSON.parse(localStorage.getItem('__iewn_nav2_pos'));
+  } catch(e) {}
+
+  let posX = (savedPos && typeof savedPos.x === 'number') ? savedPos.x : (window.innerWidth - 76);
+  let posY = (savedPos && typeof savedPos.y === 'number') ? savedPos.y : Math.max(80, window.innerHeight / 2 - 140);
+  posX = Math.max(10, Math.min(window.innerWidth - 66, posX));
+  posY = Math.max(10, Math.min(window.innerHeight - 300, posY));
+
+  let isExpanded = false;
+  let isDragging = false;
+  let startX = 0, startY = 0, initialPosX = 0, initialPosY = 0;
+  let hasMoved = false;
+
+  function render() {
+    theme = getAdaptiveTheme();
+    root.style.left = posX + 'px';
+    root.style.top = posY + 'px';
+
+    root.innerHTML = `
+      <style>
+        #__iewn_nav2_root * { box-sizing: border-box; margin:0; padding:0; }
+        .iewn-bubble-btn {
+          width: 52px;
+          height: 52px;
+          border-radius: 50%;
+          background: ${theme.bg};
+          border: 1px solid ${theme.border};
+          box-shadow: ${theme.shadow};
+          display: ${isExpanded ? 'none' : 'flex'};
+          align-items: center;
+          justify-content: center;
+          cursor: grab;
+          color: ${theme.color};
+          transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, background 0.2s ease;
+          position: relative;
+        }
+        .iewn-bubble-btn:hover {
+          transform: scale(1.08);
+          box-shadow: 0 18px 45px rgba(0,0,0,0.22);
+        }
+        .iewn-bubble-btn:active {
+          cursor: grabbing;
+          transform: scale(0.96);
+        }
+        .iewn-bubble-badge {
+          position: absolute;
+          top: 0;
+          right: 0;
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: ${theme.accent};
+          border: 2px solid ${theme.bg};
+        }
+
+        /* Vertical Capsule Dock matching Image 3 */
+        .iewn-dock {
+          width: 56px;
+          border-radius: 9999px;
+          background: ${theme.bg};
+          border: 1px solid ${theme.border};
+          box-shadow: ${theme.shadow};
+          padding: 16px 0;
+          display: ${isExpanded ? 'flex' : 'none'};
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+          cursor: grab;
+          position: relative;
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          animation: iewnDockPop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        .iewn-dock:active { cursor: grabbing; }
+
+        @keyframes iewnDockPop {
+          0% { opacity: 0; transform: scale(0.85) translateY(10px); }
+          100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .iewn-item {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          border: none;
+          color: ${theme.color};
+          cursor: pointer;
+          position: relative;
+          transition: all 0.2s ease;
+        }
+        .iewn-item:hover {
+          background: ${theme.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'};
+          color: ${theme.accent};
+          transform: scale(1.08);
+        }
+        .iewn-item svg {
+          width: 20px;
+          height: 20px;
+          stroke: currentColor;
+          fill: none;
+          stroke-width: 2;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+        }
+
+        /* Adaptive Tooltip Pill matching Image 3 */
+        .iewn-pill-tooltip {
+          position: absolute;
+          ${posX > (window.innerWidth / 2) ? 'right: 52px;' : 'left: 52px;'}
+          top: 50%;
+          transform: translateY(-50%) scale(0.9);
+          background: ${theme.accent};
+          color: #ffffff;
+          padding: 8px 14px;
+          border-radius: 9999px;
+          font-size: 13px;
+          font-weight: 600;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          white-space: nowrap;
+          pointer-events: none;
+          opacity: 0;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+          transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+          z-index: 20;
+        }
+        .iewn-item:hover .iewn-pill-tooltip {
+          opacity: 1;
+          transform: translateY(-50%) scale(1);
+        }
+
+        /* Site Pages Flyout Menu */
+        .iewn-pages-flyout {
+          position: absolute;
+          ${posX > (window.innerWidth / 2) ? 'right: 68px;' : 'left: 68px;'}
+          top: 0;
+          width: 260px;
+          max-height: 400px;
+          background: ${theme.bg};
+          border: 1px solid ${theme.border};
+          border-radius: 18px;
+          box-shadow: ${theme.shadow};
+          display: none;
+          flex-direction: column;
+          overflow: hidden;
+          z-index: 30;
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          animation: iewnFlyout 0.2s ease forwards;
+        }
+        @keyframes iewnFlyout {
+          0% { opacity: 0; transform: scale(0.95) translateX(${posX > (window.innerWidth / 2) ? '10px' : '-10px'}); }
+          100% { opacity: 1; transform: scale(1) translateX(0); }
+        }
+        .iewn-flyout-header {
+          padding: 12px 16px;
+          border-bottom: 1px solid ${theme.border};
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-weight: 700;
+          font-size: 13px;
+          color: ${theme.color};
+        }
+        .iewn-flyout-close {
+          background: none;
+          border: none;
+          cursor: pointer;
+          color: #94a3b8;
+          font-size: 16px;
+          padding: 2px 6px;
+        }
+        .iewn-flyout-body {
+          overflow-y: auto;
+          max-height: 330px;
+          padding: 8px;
+        }
+        .iewn-flyout-link {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 12px;
+          border-radius: 10px;
+          color: ${theme.color};
+          text-decoration: none;
+          font-size: 13px;
+          font-weight: 500;
+          transition: all 0.15s ease;
+          cursor: pointer;
+        }
+        .iewn-flyout-link:hover {
+          background: ${theme.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'};
+          color: ${theme.accent};
+          transform: translateX(3px);
+        }
+        .iewn-flyout-native-btn {
+          width: 100%;
+          padding: 9px 12px;
+          margin-bottom: 8px;
+          border-radius: 10px;
+          background: ${theme.accent};
+          color: #fff;
+          border: none;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        }
+      </style>
+
+      <!-- Bubble Button (Collapsed) -->
+      <div class="iewn-bubble-btn" id="iewn-bubble" title="Navigation Bar 2 (Click or double-tap empty screen to open)">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+        </svg>
+        <span class="iewn-bubble-badge"></span>
+      </div>
+
+      <!-- Vertical Capsule Dock (Expanded) -->
+      <div class="iewn-dock" id="iewn-dock">
+        <!-- Home -->
+        <button type="button" class="iewn-item" id="iewn-btn-home" aria-label="Home">
+          <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          <div class="iewn-pill-tooltip">
+            <svg style="width:14px;height:14px;" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+            <span>Home</span>
+          </div>
+        </button>
+
+        <!-- Backward -->
+        <button type="button" class="iewn-item" id="iewn-btn-back" aria-label="Backward">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          <div class="iewn-pill-tooltip">
+            <svg style="width:14px;height:14px;" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            <span>Backward</span>
+          </div>
+        </button>
+
+        <!-- Forward -->
+        <button type="button" class="iewn-item" id="iewn-btn-forward" aria-label="Forward">
+          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          <div class="iewn-pill-tooltip">
+            <svg style="width:14px;height:14px;" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            <span>Forward</span>
+          </div>
+        </button>
+
+        <!-- Refresh -->
+        <button type="button" class="iewn-item" id="iewn-btn-refresh" aria-label="Refresh">
+          <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          <div class="iewn-pill-tooltip">
+            <svg style="width:14px;height:14px;" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path></svg>
+            <span>Refresh</span>
+          </div>
+        </button>
+
+        <!-- Menu (Dynamic Site Navigation) -->
+        <button type="button" class="iewn-item" id="iewn-btn-menu" aria-label="Menu">
+          <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          <div class="iewn-pill-tooltip">
+            <svg style="width:14px;height:14px;" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            <span>Menu</span>
+          </div>
+        </button>
+
+        <!-- Minimize -->
+        <button type="button" class="iewn-item" id="iewn-btn-collapse" aria-label="Collapse" style="opacity:0.6;">
+          <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+
+        <!-- Site Pages Flyout -->
+        <div class="iewn-pages-flyout" id="iewn-pages-flyout">
+          <div class="iewn-flyout-header">
+            <span>Website Pages</span>
+            <button class="iewn-flyout-close" id="iewn-flyout-close">✕</button>
+          </div>
+          <div class="iewn-flyout-body" id="iewn-flyout-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </div>
+    `;
+
+    attachEvents();
+  }
+
+  function attachEvents() {
+    const bubble = document.getElementById('iewn-bubble');
+    const dock = document.getElementById('iewn-dock');
+    const flyout = document.getElementById('iewn-pages-flyout');
+    const flyoutList = document.getElementById('iewn-flyout-list');
+    const flyoutClose = document.getElementById('iewn-flyout-close');
+
+    [bubble, dock].forEach(el => {
+      if (!el) return;
+      el.addEventListener('mousedown', onDragStart);
+      el.addEventListener('touchstart', onDragStart, { passive: false });
+    });
+
+    function onDragStart(e) {
+      if (e.target.closest('button') && isExpanded && !e.target.closest('#iewn-dock')) {
+        return;
+      }
+      isDragging = true;
+      hasMoved = false;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      startX = clientX;
+      startY = clientY;
+      initialPosX = posX;
+      initialPosY = posY;
+
+      document.addEventListener('mousemove', onDragMove);
+      document.addEventListener('mouseup', onDragEnd);
+      document.addEventListener('touchmove', onDragMove, { passive: false });
+      document.addEventListener('touchend', onDragEnd);
+    }
+
+    function onDragMove(e) {
+      if (!isDragging) return;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+        hasMoved = true;
+        if (e.cancelable) e.preventDefault();
+      }
+
+      posX = Math.max(8, Math.min(window.innerWidth - 64, initialPosX + dx));
+      posY = Math.max(8, Math.min(window.innerHeight - (isExpanded ? 320 : 64), initialPosY + dy));
+      root.style.left = posX + 'px';
+      root.style.top = posY + 'px';
+    }
+
+    function onDragEnd() {
+      if (!isDragging) return;
+      isDragging = false;
+      document.removeEventListener('mousemove', onDragMove);
+      document.removeEventListener('mouseup', onDragEnd);
+      document.removeEventListener('touchmove', onDragMove);
+      document.removeEventListener('touchend', onDragEnd);
+
+      try {
+        localStorage.setItem('__iewn_nav2_pos', JSON.stringify({ x: posX, y: posY }));
+      } catch(e) {}
+    }
+
+    if (bubble) {
+      bubble.addEventListener('click', () => {
+        if (hasMoved) return;
+        isExpanded = true;
+        render();
+      });
+    }
+
+    const collapseBtn = document.getElementById('iewn-btn-collapse');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isExpanded = false;
+        render();
+      });
+    }
+
+    document.getElementById('iewn-btn-home')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.location.href = window.location.origin;
+    });
+
+    document.getElementById('iewn-btn-back')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.history.back();
+    });
+
+    document.getElementById('iewn-btn-forward')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.history.forward();
+    });
+
+    document.getElementById('iewn-btn-refresh')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.location.reload();
+    });
+
+    document.getElementById('iewn-btn-menu')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!flyout) return;
+      if (flyout.style.display === 'flex') {
+        flyout.style.display = 'none';
+        return;
+      }
+
+      const navInfo = scanSiteNavigation();
+      let html = '';
+
+      if (navInfo.hasSiteMenuToggle) {
+        html += `<button type="button" class="iewn-flyout-native-btn" id="iewn-native-toggle-btn">
+          <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          Open Site Menu Drawer
+        </button>`;
+      }
+
+      if (navInfo.links.length > 0) {
+        navInfo.links.forEach(l => {
+          html += `<div class="iewn-flyout-link" data-href="${encodeURI(l.href)}">
+            <svg style="width:14px;height:14px;opacity:0.7;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.text}</span>
+          </div>`;
+        });
+      } else {
+        html += `<div style="padding:16px;text-align:center;font-size:12px;opacity:0.7;">No additional navigation links detected on this page.</div>`;
+      }
+
+      flyoutList.innerHTML = html;
+      flyout.style.display = 'flex';
+
+      flyoutList.querySelectorAll('.iewn-flyout-link').forEach(item => {
+        item.addEventListener('click', () => {
+          const targetHref = item.getAttribute('data-href');
+          if (targetHref) {
+            window.location.href = decodeURI(targetHref);
+          }
+        });
+      });
+
+      const nativeBtn = document.getElementById('iewn-native-toggle-btn');
+      if (nativeBtn) {
+        nativeBtn.addEventListener('click', () => {
+          navInfo.triggerSiteMenu();
+          flyout.style.display = 'none';
+        });
+      }
+    });
+
+    if (flyoutClose) {
+      flyoutClose.addEventListener('click', (e) => {
+        e.stopPropagation();
+        flyout.style.display = 'none';
+      });
+    }
+  }
+
+  function handleEmptyAreaDblClick(e) {
+    if (e.target && (e.target.closest('a, button, input, textarea, select, [role="button"]') || e.target.isContentEditable)) {
+      return;
+    }
+    if (root.contains(e.target)) return;
+
+    isExpanded = !isExpanded;
+    render();
+  }
+
+  document.addEventListener('dblclick', handleEmptyAreaDblClick);
+
+  let lastTapTime = 0;
+  document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTapTime < 300) {
+      handleEmptyAreaDblClick(e);
+    }
+    lastTapTime = now;
+  }, { passive: true });
+
+  window.__iewn_nav2_refresh = function() {
+    render();
+  };
+
+  render();
+})();
+""");
+    } catch (e) {
+      debugPrint('Floating Navbar 2 injection error: $e');
+    }
+  }
+
 }

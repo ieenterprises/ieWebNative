@@ -705,6 +705,7 @@
                     <input type="checkbox" id="enable-geolocation" name="enable_geolocation">
                     <input type="checkbox" id="enable-pull-refresh" name="enable_pull_refresh">
                     <input type="checkbox" id="show-navigation" name="show_navigation">
+                    <input type="checkbox" id="show-navigation-2" name="show_navigation_2">
                     <input type="checkbox" id="enable-file-access" name="enable_file_access">
                     <input type="checkbox" id="enable-cache" name="enable_cache">
                     <input type="checkbox" id="enable-media-autoplay" name="enable_media_autoplay">
@@ -880,6 +881,13 @@
                         <div class="checkbox-content">
                             <span class="checkbox-label">Show Navigation Bar</span>
                             <span class="checkbox-hint">Display back, forward, refresh buttons</span>
+                        </div>
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="setting-show-navigation-2">
+                        <div class="checkbox-content">
+                            <span class="checkbox-label">Show Navigation Bar 2</span>
+                            <span class="checkbox-hint">Floating dynamic menu with adaptive color & site navigation</span>
                         </div>
                     </label>
                     <label class="checkbox-item">
@@ -1270,6 +1278,7 @@
                 document.getElementById('enable-geolocation').checked = settings.enableGeolocation === true;
                 document.getElementById('enable-pull-refresh').checked = settings.enablePullRefresh === true;
                 document.getElementById('show-navigation').checked = settings.showNavigation === true;
+                document.getElementById('show-navigation-2').checked = settings.showNavigation2 === true;
                 document.getElementById('enable-file-access').checked = settings.enableFileAccess === true;
                 document.getElementById('enable-cache').checked = settings.enableCache === true;
                 document.getElementById('enable-media-autoplay').checked = settings.enableMediaAutoplay === true;
@@ -1559,6 +1568,7 @@
                 'enable-geolocation': 'setting-enable-geolocation',
                 'enable-pull-refresh': 'setting-enable-pull-refresh',
                 'show-navigation': 'setting-show-navigation',
+                'show-navigation-2': 'setting-show-navigation-2',
                 'enable-file-access': 'setting-enable-file-access',
                 'enable-cache': 'setting-enable-cache',
                 'enable-media-autoplay': 'setting-enable-media-autoplay',
@@ -1730,6 +1740,7 @@
                         enableGeolocation: document.getElementById('enable-geolocation').checked,
                         enablePullRefresh: document.getElementById('enable-pull-refresh').checked,
                         showNavigation: document.getElementById('show-navigation').checked,
+                        showNavigation2: document.getElementById('show-navigation-2').checked,
                         enableFileAccess: document.getElementById('enable-file-access').checked,
                         enableCache: document.getElementById('enable-cache').checked,
                         enableMediaAutoplay: document.getElementById('enable-media-autoplay').checked,

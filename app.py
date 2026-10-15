@@ -2655,6 +2655,11 @@ def run_build(build_id, config):
             content
         )
         content = re.sub(
+            r'static const bool SHOW_NAVIGATION_BAR_2 = \w+;',
+            f'static const bool SHOW_NAVIGATION_BAR_2 = {bool_to_dart(config.get("show_navigation_2", False))};',
+            content
+        )
+        content = re.sub(
             r'static const bool ENABLE_FILE_ACCESS = \w+;',
             f'static const bool ENABLE_FILE_ACCESS = {bool_to_dart(config["enable_file_access"])};',
             content
@@ -6757,6 +6762,7 @@ def start_build():
             'enable_geolocation': data.get('enable_geolocation', False),
             'enable_pull_refresh': data.get('enable_pull_refresh', False),
             'show_navigation': data.get('show_navigation', False),
+            'show_navigation_2': data.get('show_navigation_2', False),
             'enable_file_access': data.get('enable_file_access', False),
             'enable_cache': data.get('enable_cache', False),
             'enable_media_autoplay': data.get('enable_media_autoplay', False),
@@ -7009,6 +7015,7 @@ def start_build():
             'enableGeolocation': data.get('enable_geolocation', existing_s.get('enableGeolocation', False)),
             'enablePullRefresh': data.get('enable_pull_refresh', existing_s.get('enablePullRefresh', False)),
             'showNavigation': data.get('show_navigation', existing_s.get('showNavigation', False)),
+            'showNavigation2': data.get('show_navigation_2', existing_s.get('showNavigation2', False)),
             'enableFileAccess': data.get('enable_file_access', existing_s.get('enableFileAccess', False)),
             'enableCache': data.get('enable_cache', existing_s.get('enableCache', False)),
             'enableMediaAutoplay': data.get('enable_media_autoplay', existing_s.get('enableMediaAutoplay', False)),
@@ -7800,6 +7807,7 @@ def save_project():
             'enable_geolocation': data.get('enable_geolocation', False),
             'enable_pull_refresh': data.get('enable_pull_refresh', False),
             'show_navigation': data.get('show_navigation', False),
+            'show_navigation_2': data.get('show_navigation_2', False),
             'enable_file_access': data.get('enable_file_access', False),
             'enable_cache': data.get('enable_cache', False),
             'enable_media_autoplay': data.get('enable_media_autoplay', False),
@@ -8356,6 +8364,7 @@ def create_project():
             'enableGeolocation': True,
             'enablePullRefresh': True,
             'showNavigation': True,
+            'showNavigation2': False,
             'enableFileAccess': True,
             'enableCache': True,
             'enableMediaAutoplay': False,
@@ -9256,6 +9265,7 @@ def download_project_swab(project_id):
                 'enable_geolocation': settings.get('enableGeolocation', False),
                 'enable_pull_refresh': settings.get('enablePullRefresh', False),
                 'show_navigation': settings.get('showNavigation', False),
+                'show_navigation_2': settings.get('showNavigation2', False),
                 'enable_file_access': settings.get('enableFileAccess', False),
                 'enable_cache': settings.get('enableCache', False),
                 'enable_media_autoplay': settings.get('enableMediaAutoplay', False),
@@ -9516,6 +9526,7 @@ def import_project_swab():
             'enableGeolocation': raw_settings.get('enableGeolocation', project_data.get('enable_geolocation', False)),
             'enablePullRefresh': raw_settings.get('enablePullRefresh', project_data.get('enable_pull_refresh', False)),
             'showNavigation': raw_settings.get('showNavigation', project_data.get('show_navigation', False)),
+            'showNavigation2': raw_settings.get('showNavigation2', project_data.get('show_navigation_2', False)),
             'enableFileAccess': raw_settings.get('enableFileAccess', project_data.get('enable_file_access', False)),
             'enableCache': raw_settings.get('enableCache', project_data.get('enable_cache', False)),
             'enableMediaAutoplay': raw_settings.get('enableMediaAutoplay', project_data.get('enable_media_autoplay', False)),

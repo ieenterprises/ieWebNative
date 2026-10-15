@@ -90,6 +90,7 @@ document.addEventListener('DOMContentLoaded', function() {
         'enable-geolocation': 'setting-enable-geolocation',
         'enable-pull-refresh': 'setting-enable-pull-refresh',
         'show-navigation': 'setting-show-navigation',
+        'show-navigation-2': 'setting-show-navigation-2',
         'enable-file-access': 'setting-enable-file-access',
         'enable-cache': 'setting-enable-cache',
         'enable-media-autoplay': 'setting-enable-media-autoplay',
@@ -600,6 +601,7 @@ document.addEventListener('DOMContentLoaded', function() {
             enable_geolocation: document.getElementById('enable-geolocation').checked,
             enable_pull_refresh: document.getElementById('enable-pull-refresh').checked,
             show_navigation: document.getElementById('show-navigation').checked,
+            show_navigation_2: document.getElementById('show-navigation-2').checked,
             enable_file_access: document.getElementById('enable-file-access').checked,
             enable_cache: document.getElementById('enable-cache').checked,
             enable_media_autoplay: document.getElementById('enable-media-autoplay').checked,
@@ -2072,6 +2074,7 @@ document.addEventListener('DOMContentLoaded', function() {
             enable_geolocation: document.getElementById('enable-geolocation').checked,
             enable_pull_refresh: document.getElementById('enable-pull-refresh').checked,
             show_navigation: document.getElementById('show-navigation').checked,
+            show_navigation_2: document.getElementById('show-navigation-2').checked,
             enable_file_access: document.getElementById('enable-file-access').checked,
             enable_cache: document.getElementById('enable-cache').checked,
             enable_media_autoplay: document.getElementById('enable-media-autoplay').checked,
@@ -2243,6 +2246,7 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('enable-geolocation').checked = project.enable_geolocation === true;
             document.getElementById('enable-pull-refresh').checked = project.enable_pull_refresh === true;
             document.getElementById('show-navigation').checked = project.show_navigation === true;
+            document.getElementById('show-navigation-2').checked = project.show_navigation_2 === true;
             document.getElementById('enable-file-access').checked = project.enable_file_access === true;
             document.getElementById('enable-cache').checked = project.enable_cache === true;
             document.getElementById('enable-media-autoplay').checked = project.enable_media_autoplay === true;
@@ -2262,6 +2266,7 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('setting-enable-geolocation').checked = project.enable_geolocation === true;
             document.getElementById('setting-enable-pull-refresh').checked = project.enable_pull_refresh === true;
             document.getElementById('setting-show-navigation').checked = project.show_navigation === true;
+            document.getElementById('setting-show-navigation-2').checked = project.show_navigation_2 === true;
             document.getElementById('setting-enable-file-access').checked = project.enable_file_access === true;
             document.getElementById('setting-enable-cache').checked = project.enable_cache === true;
             document.getElementById('setting-enable-media-autoplay').checked = project.enable_media_autoplay === true;
