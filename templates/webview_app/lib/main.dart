@@ -1403,7 +1403,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   void _updateNav2Position(Offset delta, Size screenSize) {
     setState(() {
       final double width = _isNav2Expanded ? 60.0 : 56.0;
-      final double height = _isNav2Expanded ? 320.0 : 56.0;
+      final double height = _isNav2Expanded ? 270.0 : 56.0;
       double newX = _nav2Position.dx + delta.dx;
       double newY = _nav2Position.dy + delta.dy;
       newX = newX.clamp(8.0, (screenSize.width - width - 8.0).clamp(8.0, double.infinity));
@@ -1515,20 +1515,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-
-          // Home button (shown only if NOT logged in)
-          if (!isUserLoggedIn)
-            _buildNav2DockItem(
-              icon: Icons.home_rounded,
-              tooltip: 'Home',
-              onPressed: () {
-                webViewController?.loadUrl(
-                  urlRequest: URLRequest(url: WebUri(url)),
-                );
-              },
-              color: textColor,
-              hoverColor: primaryColor,
-            ),
 
           // Backward button
           _buildNav2DockItem(
