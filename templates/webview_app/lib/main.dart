@@ -103,6 +103,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   bool isOffline = false;
   bool canGoBack = false;
   bool canGoForward = false;
+  bool isUserLoggedIn = false;
   bool isWebView2Missing = false;
   int _webViewKey = 0;
   bool _wasOffline = false;
@@ -382,10 +383,34 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   Future<void> _updateNavigationState() async {
     final canBack = await webViewController?.canGoBack() ?? false;
     final canForward = await webViewController?.canGoForward() ?? false;
-    setState(() {
-      canGoBack = canBack;
-      canGoForward = canForward;
-    });
+    bool loggedIn = false;
+    try {
+      final res = await webViewController?.evaluateJavascript(source: r'''
+(function() {
+  if (typeof window.__iewn_check_logged_in === 'function') {
+    return window.__iewn_check_logged_in();
+  }
+  return false;
+})();
+''');
+      if (res != null) {
+        if (res is bool) {
+          loggedIn = res;
+        } else if (res is String) {
+          loggedIn = res.toLowerCase() == 'true';
+        }
+      }
+    } catch (e) {
+      debugPrint('Auth check error in _updateNavigationState: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        canGoBack = canBack;
+        canGoForward = canForward;
+        isUserLoggedIn = loggedIn;
+      });
+    }
   }
 
   @override
@@ -534,6 +559,22 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                   onWebViewCreated: (controller) {
                     webViewController = controller;
 
+                    /// ===== Auth State JS Bridge =====
+                    controller.addJavaScriptHandler(
+                      handlerName: 'authStateChanged',
+                      callback: (args) {
+                        if (args.isNotEmpty && mounted) {
+                          final bool loggedIn = args[0] == true;
+                          if (isUserLoggedIn != loggedIn) {
+                            setState(() {
+                              isUserLoggedIn = loggedIn;
+                            });
+                          }
+                        }
+                        return null;
+                      },
+                    );
+
                     /// ===== Clipboard JS Bridge =====
                     controller.addJavaScriptHandler(
                       handlerName: 'clipboard',
@@ -622,6 +663,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                           }
                         ''',
                       );
+                    }
+                    if (SHOW_NAVIGATION_BAR || SHOW_NAVIGATION_BAR_2) {
+                      await _injectAuthDetector(controller);
                     }
                     if (SHOW_NAVIGATION_BAR_2) {
                       await _injectFloatingNavbar2(controller);
@@ -740,14 +784,15 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                           icon: const Icon(Icons.refresh),
                           onPressed: () => webViewController?.reload(),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.home),
-                          onPressed: () {
-                            webViewController?.loadUrl(
-                              urlRequest: URLRequest(url: WebUri(url)),
-                            );
-                          },
-                        ),
+                        if (!isUserLoggedIn)
+                          IconButton(
+                            icon: const Icon(Icons.home),
+                            onPressed: () {
+                              webViewController?.loadUrl(
+                                urlRequest: URLRequest(url: WebUri(url)),
+                              );
+                            },
+                          ),
                         IconButton(
                           icon: const Icon(Icons.share),
                           onPressed: () async {
@@ -1173,6 +1218,165 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     );
   }
 
+  Future<void> _injectAuthDetector(InAppWebViewController controller) async {
+    try {
+      final escapedHomeUrl = url.replaceAll(r'\', r'\\').replaceAll("'", r"\'");
+      await controller.evaluateJavascript(source: """
+(function() {
+  window.__iewn_home_url = '$escapedHomeUrl';
+
+  function checkIsLoggedIn() {
+    try {
+      var path = (window.location.pathname || '').toLowerCase();
+
+      // If clearly on login, sign-in, or registration page, definitely not logged in
+      var loginPaths = ['/login', '/signin', '/sign-in', '/signup', '/sign-up', '/register', '/admin/login', '/auth'];
+      for (var i = 0; i < loginPaths.length; i++) {
+        var lp = loginPaths[i];
+        if (path === lp || path === lp + '/' || path.indexOf(lp + '?') === 0 || path.indexOf(lp + '#') === 0) {
+          return false;
+        }
+      }
+
+      // Check if page has an active login or registration form
+      if (document.querySelector('form#login-form-element, form#signup-form-element, form[action*="login" i]')) {
+        var pwd = document.querySelector('input[type="password"]');
+        var loginBtn = document.querySelector('#login-btn, #show-login, [id*="login" i]');
+        if (pwd && loginBtn) return false;
+      }
+
+      // 1. Explicit sign out / logout elements
+      var logoutSelectors = [
+        'a[href*="logout" i]',
+        'a[href*="signout" i]',
+        'a[href*="sign-out" i]',
+        'a[href*="log-out" i]',
+        'button[id*="logout" i]',
+        'button[id*="signout" i]',
+        'button[class*="logout" i]',
+        'button[class*="signout" i]',
+        'form[action*="logout" i]',
+        'form[action*="signout" i]',
+        '[data-action="logout"]',
+        '[data-action="signout"]',
+        '#logout-btn',
+        '.toolbar-logout-btn'
+      ];
+      for (var j = 0; j < logoutSelectors.length; j++) {
+        var el = document.querySelector(logoutSelectors[j]);
+        if (el) return true;
+      }
+
+      // Check for elements with text "Sign Out" or "Log Out"
+      var clickables = document.querySelectorAll('a, button, span, [role="button"]');
+      for (var k = 0; k < clickables.length; k++) {
+        var t = (clickables[k].innerText || clickables[k].textContent || '').trim().toLowerCase();
+        if (t === 'sign out' || t === 'signout' || t === 'log out' || t === 'logout' || t === 'deconnexion' || t === 'cerrar sesión') {
+          return true;
+        }
+      }
+
+      // 2. Common authenticated paths
+      var authPaths = ['/dashboard', '/admin', '/manage', '/profile', '/account', '/portal', '/console', '/workspace', '/my-account'];
+      for (var m = 0; m < authPaths.length; m++) {
+        if (path.indexOf(authPaths[m]) === 0 && path.indexOf('login') === -1) {
+          return true;
+        }
+      }
+
+      // 3. User profile / avatar selectors
+      var userSelectors = [
+        '.user-avatar',
+        '.user-profile',
+        '#user-menu',
+        '.user-menu',
+        '[data-user]',
+        '.user-badge',
+        '.account-dropdown',
+        '#profile-dropdown'
+      ];
+      for (var n = 0; n < userSelectors.length; n++) {
+        var userEl = document.querySelector(userSelectors[n]);
+        if (userEl && userEl.offsetParent !== null) return true;
+      }
+
+      // 4. Firebase / custom auth globals
+      if (window.FirebaseAppService && typeof window.FirebaseAppService.getCurrentUser === 'function') {
+        if (window.FirebaseAppService.getCurrentUser()) return true;
+      }
+      if (window.firebase && window.firebase.auth && typeof window.firebase.auth === 'function') {
+        try {
+          if (window.firebase.auth().currentUser) return true;
+        } catch(e) {}
+      }
+
+      // 5. Auth tokens in localStorage
+      try {
+        for (var p = 0; p < localStorage.length; p++) {
+          var key = localStorage.key(p);
+          if (key) {
+            var lk = key.toLowerCase();
+            if (lk === 'token' || lk === 'authtoken' || lk === 'jwt' || lk === 'session' || lk.indexOf('firebase:authuser') !== -1) {
+              var val = localStorage.getItem(key);
+              if (val && val !== 'null' && val !== 'undefined' && val !== '{}' && val !== 'false') {
+                return true;
+              }
+            }
+          }
+        }
+      } catch(e) {}
+
+      return false;
+    } catch(e) {
+      return false;
+    }
+  }
+
+  window.__iewn_check_logged_in = checkIsLoggedIn;
+
+  function notifyAuthState() {
+    var isLogged = checkIsLoggedIn();
+    if (window.__iewn_last_logged_in !== isLogged) {
+      window.__iewn_last_logged_in = isLogged;
+
+      var homeBtn = document.getElementById('iewn-btn-home');
+      if (homeBtn) {
+        homeBtn.style.display = isLogged ? 'none' : 'flex';
+      }
+
+      if (window.flutter_inappwebview && typeof window.flutter_inappwebview.callHandler === 'function') {
+        window.flutter_inappwebview.callHandler('authStateChanged', isLogged);
+      }
+    }
+  }
+
+  window.__iewn_last_logged_in = checkIsLoggedIn();
+  notifyAuthState();
+
+  if (!window.__iewn_auth_observer) {
+    var debounceTimer = null;
+    var observer = new MutationObserver(function() {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(notifyAuthState, 200);
+    });
+    observer.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'href']
+    });
+    window.__iewn_auth_observer = observer;
+
+    window.addEventListener('popstate', notifyAuthState);
+    window.addEventListener('hashchange', notifyAuthState);
+  }
+})();
+""");
+    } catch (e) {
+      debugPrint('Auth detector injection error: $e');
+    }
+  }
+
   Future<void> _injectFloatingNavbar2(InAppWebViewController controller) async {
     try {
       await controller.evaluateJavascript(source: r"""
@@ -1313,6 +1517,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
   function render() {
     theme = getAdaptiveTheme();
+    const isLoggedIn = (typeof window.__iewn_check_logged_in === 'function') ? window.__iewn_check_logged_in() : false;
     root.style.left = posX + 'px';
     root.style.top = posY + 'px';
 
@@ -1527,8 +1732,8 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
       <!-- Vertical Capsule Dock (Expanded) -->
       <div class="iewn-dock" id="iewn-dock">
-        <!-- Home -->
-        <button type="button" class="iewn-item" id="iewn-btn-home" aria-label="Home">
+        <!-- Home (shown only when user is not signed in) -->
+        <button type="button" class="iewn-item" id="iewn-btn-home" aria-label="Home" style="${isLoggedIn ? 'display:none;' : ''}">
           <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
           <div class="iewn-pill-tooltip">
             <svg style="width:14px;height:14px;" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
@@ -1675,7 +1880,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
     document.getElementById('iewn-btn-home')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      window.location.href = window.location.origin;
+      window.location.href = window.__iewn_home_url || window.location.origin;
     });
 
     document.getElementById('iewn-btn-back')?.addEventListener('click', (e) => {
