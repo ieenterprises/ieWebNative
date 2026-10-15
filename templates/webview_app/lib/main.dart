@@ -38,14 +38,7 @@ Future<void> main() async {
           userDataDir.createSync(recursive: true);
         }
         webViewEnvironment = await WebViewEnvironment.create(
-          settings: WebViewEnvironmentSettings(
-            userDataFolder: userDataDir.path,
-            additionalBrowserArguments:
-                '--enable-features=msPlayReady,WidevineCdm,PlatformHEVCDecoderSupport '
-                '--autoplay-policy=no-user-gesture-required '
-                '--enable-gpu-rasterization '
-                '--ignore-gpu-blocklist',
-          ),
+          settings: WebViewEnvironmentSettings(userDataFolder: userDataDir.path),
         );
       }
     } catch (e) {
@@ -1241,9 +1234,9 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   Future<void> _injectAuthDetector(InAppWebViewController controller) async {
     try {
       final escapedHomeUrl = url.replaceAll(r'\', r'\\').replaceAll("'", r"\'");
-      await controller.evaluateJavascript(source: """
+      await controller.evaluateJavascript(source: "window.__iewn_home_url = '$escapedHomeUrl';");
+      await controller.evaluateJavascript(source: r"""
 (function() {
-  window.__iewn_home_url = '$escapedHomeUrl';
 
   function checkIsLoggedIn() {
     try {
@@ -1539,7 +1532,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
           // Backward button
           _buildNav2DockItem(
-            icon: Icons.arrow_back_ios_new_rounded,
+            icon: Icons.arrow_back_ios_rounded,
             tooltip: 'Backward',
             onPressed: canGoBack ? () => webViewController?.goBack() : null,
             color: canGoBack ? textColor : textColor.withOpacity(0.3),
@@ -1636,7 +1629,7 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
     List<Map<String, String>> links = [];
     try {
-      final res = await webViewController?.evaluateJavascript(source: """
+      final res = await webViewController?.evaluateJavascript(source: r"""
 (function() {
   var items = [];
   var seen = {};
