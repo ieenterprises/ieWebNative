@@ -1613,9 +1613,6 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
   Future<void> _openNav2SiteMenu(BuildContext context) async {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final primaryColor = theme.colorScheme.primary;
-    final bgColor = isDark ? const Color(0xFF1E2430) : Colors.white;
-    final textColor = isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B);
 
     List<Map<String, String>> links = [];
     try {
@@ -1623,187 +1620,37 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 (function() {
   var items = [];
   var seen = {};
-  var currentUrl = (window.location.href || '').split('#')[0].replace(/\/$/, '');
-  var currentFull = window.location.href || '';
-
-  function cleanText(el) {
-    if (!el) return '';
-    var label = el.getAttribute('aria-label') || el.getAttribute('title') || 
-                el.getAttribute('data-title') || el.getAttribute('data-name') || 
-                el.getAttribute('data-label') || '';
-    label = label.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (label.length >= 2 && label.length <= 60 && !/^[0-9\W]+$/.test(label)) {
-      return label;
-    }
-
-    var clone = el.cloneNode(true);
-    var garbage = clone.querySelectorAll('svg, img, i, .icon, [class*="icon"], [class*="fa-"], [class*="material-icons"], [class*="bi-"], [class*="badge"], [class*="count"], [class*="tag"], .sr-only, .visually-hidden');
-    for (var g = 0; g < garbage.length; g++) {
-      try { garbage[g].remove(); } catch(e) {}
-    }
-
-    var txt = (clone.textContent || clone.innerText || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (txt.length >= 2 && txt.length <= 60 && !/^[0-9\W]+$/.test(txt)) {
-      return txt;
-    }
-
-    var raw = (el.textContent || el.innerText || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (raw.length >= 2 && raw.length <= 60 && !/^[0-9\W]+$/.test(raw)) {
-      return raw;
-    }
-
-    var img = el.querySelector('img[alt]');
-    if (img) {
-      var alt = (img.getAttribute('alt') || '').trim();
-      if (alt.length >= 2 && alt.length <= 60) return alt;
-    }
-
-    return '';
-  }
-
-  function resolveUrl(rawHref) {
-    if (!rawHref) return '';
-    rawHref = rawHref.trim();
-    if (rawHref === '#' || rawHref.indexOf('javascript:') === 0 || 
-        rawHref.indexOf('mailto:') === 0 || rawHref.indexOf('tel:') === 0) {
-      return '';
-    }
-    try {
-      return new URL(rawHref, window.location.href).href;
-    } catch(e) {
-      return '';
-    }
-  }
-
-  var navIndex = 0;
-
-  function processElement(el, isSidebar) {
-    if (!el) return;
-    var rawHref = el.getAttribute('href') || el.getAttribute('data-href') || 
-                  el.getAttribute('data-url') || el.getAttribute('data-route') || 
-                  el.getAttribute('data-path') || el.getAttribute('data-to') || 
-                  el.getAttribute('to') || el.getAttribute('routerlink') || '';
+  var candidateLinks = document.querySelectorAll('nav a[href], header a[href], aside a[href], .navbar a[href], .sidebar a[href], [role="navigation"] a[href]');
+  for (var i = 0; i < candidateLinks.length; i++) {
+    var a = candidateLinks[i];
+    var href = a.getAttribute('href');
+    if (!href || href === '#' || href.indexOf('javascript:') === 0 || href.indexOf('mailto:') === 0 || href.indexOf('tel:') === 0) continue;
+    var full = a.href;
+    if (!full || full.indexOf('http') !== 0) continue;
+    var text = (a.innerText || a.getAttribute('aria-label') || a.getAttribute('title') || '').trim().replace(/\s+/g, ' ');
+    if (!text || text.length < 2 || text.length > 50) continue;
     
-    var fullUrl = resolveUrl(rawHref);
-    var text = cleanText(el);
-    if (!text) return;
+    // Ignore pagination, dates, or table action noise
+    var lower = text.toLowerCase();
+    if (lower.indexOf('page') !== -1 && (lower.indexOf('next') !== -1 || lower.indexOf('previous') !== -1 || lower.indexOf('first') !== -1 || lower.indexOf('last') !== -1)) continue;
+    if (lower.indexOf('toggle') !== -1 || lower.indexOf('export') !== -1 || lower === 'close' || lower === 'cancel') continue;
 
-    var lowerText = text.toLowerCase();
-    if (lowerText === 'close' || lowerText === 'cancel' || lowerText === 'toggle navigation' || 
-        lowerText === 'collapse' || lowerText === 'expand' || lowerText === 'menu') {
-      return;
-    }
-
-    var actionId = '';
-    if (!fullUrl) {
-      navIndex++;
-      actionId = 'iewn_action_' + navIndex;
-      el.setAttribute('data-iewn-nav-id', actionId);
-    }
-
-    var dedupKey = lowerText + '|' + (fullUrl || actionId);
-    if (seen[dedupKey]) return;
-    seen[dedupKey] = true;
-
-    var cleanTarget = (fullUrl || '').split('#')[0].replace(/\/$/, '');
-    var isCurrent = (cleanTarget && cleanTarget === currentUrl) || (fullUrl && fullUrl === currentFull);
-
-    items.push({
-      text: text,
-      href: fullUrl,
-      isSidebar: !!isSidebar,
-      isCurrent: isCurrent,
-      actionId: actionId
-    });
-  }
-
-  // 1. Query dedicated Sidebar / Drawer containers (even if hidden, closed, or offcanvas)
-  var sidebarContainers = document.querySelectorAll(
-    'aside, [role="complementary"], ' +
-    '[class*="sidebar" i], [id*="sidebar" i], ' +
-    '[class*="drawer" i], [id*="drawer" i], ' +
-    '[class*="sidenav" i], [id*="sidenav" i], ' +
-    '[class*="side-menu" i], [id*="side-menu" i], ' +
-    '[class*="side-nav" i], [id*="side-nav" i], ' +
-    '[class*="offcanvas" i], [id*="offcanvas" i], ' +
-    '[class*="menu-drawer" i], [id*="menu-drawer" i], ' +
-    '[class*="nav-drawer" i], [id*="nav-drawer" i], ' +
-    '[class*="navigation-drawer" i], [id*="navigation-drawer" i], ' +
-    '[class*="app-sidebar" i], [id*="app-sidebar" i], ' +
-    '[class*="main-sidebar" i], [id*="main-sidebar" i], ' +
-    '[class*="left-panel" i], [id*="left-panel" i], ' +
-    '[class*="left-sidebar" i], [id*="left-sidebar" i], ' +
-    '[class*="mobile-menu" i], [id*="mobile-menu" i], ' +
-    '[class*="mobile-nav" i], [id*="mobile-nav" i]'
-  );
-
-  for (var s = 0; s < sidebarContainers.length; s++) {
-    var sc = sidebarContainers[s];
-    var sLinks = sc.querySelectorAll('a, [data-href], [data-url], [data-route], [data-path], [routerlink], [role="menuitem"], button, li');
-    for (var i = 0; i < sLinks.length; i++) {
-      processElement(sLinks[i], true);
-      if (items.length >= 40) break;
-    }
-    if (items.length >= 40) break;
-  }
-
-  // 2. Also inspect any container targeted by a toggle/hamburger button (e.g. data-bs-target="#sidebar")
-  var toggleButtons = document.querySelectorAll('[data-toggle], [data-bs-toggle], [aria-controls], [data-target], [data-bs-target]');
-  for (var tb = 0; tb < toggleButtons.length; tb++) {
-    var btn = toggleButtons[tb];
-    var targetSel = btn.getAttribute('data-bs-target') || btn.getAttribute('data-target') || 
-                    (btn.getAttribute('aria-controls') ? '#' + btn.getAttribute('aria-controls') : '');
-    if (targetSel && targetSel.length > 1 && targetSel.indexOf('#') === 0) {
-      try {
-        var targetContainer = document.querySelector(targetSel);
-        if (targetContainer) {
-          var tLinks = targetContainer.querySelectorAll('a, [data-href], [data-url], [data-route], [data-path], [routerlink], [role="menuitem"], button, li');
-          for (var tl = 0; tl < tLinks.length; tl++) {
-            processElement(tLinks[tl], true);
-            if (items.length >= 40) break;
-          }
-        }
-      } catch(e) {}
-    }
-    if (items.length >= 40) break;
-  }
-
-  // 3. Query other standard navigation elements (nav, header, role="navigation", navbar)
-  if (items.length < 40) {
-    var navContainers = document.querySelectorAll('nav, [role="navigation"], header, [class*="navbar" i], [id*="navbar" i], [class*="menu" i]:not(body):not(html)');
-    for (var n = 0; n < navContainers.length; n++) {
-      var nc = navContainers[n];
-      var nLinks = nc.querySelectorAll('a, [data-href], [data-url], [data-route], [data-path], [routerlink], [role="menuitem"]');
-      for (var j = 0; j < nLinks.length; j++) {
-        processElement(nLinks[j], false);
-        if (items.length >= 45) break;
-      }
-      if (items.length >= 45) break;
-    }
-  }
-
-  // 4. Fallback: general links if few were found
-  if (items.length < 5) {
-    var allLinks = document.querySelectorAll('a[href]');
-    for (var k = 0; k < allLinks.length; k++) {
-      processElement(allLinks[k], false);
+    var key = text.toLowerCase() + '|' + full;
+    if (!seen[key]) {
+      seen[key] = true;
+      items.push({ text: text, href: full });
       if (items.length >= 25) break;
     }
   }
-
   return items;
 })();
 """);
-
       if (res != null && res is List) {
         for (var item in res) {
           if (item is Map) {
             links.add({
               'text': item['text']?.toString() ?? '',
               'href': item['href']?.toString() ?? '',
-              'isSidebar': (item['isSidebar'] == true).toString(),
-              'isCurrent': (item['isCurrent'] == true).toString(),
-              'actionId': item['actionId']?.toString() ?? '',
             });
           }
         }
@@ -1814,240 +1661,131 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
 
     if (!context.mounted) return;
 
-    final sidebarLinks = links.where((l) => l['isSidebar'] == 'true').toList();
-    final otherLinks = links.where((l) => l['isSidebar'] != 'true').toList();
-
-    showGeneralDialog(
+    showDialog(
       context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Site Navigation',
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 260),
-      pageBuilder: (ctx, anim1, anim2) {
-        final screenWidth = MediaQuery.of(ctx).size.width;
-        final drawerWidth = math.min(screenWidth * 0.85, 340.0);
-
-        return Align(
-          alignment: Alignment.centerRight,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: drawerWidth,
-              height: double.infinity,
-              decoration: BoxDecoration(
-                color: bgColor,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 20,
-                    offset: const Offset(-4, 0),
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Icon(Icons.layers_rounded, color: theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              const Text('Site Navigation', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Container(
+            width: 360,
+            constraints: const BoxConstraints(maxHeight: 380),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.home_outlined),
+                  title: const Text('Go to Home URL'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    webViewController?.loadUrl(
+                      urlRequest: URLRequest(url: WebUri(url)),
+                    );
+                  },
+                ),
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.refresh_rounded),
+                  title: const Text('Reload Current Page'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    webViewController?.reload();
+                  },
+                ),
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.view_sidebar_outlined),
+                  title: const Text('Toggle Sidebar'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    webViewController?.evaluateJavascript(source: r"""
+(function() {
+  var btn = document.querySelector('button[aria-label*="sidebar" i], button[title*="sidebar" i], .sidebar-toggle, #sidebarToggle, [data-toggle="sidebar"], [data-bs-toggle="sidebar"], [aria-controls*="sidebar" i]');
+  if (!btn) {
+    var all = document.querySelectorAll('button, a, div[role="button"]');
+    for (var i = 0; i < all.length; i++) {
+      var t = (all[i].getAttribute('aria-label') || all[i].getAttribute('title') || all[i].innerText || all[i].textContent || '').trim().toLowerCase();
+      if (t === 'toggle sidebar' || t.indexOf('sidebar') !== -1) {
+        btn = all[i];
+        break;
+      }
+    }
+  }
+  if (btn) btn.click();
+})();
+""");
+                  },
+                ),
+                const Divider(),
+                if (links.isNotEmpty) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Text(
+                        'DETECTED PAGES',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: links.length,
+                      itemBuilder: (c, idx) {
+                        final link = links[idx];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.chevron_right_rounded, size: 18),
+                          title: Text(
+                            link['text'] ?? '',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            final targetUrl = link['href'];
+                            if (targetUrl != null && targetUrl.isNotEmpty) {
+                              webViewController?.loadUrl(
+                                urlRequest: URLRequest(url: WebUri(targetUrl)),
+                              );
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ] else ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'No additional links detected on this page.',
+                      style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : Colors.black54),
+                    ),
                   ),
                 ],
-              ),
-              child: SafeArea(
-                child: Column(
-                  children: [
-                    // Drawer Header
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 14, 10, 14),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: primaryColor.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(Icons.view_sidebar_rounded, color: primaryColor, size: 22),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'App Navigation',
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.bold,
-                                    color: textColor,
-                                  ),
-                                ),
-                                Text(
-                                  links.isNotEmpty ? '${links.length} pages identified' : 'Navigation & Pages',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: isDark ? Colors.white60 : Colors.black54,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.close_rounded, color: textColor.withOpacity(0.6)),
-                            onPressed: () => Navigator.pop(ctx),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-
-                    // Scrollable Links & Actions
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        children: [
-                          // Quick Actions (Home & Reload)
-                          ListTile(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            leading: Icon(Icons.home_rounded, color: primaryColor),
-                            title: Text('Go to Home URL', style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 14)),
-                            onTap: () {
-                              Navigator.pop(ctx);
-                              webViewController?.loadUrl(
-                                urlRequest: URLRequest(url: WebUri(url)),
-                              );
-                            },
-                          ),
-                          ListTile(
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            leading: Icon(Icons.refresh_rounded, color: primaryColor),
-                            title: Text('Reload Current Page', style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 14)),
-                            onTap: () {
-                              Navigator.pop(ctx);
-                              webViewController?.reload();
-                            },
-                          ),
-
-                          if (sidebarLinks.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    'SIDEBAR & APP PAGES',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: primaryColor,
-                                      letterSpacing: 0.8,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: primaryColor.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      '${sidebarLinks.length}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: primaryColor,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            ...sidebarLinks.map((l) => _buildMenuItemTile(ctx, l, textColor, primaryColor, isDark)),
-                          ],
-
-                          if (otherLinks.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              child: Text(
-                                sidebarLinks.isNotEmpty ? 'MORE SITE LINKS' : 'DETECTED PAGES',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: primaryColor,
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                            ),
-                            ...otherLinks.map((l) => _buildMenuItemTile(ctx, l, textColor, primaryColor, isDark)),
-                          ],
-
-                          if (links.isEmpty) ...[
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 16),
-                              child: Column(
-                                children: [
-                                  Icon(Icons.layers_clear_outlined, size: 40, color: textColor.withOpacity(0.3)),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    'No additional subpages detected on this view.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: isDark ? Colors.white60 : Colors.black54,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
         );
-      },
-      transitionBuilder: (ctx, anim, secondaryAnim, child) {
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(1, 0),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-          child: child,
-        );
-      },
-    );
-  }
-
-  Widget _buildMenuItemTile(BuildContext ctx, Map<String, String> link, Color textColor, Color primaryColor, bool isDark) {
-    final isCurrent = link['isCurrent'] == 'true';
-    return ListTile(
-      dense: true,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      tileColor: isCurrent ? primaryColor.withOpacity(0.12) : null,
-      leading: Icon(
-        isCurrent ? Icons.radio_button_checked_rounded : Icons.chevron_right_rounded,
-        size: 18,
-        color: isCurrent ? primaryColor : textColor.withOpacity(0.55),
-      ),
-      title: Text(
-        link['text'] ?? '',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 13.5,
-          fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
-          color: isCurrent ? primaryColor : textColor,
-        ),
-      ),
-      onTap: () {
-        Navigator.pop(ctx);
-        final targetUrl = link['href'];
-        final actionId = link['actionId'];
-        if (targetUrl != null && targetUrl.isNotEmpty) {
-          webViewController?.loadUrl(
-            urlRequest: URLRequest(url: WebUri(targetUrl)),
-          );
-        } else if (actionId != null && actionId.isNotEmpty) {
-          webViewController?.evaluateJavascript(
-            source: 'var el = document.querySelector(\'[data-iewn-nav-id="$actionId"]\'); if (el) { el.click(); }',
-          );
-        }
       },
     );
   }
