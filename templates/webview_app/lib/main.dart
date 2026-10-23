@@ -1614,10 +1614,41 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    bool hasSidebar = false;
     List<Map<String, String>> links = [];
     try {
       final res = await webViewController?.evaluateJavascript(source: r"""
 (function() {
+  function detectSidebar() {
+    if (document.querySelector('button[aria-label*="sidebar" i], button[title*="sidebar" i], .sidebar-toggle, #sidebarToggle, [data-toggle="sidebar"], [data-bs-toggle="sidebar"], [aria-controls*="sidebar" i], [data-widget="pushmenu"]')) {
+      return true;
+    }
+    var btns = document.querySelectorAll('button, a, div[role="button"]');
+    for (var i = 0; i < btns.length; i++) {
+      var t = (btns[i].getAttribute('aria-label') || btns[i].getAttribute('title') || btns[i].innerText || btns[i].textContent || '').trim().toLowerCase();
+      if (t === 'toggle sidebar' || t.indexOf('sidebar') !== -1) {
+        return true;
+      }
+    }
+    var asides = document.querySelectorAll('aside');
+    for (var j = 0; j < asides.length; j++) {
+      if ((asides[j].innerText || asides[j].textContent || '').trim().length > 0) return true;
+    }
+    var sideElements = document.querySelectorAll('.sidebar, #sidebar, [class*="sidebar" i], [id*="sidebar" i]');
+    for (var k = 0; k < sideElements.length; k++) {
+      var el = sideElements[k];
+      var cls = (el.className || '').toString().toLowerCase();
+      var elId = (el.id || '').toString().toLowerCase();
+      if (cls.indexOf('overlay') !== -1 || cls.indexOf('backdrop') !== -1 || elId.indexOf('overlay') !== -1) continue;
+      if (el.tagName !== 'INPUT' && el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE') {
+        if ((el.innerText || el.textContent || '').trim().length > 0) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   var items = [];
   var seen = {};
   var candidateLinks = document.querySelectorAll('nav a[href], header a[href], aside a[href], .navbar a[href], .sidebar a[href], [role="navigation"] a[href]');
@@ -1642,16 +1673,34 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       if (items.length >= 25) break;
     }
   }
-  return items;
+  return {
+    hasSidebar: detectSidebar(),
+    links: items
+  };
 })();
 """);
-      if (res != null && res is List) {
-        for (var item in res) {
-          if (item is Map) {
-            links.add({
-              'text': item['text']?.toString() ?? '',
-              'href': item['href']?.toString() ?? '',
-            });
+      if (res != null) {
+        if (res is Map) {
+          hasSidebar = res['hasSidebar'] == true;
+          final rawLinks = res['links'];
+          if (rawLinks is List) {
+            for (var item in rawLinks) {
+              if (item is Map) {
+                links.add({
+                  'text': item['text']?.toString() ?? '',
+                  'href': item['href']?.toString() ?? '',
+                });
+              }
+            }
+          }
+        } else if (res is List) {
+          for (var item in res) {
+            if (item is Map) {
+              links.add({
+                'text': item['text']?.toString() ?? '',
+                'href': item['href']?.toString() ?? '',
+              });
+            }
           }
         }
       }
@@ -1699,15 +1748,16 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
                     webViewController?.reload();
                   },
                 ),
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.view_sidebar_outlined),
-                  title: const Text('Toggle Sidebar'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    webViewController?.evaluateJavascript(source: r"""
+                if (hasSidebar)
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.view_sidebar_outlined),
+                    title: const Text('Toggle Sidebar'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      webViewController?.evaluateJavascript(source: r"""
 (function() {
-  var btn = document.querySelector('button[aria-label*="sidebar" i], button[title*="sidebar" i], .sidebar-toggle, #sidebarToggle, [data-toggle="sidebar"], [data-bs-toggle="sidebar"], [aria-controls*="sidebar" i]');
+  var btn = document.querySelector('button[aria-label*="sidebar" i], button[title*="sidebar" i], .sidebar-toggle, #sidebarToggle, [data-toggle="sidebar"], [data-bs-toggle="sidebar"], [aria-controls*="sidebar" i], [data-widget="pushmenu"]');
   if (!btn) {
     var all = document.querySelectorAll('button, a, div[role="button"]');
     for (var i = 0; i < all.length; i++) {
@@ -1718,11 +1768,28 @@ class _WebViewScreenState extends State<WebViewScreen> with WidgetsBindingObserv
       }
     }
   }
-  if (btn) btn.click();
+  if (btn) {
+    btn.click();
+  } else {
+    var side = document.querySelector('aside, .sidebar, #sidebar, [class*="sidebar" i]');
+    if (side) {
+      if (side.style.display === 'none') {
+        side.style.display = '';
+      } else if (window.getComputedStyle(side).display === 'none') {
+        side.style.display = 'block';
+      } else {
+        side.classList.toggle('collapsed');
+        side.classList.toggle('hidden');
+        side.classList.toggle('active');
+        side.classList.toggle('show');
+        side.classList.toggle('open');
+      }
+    }
+  }
 })();
 """);
-                  },
-                ),
+                    },
+                  ),
                 const Divider(),
                 if (links.isNotEmpty) ...[
                   Align(
